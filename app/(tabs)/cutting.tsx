@@ -322,7 +322,8 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const webContainerRef = useRef<HTMLDivElement | null>(null);
   const containerLayoutRef = useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
   // 웹 드래그 중인 조각 키
-  const webDragRef = useRef<{ key: string; startMouseX: number; startMouseY: number; startPieceX: number; startPieceY: number } | null>(null);
+  // offsetX/Y: 마우스 다운 시 마우스의 조각 내 상대 오프셋 (스크롤 무관한 드래그 계산용)
+  const webDragRef = useRef<{ key: string; offsetX: number; offsetY: number; startPieceX: number; startPieceY: number } | null>(null);
   // 회전 실패 시 빨간 테두리 표시용
   const [rotateFailKey, setRotateFailKey] = useState<string | null>(null);
   // 스냅 가이드라인 좌표 (SVG 단위, null이면 표시 안 함)
@@ -454,40 +455,53 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const handleWebMouseDown = useCallback((e: React.MouseEvent, piece: PlacedPiece) => {
     if (!editMode) return;
     e.stopPropagation();
+    // preventDefault 호출하지 않음 → 스크롤 허용
     const key = pieceKey(piece);
     setSelectedKey(key);
-    const { x, y } = getSvgCoords(e);
+    // 드래그 시작 시 마우스의 조각 내 상대 오프셋 계산
+    // offsetX = mouseDownSvgX - piece.x, offsetY = mouseDownSvgY - piece.y
+    // 이렇게 저장하면 스크롤 발생 후에도 newPieceX = curSvgX - offsetX 로 정확하게 계산 가능
+    let svgLeft0 = 0, svgTop0 = 0;
+    if (webContainerRef.current) {
+      const rect = webContainerRef.current.getBoundingClientRect();
+      svgLeft0 = rect.left;
+      svgTop0 = rect.top;
+    }
+    const mouseDownSvgX = (e.clientX - svgLeft0) / scale;
+    const mouseDownSvgY = (e.clientY - svgTop0) / scale;
     webDragRef.current = {
       key,
-      startMouseX: x,
-      startMouseY: y,
+      offsetX: mouseDownSvgX - piece.x,  // 마우스의 조각 내 상대 오프셋
+      offsetY: mouseDownSvgY - piece.y,
       startPieceX: piece.x,
       startPieceY: piece.y,
     };
     setDraggingId(piece.id);
     setDraggingInstance(piece.instanceIndex);
-    // 전역 mousemove/mouseup 이벤트 등록
+    // 전역 mousemove/mouseup 이벤트 등록 (passive: true로 스크롤 차단 방지)
     const handleMouseMove = (ev: MouseEvent) => {
       if (!webDragRef.current) return;
-      // 스크롤 중에도 정확한 좌표를 위해 매번 getBoundingClientRect 갱신
-      if (webContainerRef.current) {
-        const rect = webContainerRef.current.getBoundingClientRect();
-        containerLayoutRef.current = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
-      }
-      const layout = containerLayoutRef.current;
-      const mx = (ev.clientX - layout.x) / scale;
-      const my = (ev.clientY - layout.y) / scale;
-      // webDragRef.current를 지역 변수로 캡처 (setPieces 콜백 실행 시점에 null이 될 수 있으므로)
       const drag = webDragRef.current;
       if (!drag) return;
-      const dx = mx - drag.startMouseX;
-      const dy = my - drag.startMouseY;
+      // 매번 getBoundingClientRect 갱신 → 스크롤 중에도 정확한 SVG 위치 반영
+      let svgLeft = 0, svgTop = 0;
+      if (webContainerRef.current) {
+        const rect = webContainerRef.current.getBoundingClientRect();
+        svgLeft = rect.left;
+        svgTop = rect.top;
+      }
+      // 현재 마우스 위치를 SVG 좌표로 변환
+      const curSvgX = (ev.clientX - svgLeft) / scale;
+      const curSvgY = (ev.clientY - svgTop) / scale;
+      // newPieceX = curSvgX - offsetX (스크롤과 무관하게 항상 정확)
+      // dx/dy 방식 대신 절대 위치 계산 방식 사용
+      const rawX = curSvgX - drag.offsetX;
+      const rawY = curSvgY - drag.offsetY;
+      // rawX/rawY는 handleMouseMove 클로저에서 이미 계산됨
       setPieces((prev) => {
         if (!drag) return prev;
         const target = prev.find((p) => pieceKey(p) === drag.key);
         if (!target) return prev;
-        const rawX = drag.startPieceX + dx;
-        const rawY = drag.startPieceY + dy;
         const snapped = applyEdgeSnap(rawX, rawY, target.width, target.height, filmW, prev, drag.key);
         setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
         const hasCollision = checkCollision(drag.key, snapped.x, snapped.y, target.width, target.height, prev);
@@ -520,7 +534,8 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
       setDraggingId(null);
       setDraggingInstance(-1);
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    // passive: true → 스크롤 차단 방지 (preventDefault 호출을 안 하므로 passive여도 문제 없음)
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
     window.addEventListener("mouseup", handleMouseUp);
   }, [editMode, getSvgCoords, scale, filmW, checkCollision]);
 
