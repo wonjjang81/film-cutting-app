@@ -1,7 +1,7 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Print from 'expo-print';
-import { Invoice, PlacementResult } from '@/lib/filmCutting';
+import { GroupPlacementResult, Invoice, PlacedPiece, PlacementResult } from '@/lib/filmCutting';
 import { Platform } from 'react-native';
 
 /**
@@ -367,6 +367,292 @@ export async function shareEstimatePDF(
     console.error('견적서 PDF 공유 오류:', error);
     throw error;
   }
+}
+
+// ─── 재단 배치도 색상 팔레트 (cutting.tsx와 동일) ─────────────────────────
+const SIZE_FILL_COLORS = [
+  '#BFDBFE', '#BBF7D0', '#FDE68A', '#FBCFE8', '#DDD6FE',
+  '#FED7AA', '#A5F3FC', '#D9F99D', '#FECACA', '#E9D5FF',
+  '#CFFAFE', '#FEF08A',
+];
+const SIZE_STROKE_COLORS = [
+  '#2563EB', '#059669', '#D97706', '#DB2777', '#7C3AED',
+  '#EA580C', '#0891B2', '#65A30D', '#DC2626', '#9333EA',
+  '#0E7490', '#CA8A04',
+];
+
+function buildSizeColorMapForPdf(pieces: PlacedPiece[]): Map<string, number> {
+  const map = new Map<string, number>();
+  let counter = 0;
+  for (const p of pieces) {
+    const key = `${p.width}x${p.height}`;
+    if (!map.has(key)) {
+      map.set(key, counter % SIZE_FILL_COLORS.length);
+      counter++;
+    }
+  }
+  return map;
+}
+
+/**
+ * 단일 그룹의 배치도 SVG HTML 문자열 생성
+ */
+function generatePlacementSvgHtml(
+  gr: GroupPlacementResult,
+  projectName: string,
+  pageIndex: number,
+  totalPages: number,
+): string {
+  const { placement, groupName, brand, filmName, filmLengthM } = gr;
+  const pieces = placement.pieces;
+  const filmW = placement.filmWidth;   // mm
+  const filmH = placement.filmHeight;  // mm
+
+  // A4 가로 기준 SVG 크기 계산 (필름 비율 유지)
+  // A4 가로: 297mm, 세로: 210mm → 포인트 기준 842 x 595
+  // SVG 뷰포트: 가로 760px 기준으로 스케일 계산
+  const svgViewW = 760;
+  const scale = svgViewW / filmW;
+  const svgViewH = Math.round(filmH * scale);
+
+  const sizeColorMap = buildSizeColorMapForPdf(pieces);
+
+  // 모눈 선 생성 (100mm 간격)
+  const gridLines: string[] = [];
+  const GRID_STEP = 100;
+  for (let x = 0; x <= filmW; x += GRID_STEP) {
+    gridLines.push(`<line x1="${x * scale}" y1="0" x2="${x * scale}" y2="${svgViewH}" stroke="#E5E7EB" stroke-width="0.5"/>`);
+    if (x > 0 && x < filmW) {
+      gridLines.push(`<text x="${x * scale}" y="-4" font-size="8" fill="#9CA3AF" text-anchor="middle">${x}</text>`);
+    }
+  }
+  for (let y = 0; y <= filmH; y += GRID_STEP) {
+    gridLines.push(`<line x1="0" y1="${y * scale}" x2="${svgViewW}" y2="${y * scale}" stroke="#E5E7EB" stroke-width="0.5"/>`);
+    if (y > 0) {
+      gridLines.push(`<text x="-4" y="${y * scale + 3}" font-size="8" fill="#9CA3AF" text-anchor="end">${y}</text>`);
+    }
+  }
+
+  // 조각 렌더링
+  const pieceRects: string[] = [];
+  for (const p of pieces) {
+    const sk = `${p.width}x${p.height}`;
+    const ci = sizeColorMap.get(sk) ?? 0;
+    const fill = SIZE_FILL_COLORS[ci % SIZE_FILL_COLORS.length];
+    const stroke = SIZE_STROKE_COLORS[ci % SIZE_STROKE_COLORS.length];
+    const px = p.x * scale;
+    const py = p.y * scale;
+    const pw = p.width * scale;
+    const ph = p.height * scale;
+    // 조각 사각형
+    pieceRects.push(`<rect x="${px}" y="${py}" width="${pw}" height="${ph}" fill="${fill}" stroke="${stroke}" stroke-width="1" rx="2"/>`);
+    // 라벨 (조각이 충분히 클 때만)
+    if (pw > 30 && ph > 18) {
+      const cx = px + pw / 2;
+      const cy = py + ph / 2;
+      const label = p.instanceIndex > 0 ? `${p.id}-${p.instanceIndex + 1}` : p.id;
+      const sizeLabel = `${p.width}×${p.height}`;
+      pieceRects.push(`<text x="${cx}" y="${cy - 5}" font-size="9" fill="${stroke}" text-anchor="middle" font-weight="600">${label}</text>`);
+      pieceRects.push(`<text x="${cx}" y="${cy + 7}" font-size="8" fill="${stroke}" text-anchor="middle">${sizeLabel}</text>`);
+    }
+  }
+
+  // 사이즈별 범례 생성
+  const legendEntries: { sizeKey: string; ci: number; count: number }[] = [];
+  const sizeCount = new Map<string, number>();
+  for (const p of pieces) {
+    const sk = `${p.width}x${p.height}`;
+    sizeCount.set(sk, (sizeCount.get(sk) ?? 0) + 1);
+  }
+  for (const [sk, cnt] of sizeCount.entries()) {
+    const ci = sizeColorMap.get(sk) ?? 0;
+    legendEntries.push({ sizeKey: sk, ci, count: cnt });
+  }
+  const legendHtml = legendEntries.map((le) => {
+    const fill = SIZE_FILL_COLORS[le.ci % SIZE_FILL_COLORS.length];
+    const stroke = SIZE_STROKE_COLORS[le.ci % SIZE_STROKE_COLORS.length];
+    const [w, h] = le.sizeKey.split('x');
+    return `<div class="legend-item"><span class="legend-swatch" style="background:${fill};border-color:${stroke}"></span><span class="legend-label">${w}×${h}mm</span><span class="legend-count">${le.count}개</span></div>`;
+  }).join('');
+
+  // 조각 목록 테이블 (ID별 그룹화)
+  const pieceMap = new Map<string, { id: string; width: number; height: number; count: number }>();
+  for (const p of pieces) {
+    if (!pieceMap.has(p.id)) {
+      pieceMap.set(p.id, { id: p.id, width: p.width, height: p.height, count: 0 });
+    }
+    pieceMap.get(p.id)!.count++;
+  }
+  const pieceTableRows = Array.from(pieceMap.values()).map((item, idx) => {
+    const sk = `${item.width}x${item.height}`;
+    const ci = sizeColorMap.get(sk) ?? 0;
+    const fill = SIZE_FILL_COLORS[ci % SIZE_FILL_COLORS.length];
+    const stroke = SIZE_STROKE_COLORS[ci % SIZE_STROKE_COLORS.length];
+    return `<tr>
+      <td>${idx + 1}</td>
+      <td><span style="display:inline-block;width:12px;height:12px;background:${fill};border:1.5px solid ${stroke};border-radius:2px;vertical-align:middle;margin-right:4px"></span>${item.id}</td>
+      <td style="text-align:right">${item.width}</td>
+      <td style="text-align:right">${item.height}</td>
+      <td style="text-align:right">${item.count}</td>
+    </tr>`;
+  }).join('');
+
+  const dateStr = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const filmLabel = [brand, filmName].filter(Boolean).join(' · ');
+
+  return `
+<div class="page" style="page-break-after: ${pageIndex < totalPages - 1 ? 'always' : 'auto'}">
+  <div class="page-header">
+    <div class="page-title">
+      <span class="group-badge">${groupName}</span>
+      <span class="film-label">${filmLabel}</span>
+    </div>
+    <div class="page-meta">
+      <span>${projectName}</span>
+      <span>${dateStr}</span>
+      <span>${pageIndex + 1} / ${totalPages}</span>
+    </div>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-box"><div class="stat-label">필름 너비</div><div class="stat-value">${filmW.toLocaleString()}mm</div></div>
+    <div class="stat-box"><div class="stat-label">필름 길이</div><div class="stat-value">${filmLengthM.toFixed(2)}m (${filmH.toLocaleString()}mm)</div></div>
+    <div class="stat-box"><div class="stat-label">배치 효율</div><div class="stat-value">${placement.efficiency}%</div></div>
+    <div class="stat-box"><div class="stat-label">조각 수</div><div class="stat-value">${pieces.length}개</div></div>
+  </div>
+
+  <div class="canvas-wrap">
+    <svg xmlns="http://www.w3.org/2000/svg" width="${svgViewW}" height="${svgViewH}" viewBox="0 0 ${svgViewW} ${svgViewH}" style="border:1.5px solid #374151;display:block">
+      <rect width="${svgViewW}" height="${svgViewH}" fill="#F9FAFB"/>
+      <g>${gridLines.join('')}</g>
+      <g>${pieceRects.join('')}</g>
+      <!-- 필름 경계선 -->
+      <rect x="0" y="0" width="${svgViewW}" height="${svgViewH}" fill="none" stroke="#374151" stroke-width="2"/>
+      <!-- 상단 치수 표시 -->
+      <text x="${svgViewW / 2}" y="-14" font-size="10" fill="#374151" text-anchor="middle" font-weight="600">← ${filmW.toLocaleString()}mm →</text>
+      <!-- 좌측 치수 표시 -->
+      <text x="-12" y="${svgViewH / 2}" font-size="10" fill="#374151" text-anchor="middle" transform="rotate(-90,-12,${svgViewH / 2})">${filmH.toLocaleString()}mm</text>
+    </svg>
+  </div>
+
+  <div class="legend-section">
+    <div class="legend-title">사이즈별 범례</div>
+    <div class="legend-grid">${legendHtml}</div>
+  </div>
+
+  <div class="piece-table-section">
+    <div class="section-title">조각 목록</div>
+    <table class="piece-table">
+      <thead><tr><th>#</th><th>ID</th><th>가로(mm)</th><th>세로(mm)</th><th>수량</th></tr></thead>
+      <tbody>${pieceTableRows}</tbody>
+    </table>
+  </div>
+</div>
+`;
+}
+
+/**
+ * 전체 그룹의 배치도 HTML 생성 (PDF 변환용)
+ */
+export function generateCuttingLayoutHTML(
+  groupResults: GroupPlacementResult[],
+  projectName: string = '배치도',
+): string {
+  const pages = groupResults.map((gr, idx) =>
+    generatePlacementSvgHtml(gr, projectName, idx, groupResults.length)
+  ).join('');
+
+  return `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>재단 배치도 - ${projectName}</title>
+<style>
+  @page { size: A4 landscape; margin: 15mm 12mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+  body { background: white; color: #111827; font-size: 12px; }
+  .page { padding: 0; margin-bottom: 0; }
+  .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; border-bottom: 2px solid #1D4ED8; padding-bottom: 6px; }
+  .page-title { display: flex; align-items: center; gap: 8px; }
+  .group-badge { background: #1D4ED8; color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px; font-weight: 700; }
+  .film-label { font-size: 13px; color: #374151; font-weight: 600; }
+  .page-meta { display: flex; gap: 12px; font-size: 10px; color: #6B7280; }
+  .stats-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .stat-box { flex: 1; background: #F3F4F6; border-radius: 6px; padding: 6px 10px; }
+  .stat-label { font-size: 9px; color: #6B7280; margin-bottom: 2px; }
+  .stat-value { font-size: 12px; font-weight: 700; color: #111827; }
+  .canvas-wrap { overflow: visible; margin-bottom: 10px; padding-top: 20px; padding-left: 20px; }
+  .legend-section { margin-bottom: 10px; }
+  .legend-title, .section-title { font-size: 11px; font-weight: 700; color: #374151; margin-bottom: 6px; }
+  .legend-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
+  .legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border-width: 1.5px; border-style: solid; flex-shrink: 0; }
+  .legend-label { color: #111827; font-weight: 600; }
+  .legend-count { color: #6B7280; }
+  .piece-table-section { }
+  .piece-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+  .piece-table th { background: #F3F4F6; padding: 4px 8px; text-align: left; border: 1px solid #E5E7EB; font-weight: 700; }
+  .piece-table td { padding: 3px 8px; border: 1px solid #E5E7EB; }
+  .piece-table tr:nth-child(even) td { background: #F9FAFB; }
+</style>
+</head>
+<body>
+${pages}
+</body>
+</html>`;
+}
+
+/**
+ * 재단 배치도를 PDF로 내보내기 (네이티브: expo-print + expo-sharing, 웹: 새 창 인쇄)
+ */
+export async function exportCuttingLayoutPDF(
+  groupResults: GroupPlacementResult[],
+  projectName: string = '배치도',
+): Promise<void> {
+  const html = generateCuttingLayoutHTML(groupResults, projectName);
+
+  if (Platform.OS === 'web') {
+    // 웹: 숨겨진 iframe을 이용해 팝업 차단 없이 인쇄
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (!iframeDoc) {
+      document.body.removeChild(iframe);
+      throw new Error('PDF 생성에 실패했습니다.');
+    }
+    iframeDoc.open();
+    iframeDoc.write(html);
+    iframeDoc.close();
+    // 렌더링 대기 후 인쇄
+    setTimeout(() => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } finally {
+        // 인쇄 다이얼로그 닫힌 후 iframe 제거
+        setTimeout(() => document.body.removeChild(iframe), 1000);
+      }
+    }, 800);
+    return;
+  }
+
+  // 네이티브: expo-print → expo-sharing
+  const isAvailable = await Sharing.isAvailableAsync();
+  if (!isAvailable) throw new Error('이 기기에서는 파일 공유가 지원되지 않습니다.');
+
+  const { uri } = await Print.printToFileAsync({ html, base64: false });
+  const timestamp = new Date().getTime();
+  const fileName = `재단배치도_${projectName}_${timestamp}.pdf`;
+  const pdfPath = `${FileSystem.documentDirectory ?? ''}${fileName}`;
+  await FileSystem.moveAsync({ from: uri, to: pdfPath });
+  await Sharing.shareAsync(pdfPath, { mimeType: 'application/pdf', dialogTitle: '재단 배치도 공유' });
 }
 
 /**

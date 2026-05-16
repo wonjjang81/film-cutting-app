@@ -27,6 +27,7 @@ import {
   formatM,
   formatNumber,
 } from "@/lib/filmCutting";
+import { exportCuttingLayoutPDF } from "@/lib/pdfGenerator";
 
 const CANVAS_PADDING = 12;
 const SNAP = 5;
@@ -874,6 +875,22 @@ export default function ResultsScreen() {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(serialized)).catch(() => {});
   }, [checkedMap]);
 
+  // PDF 내보내기 로딩 상태
+  const [pdfExporting, setPdfExporting] = useState(false);
+  const handleExportPDF = useCallback(async () => {
+    if (!groupResults.length || pdfExporting) return;
+    setPdfExporting(true);
+    try {
+      await exportCuttingLayoutPDF(groupResults, state.projectName || '배치도');
+    } catch (err: any) {
+      if (Platform.OS === 'web') {
+        alert('PDF 내보내기 실패: ' + (err?.message ?? String(err)));
+      }
+    } finally {
+      setPdfExporting(false);
+    }
+  }, [groupResults, state.projectName, pdfExporting]);
+
   const handleToggle = useCallback((id: string, instanceIndex: number) => {
     const key = `${id}_${instanceIndex}`;
     setCheckedMap((prev) => {
@@ -1112,6 +1129,21 @@ export default function ResultsScreen() {
           style={[styles.secondaryBtn, { borderColor: colors.primary }]}
           onPress={() => router.push("/(tabs)/input" as any)}>
           <Text style={[styles.secondaryBtnText, { color: colors.primary }]}>다시 계산</Text>
+        </TouchableOpacity>
+        {/* PDF 내보내기 버튼 */}
+        <TouchableOpacity
+          style={[
+            styles.secondaryBtn,
+            {
+              borderColor: pdfExporting ? colors.muted : "#059669",
+              backgroundColor: pdfExporting ? colors.surface : "#ECFDF5",
+            },
+          ]}
+          onPress={handleExportPDF}
+          disabled={pdfExporting}>
+          <Text style={[styles.secondaryBtnText, { color: pdfExporting ? colors.muted : "#059669" }]}>
+            {pdfExporting ? "⏳ 생성 중..." : "📄 PDF"}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
