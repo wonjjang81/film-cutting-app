@@ -500,6 +500,8 @@ export default function InputScreen() {
     setIsCalculating(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
+      // 이전 배치 결과를 먼저 완전히 제거하여 React가 변경을 정확히 감지하도록 함
+      dispatch({ type: "CLEAR_RESULTS" });
       const result = calculateFromGroups(validGroups, state.materialCostPerM, state.constructionPricePerM2);
       dispatch({ type: "SET_RESULT", payload: result });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

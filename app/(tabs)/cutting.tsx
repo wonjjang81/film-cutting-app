@@ -309,6 +309,14 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const [collisionKey, setCollisionKey] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; pieceX: number; pieceY: number; moved: boolean } | null>(null);
 
+  // placement prop이 변경될 때 (재계산 시) pieces 상태를 동기화
+  // 드래그 중이 아닐 때만 갱신하여 드래그 조작을 방해하지 않음
+  useEffect(() => {
+    if (draggingId === null) {
+      setPieces(placement.pieces);
+    }
+  }, [placement.pieces, placement.filmHeight]);
+
   const filmW = placement.filmWidth;
   const filmH = Math.max(placement.filmHeight, 10);
   const svgW = filmW * scale;
@@ -478,6 +486,14 @@ export default function ResultsScreen() {
   // 체크된 조각 키 Set: "id_instanceIndex" 형태
   const [checkedMap, setCheckedMap] = useState<Record<string, Set<string>>>({})
 
+  // result(재계산) 변경 시 activeGroupId를 첫 번째 그룹으로 초기화
+  // 이전 그룹 ID가 남아있어 새 결과를 찾지 못하는 문제 방지
+  useEffect(() => {
+    if (result?.groupResults[0]?.groupId) {
+      setActiveGroupId(result.groupResults[0].groupId);
+    }
+  }, [result]);
+
   // 앱 시작 시 저장된 체크 상태 불러오기
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
@@ -508,10 +524,11 @@ export default function ResultsScreen() {
     [checkedMap, activeGroupId],
   );
 
-  // 사이즈별 색상 맵
+  // 사이즈별 색상 맵 - groupId + pieces.length + filmHeight 변경 시 갱신 (재계산 감지)
   const sizeColorMap = useMemo(
     () => buildSizeColorMap(currentGroup?.placement.pieces ?? []),
-    [currentGroup?.groupId],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [currentGroup?.groupId, currentGroup?.placement.pieces.length, currentGroup?.placement.filmHeight],
   );
 
   // 범례 데이터
@@ -527,7 +544,7 @@ export default function ResultsScreen() {
       seen.get(sk)!.count++;
     }
     return Array.from(seen.values()).sort((a, b) => a.ci - b.ci);
-  }, [currentGroup?.groupId, sizeColorMap]);
+  }, [currentGroup?.groupId, currentGroup?.placement.pieces.length, currentGroup?.placement.filmHeight, sizeColorMap]);
 
   // 체크리스트 아이템 목록 (ID + instanceIndex 기준)
   const checkItems: CheckItem[] = useMemo(() => {
@@ -539,7 +556,7 @@ export default function ResultsScreen() {
       height: p.height,
       checked: checkedKeys.has(`${p.id}_${p.instanceIndex}`),
     }));
-  }, [currentGroup?.groupId, currentGroup?.placement.pieces, checkedKeys]);
+  }, [currentGroup?.groupId, currentGroup?.placement.pieces, currentGroup?.placement.pieces.length, currentGroup?.placement.filmHeight, checkedKeys]);
 
   const checkedCount = checkItems.filter((i) => i.checked).length;
   const totalCount = checkItems.length;
@@ -700,7 +717,7 @@ export default function ResultsScreen() {
           <View style={{ padding: CANVAS_PADDING }}>
             {canvasWidth > 0 && (
               <GridCanvas
-                key={currentGroup!.groupId}
+                key={`${currentGroup!.groupId}_${currentGroup!.placement.filmHeight}_${currentGroup!.placement.pieces.length}`}
                 placement={currentGroup!.placement}
                 scale={fitScale}
                 colors={colors}
