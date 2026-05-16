@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, TextInput, TouchableOpacity, Text, StyleSheet, TextInputProps } from 'react-native';
 
 export interface ClearableTextInputProps extends TextInputProps {
@@ -9,17 +9,21 @@ export interface ClearableTextInputProps extends TextInputProps {
   inputStyle?: any;
   showClearButton?: boolean;
   clearButtonColor?: string;
+  /** 포커스 시 테두리 색상. 미설정 시 포커스 시각화 비활성화 */
+  focusBorderColor?: string;
 }
 
 /**
  * x 버튼으로 텍스트를 초기화할 수 있는 TextInput 컴포넌트
- * 
+ * 포커스 시 테두리 색상이 변경되어 현재 활성 입력 필드를 시각적으로 표시합니다.
+ *
  * 사용 예:
  * ```tsx
  * <ClearableTextInput
  *   value={text}
  *   onChangeText={setText}
  *   placeholder="입력하세요"
+ *   focusBorderColor={colors.primary}
  *   showClearButton={text.length > 0}
  *   clearButtonColor={colors.error}
  * />
@@ -35,11 +39,15 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
       inputStyle,
       showClearButton = true,
       clearButtonColor = '#EF4444',
+      focusBorderColor,
+      onFocus,
+      onBlur,
       ...textInputProps
     },
     ref
   ) => {
     const [isVisible, setIsVisible] = useState(value.length > 0);
+    const [isFocused, setIsFocused] = useState(false);
 
     useEffect(() => {
       setIsVisible(value.length > 0);
@@ -50,6 +58,20 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
       onClear?.();
     };
 
+    const handleFocus = useCallback((e: any) => {
+      setIsFocused(true);
+      onFocus?.(e);
+    }, [onFocus]);
+
+    const handleBlur = useCallback((e: any) => {
+      setIsFocused(false);
+      onBlur?.(e);
+    }, [onBlur]);
+
+    // 포커스 상태에 따라 테두리 색상 결정
+    // focusBorderColor가 설정된 경우에만 포커스 시각화 적용
+    const activeBorderColor = focusBorderColor && isFocused ? focusBorderColor : undefined;
+
     return (
       <View style={[styles.container, containerStyle]}>
         <TextInput
@@ -57,7 +79,13 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
           {...textInputProps}
           value={value}
           onChangeText={onChangeText}
-          style={[styles.input, inputStyle]}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          style={[
+            styles.input,
+            inputStyle,
+            activeBorderColor ? { borderColor: activeBorderColor, borderWidth: 2 } : undefined,
+          ]}
         />
         {showClearButton && isVisible && (
           <TouchableOpacity

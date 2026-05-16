@@ -76,23 +76,31 @@ function BrandSelector({ selected, onSelect, colors, groupIndex }: {
 
 // ─── 조각 행 ─────────────────────────────────────────────────
 
-const PieceRow = React.memo(({ piece, onUpdate, onDelete, onRenameId, colors }: {
+interface PieceRowProps {
   piece: FilmPiece;
   onUpdate: (field: "width" | "height" | "quantity", value: number) => void;
   onDelete: () => void;
   onRenameId: (newId: string) => void;
   colors: ReturnType<typeof useColors>;
-}) => {
+  focusBorderColor: string;
+  /** 이 조각의 수량 필드에서 다음 조각(또는 다음 그룹)으로 포커스를 이동하는 콜백 */
+  onQuantitySubmit?: () => void;
+}
+
+// forwardRef를 사용하여 부모(GroupCard)에서 첫 번째 조각의 가로 입력 필드에 직접 포커스를 부여할 수 있도록 합니다.
+const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece, onUpdate, onDelete, onRenameId, colors, focusBorderColor, onQuantitySubmit }, forwardedRef) => {
   const [wText, setWText] = useState(piece.width > 0 ? String(piece.width) : "");
   const [hText, setHText] = useState(piece.height > 0 ? String(piece.height) : "");
   const [qText, setQText] = useState(String(piece.quantity));
   const [idText, setIdText] = useState(piece.id);
   const [editingId, setEditingId] = useState(false);
-  
-  const widthRef = useRef<TextInput>(null);
+
+  // forwardedRef가 있으면 widthRef를 외부에 노출 (그룹 간 포커스 이동에 사용)
+  const internalWidthRef = useRef<TextInput>(null);
+  const widthRef = (forwardedRef as React.RefObject<TextInput> | null) ?? internalWidthRef;
   const heightRef = useRef<TextInput>(null);
   const quantityRef = useRef<TextInput>(null);
-  
+
   const handleBlur = (field: "width" | "height" | "quantity", text: string) => {
     const num = parseFloat(text) || 0;
     if (field === "width" && num > FILM_WIDTH) {
@@ -102,18 +110,22 @@ const PieceRow = React.memo(({ piece, onUpdate, onDelete, onRenameId, colors }: 
     }
     onUpdate(field, num);
   };
-  
+
   const focusNext = useCallback((field: string) => {
     if (field === "width") heightRef.current?.focus();
     else if (field === "height") quantityRef.current?.focus();
-  }, []);
+    else if (field === "quantity") {
+      // 수량 필드에서 엔터 → 다음 조각 또는 다음 그룹의 첫 번째 필드로 이동
+      onQuantitySubmit?.();
+    }
+  }, [onQuantitySubmit]);
 
   return (
     <View style={[styles.pieceRow, { borderBottomColor: colors.border }]}>
       <View style={styles.cellId}>
         {editingId ? (
           <TextInput
-            style={[styles.idInput, { color: colors.foreground, borderColor: colors.primary, backgroundColor: colors.background }]}
+            style={[styles.idInput, { color: colors.foreground, borderColor: focusBorderColor, backgroundColor: colors.background }]}
             value={idText}
             onChangeText={setIdText}
             autoFocus
@@ -159,6 +171,7 @@ const PieceRow = React.memo(({ piece, onUpdate, onDelete, onRenameId, colors }: 
               keyboardType="numeric" placeholder="0" placeholderTextColor={colors.muted} returnKeyType="next"
               showClearButton={true}
               clearButtonColor={colors.muted}
+              focusBorderColor={focusBorderColor}
             />
           </View>
         );
@@ -170,10 +183,14 @@ const PieceRow = React.memo(({ piece, onUpdate, onDelete, onRenameId, colors }: 
           value={qText}
           onChangeText={setQText}
           onBlur={() => handleBlur("quantity", qText)}
-          onSubmitEditing={() => handleBlur("quantity", qText)}
-          keyboardType="numeric" placeholder="1" placeholderTextColor={colors.muted} returnKeyType="done"
+          onSubmitEditing={() => {
+            handleBlur("quantity", qText);
+            focusNext("quantity");
+          }}
+          keyboardType="numeric" placeholder="1" placeholderTextColor={colors.muted} returnKeyType="next"
           showClearButton={true}
           clearButtonColor={colors.muted}
+          focusBorderColor={focusBorderColor}
         />
       </View>
       <TouchableOpacity style={styles.cellDelete} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -181,11 +198,13 @@ const PieceRow = React.memo(({ piece, onUpdate, onDelete, onRenameId, colors }: 
       </TouchableOpacity>
     </View>
   );
-});
+}));
+
+PieceRow.displayName = 'PieceRow';
 
 // ─── 그룹 카드 ───────────────────────────────────────────────
 
-function GroupCard({ group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece, onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange, onMaterialCostChange }: {
+interface GroupCardProps {
   group: FilmGroup;
   groupIndex: number;
   colors: ReturnType<typeof useColors>;
@@ -198,12 +217,36 @@ function GroupCard({ group, groupIndex, colors, onRenamePress, onDeleteGroup, on
   onBrandChange: (brand: FilmBrand) => void;
   onFilmNameChange: (name: string) => void;
   onMaterialCostChange: (cost: number | undefined) => void;
-}) {
+  /** 이 그룹의 마지막 조각 수량 입력 완료 시 다음 그룹 첫 번째 필드로 포커스 이동하는 콜백 */
+  onLastPieceQuantitySubmit?: () => void;
+  /** 이 그룹의 첫 번째 조각 가로 입력 필드에 포커스를 부여하는 ref 등록 콜백 */
+  registerFirstFieldRef?: (ref: TextInput | null) => void;
+}
+
+function GroupCard({
+  group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
+  onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
+  onMaterialCostChange, onLastPieceQuantitySubmit, registerFirstFieldRef,
+}: GroupCardProps) {
   const [filmNameText, setFilmNameText] = useState(group.filmName);
   const [costText, setCostText] = useState(group.materialCostPerM ? String(group.materialCostPerM) : "");
   const [useCustomCost, setUseCustomCost] = useState(group.materialCostPerM !== undefined);
   const bgColor = GROUP_COLORS[groupIndex % GROUP_COLORS.length];
   const borderColor = GROUP_BORDER_COLORS[groupIndex % GROUP_BORDER_COLORS.length];
+
+  // 각 조각의 첫 번째 필드(가로) ref를 보관하는 배열
+  const pieceFirstFieldRefs = useRef<(TextInput | null)[]>([]);
+
+  // 조각 수량 필드 submit 핸들러: 다음 조각의 가로 필드로 이동, 마지막이면 그룹 간 이동
+  const handlePieceQuantitySubmit = useCallback((pieceIndex: number) => {
+    const nextRef = pieceFirstFieldRefs.current[pieceIndex + 1];
+    if (nextRef) {
+      nextRef.focus();
+    } else {
+      // 이 그룹의 마지막 조각 → 다음 그룹으로 이동
+      onLastPieceQuantitySubmit?.();
+    }
+  }, [onLastPieceQuantitySubmit]);
 
   return (
     <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor }]}>
@@ -233,6 +276,7 @@ function GroupCard({ group, groupIndex, colors, onRenamePress, onDeleteGroup, on
             placeholder="예: 우드 오크, 화이트 무광..." placeholderTextColor={colors.muted} returnKeyType="done"
             showClearButton={true}
             clearButtonColor={colors.muted}
+            focusBorderColor={borderColor}
           />
         </View>
         <View style={styles.materialRow}>
@@ -275,6 +319,7 @@ function GroupCard({ group, groupIndex, colors, onRenamePress, onDeleteGroup, on
                   returnKeyType="done"
                   showClearButton={true}
                   clearButtonColor={colors.muted}
+                  focusBorderColor={borderColor}
                 />
                 <Text style={[styles.costUnit, { color: colors.muted }]}>원/m</Text>
               </View>
@@ -295,12 +340,22 @@ function GroupCard({ group, groupIndex, colors, onRenamePress, onDeleteGroup, on
         <View style={styles.cellDelete} />
       </View>
 
-      {group.pieces.map((piece) => (
+      {group.pieces.map((piece, pieceIndex) => (
         <PieceRow
-          key={piece.id} piece={piece} colors={colors}
+          key={piece.id}
+          ref={(r) => {
+            // 첫 번째 조각의 widthRef를 pieceFirstFieldRefs에 등록
+            // 또한 pieceIndex === 0이면 그룹의 첫 번째 필드로서 registerFirstFieldRef에도 등록
+            pieceFirstFieldRefs.current[pieceIndex] = r;
+            if (pieceIndex === 0) registerFirstFieldRef?.(r);
+          }}
+          piece={piece}
+          colors={colors}
+          focusBorderColor={borderColor}
           onUpdate={(field, value) => onUpdatePiece(piece.id, field, value)}
           onDelete={() => onDeletePiece(piece.id)}
           onRenameId={(newId) => onRenamePiece(piece.id, newId)}
+          onQuantitySubmit={() => handlePieceQuantitySubmit(pieceIndex)}
         />
       ))}
 
@@ -320,6 +375,9 @@ export default function InputScreen() {
   const [renameTarget, setRenameTarget] = useState<{ groupId: string; groupName: string } | null>(null);
   const [renameText, setRenameText] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+
+  // 각 그룹의 첫 번째 조각 가로 필드 ref를 보관 (그룹 간 포커스 이동에 사용)
+  const groupFirstFieldRefs = useRef<(TextInput | null)[]>([]);
 
   const handleAddGroup = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -342,7 +400,6 @@ export default function InputScreen() {
         if (Platform.OS !== "web") {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         }
-        // 단일 액션으로 전체 초기화 (forEach 대신)
         dispatch({ type: "RESET_GROUPS" });
       },
       "초기화",
@@ -437,6 +494,16 @@ export default function InputScreen() {
                 onBrandChange={(brand) => dispatch({ type: "UPDATE_GROUP_BRAND", payload: { groupId: group.groupId, brand } })}
                 onFilmNameChange={(filmName) => dispatch({ type: "UPDATE_GROUP_FILM_NAME", payload: { groupId: group.groupId, filmName } })}
                 onMaterialCostChange={(cost) => dispatch({ type: "UPDATE_GROUP_MATERIAL_COST", payload: { groupId: group.groupId, materialCostPerM: cost } })}
+                onLastPieceQuantitySubmit={() => {
+                  // 다음 그룹의 첫 번째 필드로 포커스 이동
+                  const nextRef = groupFirstFieldRefs.current[index + 1];
+                  if (nextRef) {
+                    nextRef.focus();
+                  }
+                }}
+                registerFirstFieldRef={(ref) => {
+                  groupFirstFieldRefs.current[index] = ref;
+                }}
               />
             )}
             ListFooterComponent={
