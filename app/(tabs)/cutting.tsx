@@ -400,27 +400,38 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
       const layout = containerLayoutRef.current;
       const mx = (ev.clientX - layout.x) / scale;
       const my = (ev.clientY - layout.y) / scale;
-      const dx = mx - webDragRef.current.startMouseX;
-      const dy = my - webDragRef.current.startMouseY;
+      // webDragRef.current를 지역 변수로 캡처 (setPieces 콜백 실행 시점에 null이 될 수 있으므로)
+      const drag = webDragRef.current;
+      if (!drag) return;
+      const dx = mx - drag.startMouseX;
+      const dy = my - drag.startMouseY;
       setPieces((prev) => {
-        const target = prev.find((p) => pieceKey(p) === webDragRef.current!.key);
+        if (!drag) return prev;
+        const target = prev.find((p) => pieceKey(p) === drag.key);
         if (!target) return prev;
-        const nx = Math.max(0, Math.min(snapToGrid(webDragRef.current!.startPieceX + dx), filmW - target.width));
-        const ny = Math.max(0, snapToGrid(webDragRef.current!.startPieceY + dy));
-        const hasCollision = checkCollision(webDragRef.current!.key, nx, ny, target.width, target.height, prev);
-        setCollisionKey(hasCollision ? webDragRef.current!.key : null);
-        return prev.map((p) => pieceKey(p) === webDragRef.current!.key ? { ...p, x: nx, y: ny } : p);
+        const nx = Math.max(0, Math.min(snapToGrid(drag.startPieceX + dx), filmW - target.width));
+        const ny = Math.max(0, snapToGrid(drag.startPieceY + dy));
+        const hasCollision = checkCollision(drag.key, nx, ny, target.width, target.height, prev);
+        setCollisionKey(hasCollision ? drag.key : null);
+        return prev.map((p) => pieceKey(p) === drag.key ? { ...p, x: nx, y: ny } : p);
       });
     };
     const handleMouseUp = () => {
-      if (!webDragRef.current) return;
-      const dragKey = webDragRef.current.key;
+      const dragSnap = webDragRef.current;
+      if (!dragSnap) return;
+      const dragKey = dragSnap.key;
+      const startX = dragSnap.startPieceX;
+      const startY = dragSnap.startPieceY;
+      // 먼저 ref를 null로 초기화하여 추가 mousemove 이벤트 차단
+      webDragRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
       setPieces((prev) => {
         const target = prev.find((p) => pieceKey(p) === dragKey);
         if (target && checkCollision(dragKey, target.x, target.y, target.width, target.height, prev)) {
           // 충돌 시 원래 위치로 복원
           return prev.map((p) => pieceKey(p) === dragKey
-            ? { ...p, x: webDragRef.current!.startPieceX, y: webDragRef.current!.startPieceY }
+            ? { ...p, x: startX, y: startY }
             : p);
         }
         return prev;
@@ -428,9 +439,6 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
       setCollisionKey(null);
       setDraggingId(null);
       setDraggingInstance(-1);
-      webDragRef.current = null;
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
     };
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
