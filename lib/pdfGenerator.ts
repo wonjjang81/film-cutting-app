@@ -449,11 +449,21 @@ function generatePlacementSvgHtml(
     // 라벨 (조각이 충분히 클 때만)
     if (pw > 30 && ph > 18) {
       const cx = px + pw / 2;
-      const cy = py + ph / 2;
       const label = p.instanceIndex > 0 ? `${p.id}-${p.instanceIndex + 1}` : p.id;
       const sizeLabel = `${p.width}×${p.height}`;
-      pieceRects.push(`<text x="${cx}" y="${cy - 5}" font-size="13.5" fill="${stroke}" text-anchor="middle" font-weight="600">${label}</text>`);
-      pieceRects.push(`<text x="${cx}" y="${cy + 7}" font-size="12" fill="${stroke}" text-anchor="middle">${sizeLabel}</text>`);
+      // 실제 폰트 크기 계산 (cutting.tsx와 동일 로직)
+      const idFs = Math.min(24, pw / 2.3, ph / 1.5);
+      const szFs = Math.min(19, pw / 3.0, ph / 2.0);
+      const showSize = ph > 36; // ph는 이미 scale 적용된 px값
+      // 두 줄일 때: 중앙 기준 위아래 배치
+      const lineGap = showSize ? (idFs / 2 + szFs / 2 + 3) : 0;
+      // SVG text는 baseline 기준이므로 폰트 크기의 ~0.35배를 더해 중앙 정렬
+      const idY = py + ph / 2 - (showSize ? lineGap / 2 : 0) + idFs * 0.35;
+      const szY = py + ph / 2 + (showSize ? lineGap / 2 : 0) + szFs * 0.35;
+      pieceRects.push(`<text x="${cx}" y="${idY}" font-size="${idFs}" fill="${stroke}" text-anchor="middle" font-weight="700">${label}</text>`);
+      if (showSize) {
+        pieceRects.push(`<text x="${cx}" y="${szY}" font-size="${szFs}" fill="${stroke}" text-anchor="middle" opacity="0.8">${sizeLabel}</text>`);
+      }
     }
   }
 

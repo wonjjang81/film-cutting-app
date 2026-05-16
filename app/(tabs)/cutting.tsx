@@ -622,28 +622,37 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
                 strokeWidth={isDragging || isSelected ? 2.5 : 1.5}
                 opacity={isChecked ? 0.45 : isDragging ? 0.85 : 1} rx={2} />
               {/* ID / 사이즈 텍스트 */}
-              {pw > 28 && ph > 18 && !isChecked ? (
-                <>
-                  <SvgText
-                    x={px + pw / 2} y={py + ph / 2 - (ph > 36 ? 7 : 0)}
-                    textAnchor="middle"
-                    fontSize={Math.min(24, pw / 2.3, ph / 1.5)}
-                    fontWeight="800"
-                    fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci]}>
-                    {p.id}{p.instanceIndex > 0 ? `-${p.instanceIndex + 1}` : ""}
-                  </SvgText>
-                  {ph > 36 ? (
+              {pw > 28 && ph > 18 && !isChecked ? (() => {
+                const idFs = Math.min(24, pw / 2.3, ph / 1.5);
+                const szFs = Math.min(19, pw / 3.0, ph / 2.0);
+                const showSize = ph > 36;
+                // 두 줄일 때: 중앙 기준으로 위아래 배치 (줄간격 = 두 폰트 크기 평균 + 여백)
+                const lineGap = showSize ? (idFs / 2 + szFs / 2 + 3) : 0;
+                const idY = py + ph / 2 - (showSize ? lineGap / 2 : 0) + idFs * 0.35;
+                const szY = py + ph / 2 + (showSize ? lineGap / 2 : 0) + szFs * 0.35;
+                return (
+                  <>
                     <SvgText
-                      x={px + pw / 2} y={py + ph / 2 + 10}
+                      x={px + pw / 2} y={idY}
                       textAnchor="middle"
-                      fontSize={Math.min(19, pw / 3.0, ph / 2.0)}
-                      fontWeight="600"
-                      fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci] + "CC"}>
-                      {`${p.width}×${p.height}`}
+                      fontSize={idFs}
+                      fontWeight="800"
+                      fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci]}>
+                      {p.id}{p.instanceIndex > 0 ? `-${p.instanceIndex + 1}` : ""}
                     </SvgText>
-                  ) : null}
-                </>
-              ) : (null as any)}
+                    {showSize ? (
+                      <SvgText
+                        x={px + pw / 2} y={szY}
+                        textAnchor="middle"
+                        fontSize={szFs}
+                        fontWeight="600"
+                        fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci] + "CC"}>
+                        {`${p.width}×${p.height}`}
+                      </SvgText>
+                    ) : null}
+                  </>
+                );
+              })() : (null as any)}
               {/* 재단 완료 X 표시 */}
               {isChecked ? (
                 <G>
