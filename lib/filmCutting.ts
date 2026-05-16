@@ -28,6 +28,7 @@ export interface FilmGroup {
   filmName: string;
   materialCostPerM?: number;  // 그룹별 자재비 m당 단가 (원/m). 미설정 시 전역 기본값 사용.
   constructionPricePerM2?: number;  // 그룹별 시공비 m²당 단가 (원/m²). 미설정 시 전역 기본값 사용.
+  patternFixed?: boolean;  // 무늬 고정 여부. true이면 배치 시 조각 회전 금지.
   pieces: FilmPiece[];
   createdAt: number;
 }
@@ -152,11 +153,14 @@ function isOverlapping(
  * 1. 조각 width/height 원본값 유지 (스냅은 배치 위치에만 적용)
  * 2. 수량(quantity)만큼 개별 인스턴스로 전개하여 각각 배치
  * 3. 같은 ID 조각이 여러 개일 때 instanceIndex로 구분
+ * 4. allowRotation=true 시 90도 회전 배치도 시도하여 더 효율적인 위치 선택
+ *    allowRotation=false(무늬 고정) 시 입력된 width/height 방향 그대로만 배치
  */
 export function placeFilmPieces(
   pieces: FilmPiece[],
   filmWidth: number = FILM_WIDTH,
   groupId: string = '',
+  allowRotation: boolean = true,
 ): PlacementResult {
   // 수량 전개: 각 조각을 quantity만큼 개별 인스턴스로 분리
   interface ExpandedPiece {
@@ -199,33 +203,65 @@ export function placeFilmPieces(
     const pw = piece.width;   // 원본 크기 유지
     const ph = piece.height;  // 원본 크기 유지
 
-    if (pw > filmWidth || pw <= 0 || ph <= 0) continue;
+    if (pw <= 0 || ph <= 0) continue;
+
+    // 회전 후보 목록 결정
+    // allowRotation=true: 원본 방향과 90도 회전 방향 모두 시도
+    // allowRotation=false(무늬 고정): 원본 방향만 사용
+    type Candidate = { w: number; h: number; rotated: boolean };
+    const candidates: Candidate[] = [];
+    if (pw <= filmWidth) candidates.push({ w: pw, h: ph, rotated: false });
+    if (allowRotation && ph !== pw && ph <= filmWidth) {
+      candidates.push({ w: ph, h: pw, rotated: true });
+    }
+    // 배치 가능한 후보가 없으면 스킵
+    if (candidates.length === 0) continue;
 
     let bestX = -1;
-    let bestY = -1;
+    let bestY = Number.MAX_SAFE_INTEGER;
+    let bestW = pw;
+    let bestH = ph;
 
-    // 좌상단부터 SNAP 단위로 탐색
-    outer: for (let y = 0; y <= maxY + ph; y += SNAP) {
-      for (let x = 0; x + pw <= filmWidth; x += SNAP) {
-        let collision = false;
-        for (const pp of placed) {
-          if (isOverlapping(x, y, pw, ph, pp.x, pp.y, pp.width, pp.height)) {
-            collision = true;
-            break;
+    // 각 후보(원본/회전)에 대해 최적 위치 탐색 후 더 위쪽(y가 작은) 위치 선택
+    for (const cand of candidates) {
+      const cw = cand.w;
+      const ch = cand.h;
+
+      let candX = -1;
+      let candY = -1;
+
+      // 좌상단부터 SNAP 단위로 탐색
+      outer: for (let y = 0; y <= maxY + ch; y += SNAP) {
+        for (let x = 0; x + cw <= filmWidth; x += SNAP) {
+          let collision = false;
+          for (const pp of placed) {
+            if (isOverlapping(x, y, cw, ch, pp.x, pp.y, pp.width, pp.height)) {
+              collision = true;
+              break;
+            }
+          }
+          if (!collision) {
+            candX = x;
+            candY = y;
+            break outer;
           }
         }
-        if (!collision) {
-          bestX = x;
-          bestY = y;
-          break outer;
-        }
+      }
+
+      if (candX !== -1 && candY < bestY) {
+        bestX = candX;
+        bestY = candY;
+        bestW = cw;
+        bestH = ch;
       }
     }
 
-    // 배치 위치를 찾지 못한 경우 현재 maxY 아래에 강제 배치
+    // 배치 위치를 찾지 못한 경우 현재 maxY 아래에 강제 배치 (원본 방향 우선)
     if (bestX === -1) {
       bestX = 0;
       bestY = snapUp(maxY);
+      bestW = candidates[0].w;
+      bestH = candidates[0].h;
     }
 
     placed.push({
@@ -233,13 +269,13 @@ export function placeFilmPieces(
       instanceIndex,
       x: bestX,
       y: bestY,
-      width: pw,
-      height: ph,
+      width: bestW,
+      height: bestH,
       colorIndex: sizeColorMap.get(sizeKey(piece)) ?? 0,
       groupId,
     });
 
-    maxY = Math.max(maxY, bestY + ph);
+    maxY = Math.max(maxY, bestY + bestH);
   }
 
   // 필름 높이: 실제 사용된 최대 y + 마지막 조각 높이 (스냅 올림)
@@ -324,7 +360,7 @@ export function calculateFromGroups(
     const groupMaterialCostPerM = group.materialCostPerM ?? materialCostPerM;
     const groupConstructionPricePerM2 = group.constructionPricePerM2 ?? constructionPricePerM2;
 
-    const placement = placeFilmPieces(validPieces, FILM_WIDTH, group.groupId);
+    const placement = placeFilmPieces(validPieces, FILM_WIDTH, group.groupId, !group.patternFixed);
     const filmLengthM = filmHeightToLinearM(placement.filmHeight);
     const filmAreaM2 = FILM_WIDTH_M * filmLengthM;
     const materialCost = Math.round(filmLengthM * groupMaterialCostPerM);

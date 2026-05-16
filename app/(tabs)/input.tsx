@@ -230,6 +230,7 @@ interface GroupCardProps {
   onBrandChange: (brand: FilmBrand) => void;
   onFilmNameChange: (name: string) => void;
   onMaterialCostChange: (cost: number | undefined) => void;
+  onPatternFixedChange: (patternFixed: boolean) => void;
   /** 이 그룹의 마지막 조각 수량 입력 완료 시 다음 그룹 첫 번째 필드로 포커스 이동하는 콜백 */
   onLastPieceQuantitySubmit?: () => void;
   /** 이 그룹의 첫 번째 조각 가로 입력 필드에 포커스를 부여하는 ref 등록 콜백 */
@@ -240,7 +241,7 @@ interface GroupCardProps {
 function GroupCard({
   group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
   onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
-  onMaterialCostChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
+  onMaterialCostChange, onPatternFixedChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
 }: GroupCardProps) {
   const [filmNameText, setFilmNameText] = useState(group.filmName);
   const [costText, setCostText] = useState(group.materialCostPerM ? String(group.materialCostPerM) : "");
@@ -344,6 +345,31 @@ function GroupCard({
             )}
           </View>
         </View>
+
+        {/* 무늬 고정 체크버튼 */}
+        <TouchableOpacity
+          style={styles.patternFixedRow}
+          onPress={() => onPatternFixedChange(!group.patternFixed)}
+          activeOpacity={0.7}
+        >
+          <View style={[
+            styles.patternFixedCheckbox,
+            {
+              backgroundColor: group.patternFixed ? borderColor : colors.background,
+              borderColor: group.patternFixed ? borderColor : colors.border,
+            }
+          ]}>
+            {group.patternFixed && (
+              <Text style={styles.patternFixedCheckmark}>✓</Text>
+            )}
+          </View>
+          <Text style={[styles.patternFixedLabel, { color: group.patternFixed ? borderColor : colors.muted }]}>
+            무늬 고정 (방향 고정 배치)
+          </Text>
+          <Text style={[styles.patternFixedDesc, { color: colors.muted }]}>
+            {group.patternFixed ? '• 회전 금지' : '• 회전 허용'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
@@ -535,6 +561,7 @@ export default function InputScreen() {
                 onBrandChange={(brand) => dispatch({ type: "UPDATE_GROUP_BRAND", payload: { groupId: group.groupId, brand } })}
                 onFilmNameChange={(filmName) => dispatch({ type: "UPDATE_GROUP_FILM_NAME", payload: { groupId: group.groupId, filmName } })}
                 onMaterialCostChange={(cost) => dispatch({ type: "UPDATE_GROUP_MATERIAL_COST", payload: { groupId: group.groupId, materialCostPerM: cost } })}
+                onPatternFixedChange={(patternFixed) => dispatch({ type: "UPDATE_GROUP_PATTERN_FIXED", payload: { groupId: group.groupId, patternFixed } })}
                 onLastPieceQuantitySubmit={() => {
                   // 다음 그룹의 첫 번째 필드로 포커스 이동
                   const nextRef = groupFirstFieldRefs.current[index + 1];
@@ -656,4 +683,9 @@ const styles = StyleSheet.create({
   modalCancelText: { fontSize: 15, fontWeight: "500" },
   modalConfirmBtn: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: "center" },
   modalConfirmText: { color: "white", fontSize: 15, fontWeight: "700" },
+  patternFixedRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 9, gap: 8 },
+  patternFixedCheckbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  patternFixedCheckmark: { color: "white", fontSize: 13, fontWeight: "700", lineHeight: 16 },
+  patternFixedLabel: { fontSize: 13, fontWeight: "600" },
+  patternFixedDesc: { fontSize: 11, marginLeft: 4 },
 });

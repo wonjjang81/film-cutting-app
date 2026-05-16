@@ -56,10 +56,16 @@ describe("placeFilmPieces", () => {
     expect(result.pieces[0].height).toBe(213);
   });
 
-  it("필름 너비(1220mm) 초과 조각은 스킵", () => {
+  it("필름 너비(1220mm) 초과 조각은 회전 허용 시 회전하여 배치", () => {
     const pieces: FilmPiece[] = [{ id: "A_01", width: 1300, height: 300, quantity: 1 }];
-    const result = placeFilmPieces(pieces);
-    expect(result.pieces).toHaveLength(0);
+    // allowRotation=true(기본): height(300) <= filmWidth(1220)이므로 90도 회전하여 배치
+    const resultRotation = placeFilmPieces(pieces, FILM_WIDTH, '', true);
+    expect(resultRotation.pieces).toHaveLength(1);
+    expect(resultRotation.pieces[0].width).toBe(300);   // 회전 후 width = 원본 height
+    expect(resultRotation.pieces[0].height).toBe(1300); // 회전 후 height = 원본 width
+    // allowRotation=false(무늬 고정): width(1300) > filmWidth(1220)이므로 스킵
+    const resultFixed = placeFilmPieces(pieces, FILM_WIDTH, '', false);
+    expect(resultFixed.pieces).toHaveLength(0);
   });
 
   it("수량 2인 조각은 2개 인스턴스로 배치됨", () => {

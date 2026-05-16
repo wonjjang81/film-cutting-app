@@ -49,6 +49,7 @@ type FilmAction =
   | { type: 'UPDATE_GROUP_FILM_NAME'; payload: { groupId: string; filmName: string } }
   | { type: 'UPDATE_GROUP_MATERIAL_COST'; payload: { groupId: string; materialCostPerM: number | undefined } }
   | { type: 'UPDATE_GROUP_CONSTRUCTION_PRICE'; payload: { groupId: string; constructionPricePerM2: number | undefined } }
+  | { type: 'UPDATE_GROUP_PATTERN_FIXED'; payload: { groupId: string; patternFixed: boolean } }
   | { type: 'DELETE_GROUP'; payload: string }
   | { type: 'ADD_PIECE'; payload: { groupId: string } }
   | { type: 'UPDATE_PIECE'; payload: { groupId: string; pieceId: string; field: 'width' | 'height' | 'quantity'; value: number } }
@@ -177,6 +178,16 @@ function filmReducer(state: FilmState, action: FilmAction): FilmState {
         groups: state.groups.map((g) =>
           g.groupId === action.payload.groupId
             ? { ...g, constructionPricePerM2: action.payload.constructionPricePerM2 }
+            : g,
+        ),
+      };
+
+    case 'UPDATE_GROUP_PATTERN_FIXED':
+      return {
+        ...state,
+        groups: state.groups.map((g) =>
+          g.groupId === action.payload.groupId
+            ? { ...g, patternFixed: action.payload.patternFixed }
             : g,
         ),
       };
