@@ -243,9 +243,10 @@ interface GridCanvasProps {
   checkedKeys: Set<string>;
   onPiecePress: (piece: PlacedPiece) => void;
   editMode: boolean;
+  patternFixed?: boolean; // 무늬 고정 시 회전 버튼 비활성화
 }
 
-function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPiecePress, editMode }: GridCanvasProps) {
+function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPiecePress, editMode, patternFixed }: GridCanvasProps) {
   const [pieces, setPieces] = useState<PlacedPiece[]>(placement.pieces);
   // 편집 모드에서 선택된 조각 키
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -260,6 +261,8 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const containerLayoutRef = useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
   // 웹 드래그 중인 조각 키
   const webDragRef = useRef<{ key: string; startMouseX: number; startMouseY: number; startPieceX: number; startPieceY: number } | null>(null);
+  // 회전 실패 시 빨간 테두리 표시용
+  const [rotateFailKey, setRotateFailKey] = useState<string | null>(null);
 
   // placement prop이 변경될 때 (재계산 시) pieces 상태를 동기화
   useEffect(() => {
@@ -299,17 +302,27 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
       if (!target) return prev;
       const newW = target.height;
       const newH = target.width;
-      // 회전 후 경계 내에 맞도록 위치 조정
-      const nx = Math.min(target.x, filmW - newW);
-      const ny = target.y;
-      if (checkCollision(key, nx, ny, newW, newH, prev)) {
-        // 충돌 시 회전 취소
-        return prev;
+      // 1) 원래 위치에서 회전 시도
+      const nx0 = Math.min(target.x, filmW - newW);
+      if (!checkCollision(key, nx0, target.y, newW, newH, prev)) {
+        return prev.map((p) => pieceKey(p) === key ? { ...p, width: newW, height: newH, x: nx0, y: target.y } : p);
       }
-      return prev.map((p) => pieceKey(p) === key ? { ...p, width: newW, height: newH, x: nx, y: ny } : p);
+      // 2) 빈 공간 탐색 (50mm 그리드 단위로 스캔)
+      const step = 50;
+      for (let ty = 0; ty + newH <= filmH; ty += step) {
+        for (let tx = 0; tx + newW <= filmW; tx += step) {
+          if (!checkCollision(key, tx, ty, newW, newH, prev)) {
+            return prev.map((p) => pieceKey(p) === key ? { ...p, width: newW, height: newH, x: tx, y: ty } : p);
+          }
+        }
+      }
+      // 3) 빈 공간 없으면 회전 취소 → 선택 조각 빨간 테두리 표시
+      setRotateFailKey(key);
+      setTimeout(() => setRotateFailKey(null), 600);
+      return prev;
     });
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [filmW, checkCollision]);
+  }, [filmW, filmH, checkCollision]);
 
   // ── 네이티브 PanResponder ─────────────────────────────────
   const createPanResponder = useCallback((piece: PlacedPiece) => {
@@ -451,8 +464,11 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
     }
   }, [editMode]);
 
+  // 선택된 조각 찾기 (회전 버튼 위치 계산용)
+  const selectedPieceData = selectedKey ? pieces.find((p) => pieceKey(p) === selectedKey) : null;
+
   return (
-    <View>
+    <View style={{ position: 'relative' }}>
       {/* 웹 전용: div로 감싸서 getBoundingClientRect 사용 가능하게 함 */}
       {Platform.OS === 'web' && (
         <div ref={webContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: svgW, height: svgH, pointerEvents: 'none' }} />
@@ -483,8 +499,9 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
           const isSelected = editMode && selectedKey === key;
           const sk = `${p.width}x${p.height}`;
           const ci = sizeColorMap.get(sk) ?? (p.colorIndex % SIZE_FILL_COLORS.length);
-          const fill = isCollision ? "#FEE2E2" : SIZE_FILL_COLORS[ci];
-          const stroke = isCollision ? "#EF4444" : isSelected ? "#1D4ED8" : SIZE_STROKE_COLORS[ci];
+          const isRotateFail = rotateFailKey === key;
+          const fill = isCollision ? "#FEE2E2" : isRotateFail ? "#FEE2E2" : SIZE_FILL_COLORS[ci];
+          const stroke = isCollision ? "#EF4444" : isRotateFail ? "#EF4444" : isSelected ? "#1D4ED8" : SIZE_STROKE_COLORS[ci];
           const px = p.x * scale, py = p.y * scale;
           const pw = p.width * scale, ph = p.height * scale;
           const xSize = Math.min(pw, ph) * 0.65;
@@ -555,33 +572,7 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
                     stroke="#DC2626" strokeWidth={Math.max(2.5, xSize * 0.18)} strokeLinecap="round" />
                 </G>
               ) : (null as any)}
-              {/* 편집 모드 선택 시 회전 버튼 (웹 전용 SVG 오버레이) */}
-              {isSelected && Platform.OS === "web" && pw > 24 && ph > 24 ? (
-                <G
-                  onClick={(e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    handleRotate(key);
-                  }}
-                  style={{ cursor: "pointer" } as React.CSSProperties}
-                >
-                  {/* 회전 버튼 배경 원 */}
-                  <Rect
-                    x={px + pw - 22} y={py + 2}
-                    width={20} height={20}
-                    fill="#1D4ED8" rx={10} opacity={0.9}
-                  />
-                  {/* 회전 아이콘 텍스트 */}
-                  <SvgText
-                    x={px + pw - 12} y={py + 15}
-                    textAnchor="middle"
-                    fontSize={12}
-                    fill="white"
-                    fontWeight="700"
-                  >
-                    ↻
-                  </SvgText>
-                </G>
-              ) : (null as any)}
+
             </G>
           );
         })}
@@ -590,17 +581,48 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
           fill="none" stroke={colors.primary} strokeWidth={1.5} />
       </Svg>
 
+      {/* 웹 전용: 절대 위치 회전 버튼 오버레이 */}
+      {Platform.OS === 'web' && editMode && selectedPieceData && !patternFixed && (
+        <View
+          style={{
+            position: 'absolute',
+            left: selectedPieceData.x * scale + selectedPieceData.width * scale - 24,
+            top: selectedPieceData.y * scale + 2,
+            width: 22,
+            height: 22,
+            borderRadius: 11,
+            backgroundColor: '#1D4ED8',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 100,
+            opacity: 0.92,
+            // @ts-ignore
+            cursor: 'pointer',
+          }}
+          // @ts-ignore
+          onClick={(e: React.MouseEvent) => {
+            e.stopPropagation();
+            handleRotate(selectedKey!);
+          }}
+        >
+          <Text style={{ color: 'white', fontSize: 14, fontWeight: '700', lineHeight: 18 }}>↻</Text>
+        </View>
+      )}
+
       {/* 편집 모드 안내 텍스트 */}
       {editMode && (
         <View style={canvasEditStyles.hint}>
           <Text style={canvasEditStyles.hintText}>
-            조각을 드래그하여 이동 · 선택 후 우상단 ↻ 버튼으로 90° 회전
+            {patternFixed
+              ? '조각을 드래그하여 이동 (무늬 고정: 회전 불가)'
+              : '조각을 드래그하여 이동 · 선택 후 우상단 ↻ 버튼으로 90° 회전'
+            }
           </Text>
         </View>
       )}
 
       {/* 선택된 조각 편집 툴바 (네이티브 전용 회전 버튼) */}
-      {editMode && selectedKey && Platform.OS !== "web" && (
+      {editMode && selectedKey && Platform.OS !== "web" && !patternFixed && (
         <View style={canvasEditStyles.toolbar}>
           <TouchableOpacity
             style={canvasEditStyles.rotateBtn}
@@ -914,6 +936,7 @@ export default function ResultsScreen() {
                 checkedKeys={checkedKeys}
                 onPiecePress={(piece) => { if (!editMode) setSelectedPiece(piece); }}
                 editMode={editMode}
+                patternFixed={currentFilmGroup?.patternFixed}
               />
             )}
           </View>
