@@ -158,7 +158,7 @@ const popupStyles = StyleSheet.create({
 
 // ─── 체크리스트 아이템 타입 ───────────────────────────────────
 interface CheckItem {
-  id: string;           // 조각 ID (예: "A_01")
+  id: string;
   instanceIndex: number;
   width: number;
   height: number;
@@ -191,21 +191,14 @@ function CheckRow({ item, ci, onToggle, colors }: CheckRowProps) {
       }}
       activeOpacity={0.7}
     >
-      {/* 체크박스 */}
       <View style={[
         checkStyles.checkbox,
         { borderColor: item.checked ? strokeColor : colors.border },
         item.checked && { backgroundColor: strokeColor },
       ]}>
-        {item.checked && (
-          <Text style={checkStyles.checkMark}>✓</Text>
-        )}
+        {item.checked && <Text style={checkStyles.checkMark}>✓</Text>}
       </View>
-
-      {/* 색상 사이즈 뱃지 */}
       <View style={[checkStyles.sizeDot, { backgroundColor: fillColor, borderColor: strokeColor }]} />
-
-      {/* ID */}
       <Text style={[
         checkStyles.idText,
         { color: item.checked ? colors.muted : colors.foreground },
@@ -213,8 +206,6 @@ function CheckRow({ item, ci, onToggle, colors }: CheckRowProps) {
       ]}>
         {displayId}
       </Text>
-
-      {/* 사이즈 */}
       <Text style={[
         checkStyles.sizeText,
         { color: item.checked ? colors.muted : strokeColor },
@@ -222,8 +213,6 @@ function CheckRow({ item, ci, onToggle, colors }: CheckRowProps) {
       ]}>
         {item.width}×{item.height}
       </Text>
-
-      {/* 재단 완료 뱃지 */}
       {item.checked && (
         <View style={[checkStyles.doneBadge, { backgroundColor: strokeColor }]}>
           <Text style={checkStyles.doneBadgeText}>재단완료</Text>
@@ -234,62 +223,15 @@ function CheckRow({ item, ci, onToggle, colors }: CheckRowProps) {
 }
 
 const checkStyles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    borderRadius: 10,
-    borderWidth: 1,
-    marginBottom: 6,
-    gap: 10,
-  },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  checkMark: {
-    color: "white",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 16,
-  },
-  sizeDot: {
-    width: 14,
-    height: 14,
-    borderRadius: 3,
-    borderWidth: 1.5,
-  },
-  idText: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  sizeText: {
-    fontSize: 13,
-    fontWeight: "600",
-    minWidth: 80,
-    textAlign: "right",
-  },
-  strikethrough: {
-    textDecorationLine: "line-through",
-    opacity: 0.55,
-  },
-  doneBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  doneBadgeText: {
-    color: "white",
-    fontSize: 10,
-    fontWeight: "700",
-  },
+  row: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 11, borderRadius: 10, borderWidth: 1, marginBottom: 6, gap: 10 },
+  checkbox: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  checkMark: { color: "white", fontSize: 13, fontWeight: "800", lineHeight: 16 },
+  sizeDot: { width: 14, height: 14, borderRadius: 3, borderWidth: 1.5 },
+  idText: { flex: 1, fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
+  sizeText: { fontSize: 13, fontWeight: "600", minWidth: 80, textAlign: "right" },
+  strikethrough: { textDecorationLine: "line-through", opacity: 0.55 },
+  doneBadge: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 6 },
+  doneBadgeText: { color: "white", fontSize: 10, fontWeight: "700" },
 });
 
 // ─── 모눈종이 캔버스 ──────────────────────────────────────────
@@ -300,22 +242,35 @@ interface GridCanvasProps {
   sizeColorMap: Map<string, number>;
   checkedKeys: Set<string>;
   onPiecePress: (piece: PlacedPiece) => void;
+  editMode: boolean;
 }
 
-function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPiecePress }: GridCanvasProps) {
+function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPiecePress, editMode }: GridCanvasProps) {
   const [pieces, setPieces] = useState<PlacedPiece[]>(placement.pieces);
+  // 편집 모드에서 선택된 조각 키
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // 드래그 상태
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [draggingInstance, setDraggingInstance] = useState<number>(-1);
   const [collisionKey, setCollisionKey] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; pieceX: number; pieceY: number; moved: boolean } | null>(null);
+  // 웹 드래그용 SVG ref
+  const svgRef = useRef<any>(null);
+  // 웹 드래그 중인 조각 키
+  const webDragRef = useRef<{ key: string; startMouseX: number; startMouseY: number; startPieceX: number; startPieceY: number } | null>(null);
 
   // placement prop이 변경될 때 (재계산 시) pieces 상태를 동기화
-  // 드래그 중이 아닐 때만 갱신하여 드래그 조작을 방해하지 않음
   useEffect(() => {
-    if (draggingId === null) {
+    if (draggingId === null && webDragRef.current === null) {
       setPieces(placement.pieces);
+      setSelectedKey(null);
     }
   }, [placement.pieces, placement.filmHeight]);
+
+  // 편집 모드 해제 시 선택 초기화
+  useEffect(() => {
+    if (!editMode) setSelectedKey(null);
+  }, [editMode]);
 
   const filmW = placement.filmWidth;
   const filmH = Math.max(placement.filmHeight, 10);
@@ -335,11 +290,31 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
     return nx < 0 || ny < 0 || nx + w > filmW;
   }, [filmW]);
 
+  // ── 90도 회전 핸들러 ──────────────────────────────────────
+  const handleRotate = useCallback((key: string) => {
+    setPieces((prev) => {
+      const target = prev.find((p) => pieceKey(p) === key);
+      if (!target) return prev;
+      const newW = target.height;
+      const newH = target.width;
+      // 회전 후 경계 내에 맞도록 위치 조정
+      const nx = Math.min(target.x, filmW - newW);
+      const ny = target.y;
+      if (checkCollision(key, nx, ny, newW, newH, prev)) {
+        // 충돌 시 회전 취소
+        return prev;
+      }
+      return prev.map((p) => pieceKey(p) === key ? { ...p, width: newW, height: newH, x: nx, y: ny } : p);
+    });
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, [filmW, checkCollision]);
+
+  // ── 네이티브 PanResponder ─────────────────────────────────
   const createPanResponder = useCallback((piece: PlacedPiece) => {
     const key = pieceKey(piece);
     return PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: () => true,
+      onStartShouldSetPanResponder: () => editMode,
+      onMoveShouldSetPanResponder: () => editMode,
       onPanResponderGrant: (e) => {
         dragStartRef.current = {
           x: e.nativeEvent.pageX,
@@ -350,6 +325,7 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
         };
         setDraggingId(piece.id);
         setDraggingInstance(piece.instanceIndex);
+        setSelectedKey(key);
         if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       },
       onPanResponderMove: (e) => {
@@ -373,100 +349,282 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
           setPieces((prev) => prev.map((p) => pieceKey(p) === key ? { ...p, x: piece.x, y: piece.y } : p));
         }
         setCollisionKey(null);
-        if (!wasMoved) {
+        if (!wasMoved && !editMode) {
           const latest = pieces.find((p) => pieceKey(p) === key) ?? piece;
           onPiecePress(latest);
           if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         }
       },
     });
-  }, [pieces, scale, filmW, checkCollision, onPiecePress]);
+  }, [pieces, scale, filmW, checkCollision, onPiecePress, editMode]);
+
+  // ── 웹 마우스 이벤트 핸들러 ──────────────────────────────
+  const getSvgCoords = useCallback((e: React.MouseEvent) => {
+    const svgEl = svgRef.current as SVGSVGElement | null;
+    if (!svgEl) return { x: 0, y: 0 };
+    const rect = svgEl.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) / scale,
+      y: (e.clientY - rect.top) / scale,
+    };
+  }, [scale]);
+
+  const handleWebMouseDown = useCallback((e: React.MouseEvent, piece: PlacedPiece) => {
+    if (!editMode) return;
+    e.stopPropagation();
+    const key = pieceKey(piece);
+    setSelectedKey(key);
+    const { x, y } = getSvgCoords(e);
+    webDragRef.current = {
+      key,
+      startMouseX: x,
+      startMouseY: y,
+      startPieceX: piece.x,
+      startPieceY: piece.y,
+    };
+    setDraggingId(piece.id);
+    setDraggingInstance(piece.instanceIndex);
+    // 전역 mousemove/mouseup 이벤트 등록
+    const handleMouseMove = (ev: MouseEvent) => {
+      if (!webDragRef.current) return;
+      const svgEl = svgRef.current as SVGSVGElement | null;
+      if (!svgEl) return;
+      const rect = svgEl.getBoundingClientRect();
+      const mx = (ev.clientX - rect.left) / scale;
+      const my = (ev.clientY - rect.top) / scale;
+      const dx = mx - webDragRef.current.startMouseX;
+      const dy = my - webDragRef.current.startMouseY;
+      setPieces((prev) => {
+        const target = prev.find((p) => pieceKey(p) === webDragRef.current!.key);
+        if (!target) return prev;
+        const nx = Math.max(0, Math.min(snapToGrid(webDragRef.current!.startPieceX + dx), filmW - target.width));
+        const ny = Math.max(0, snapToGrid(webDragRef.current!.startPieceY + dy));
+        const hasCollision = checkCollision(webDragRef.current!.key, nx, ny, target.width, target.height, prev);
+        setCollisionKey(hasCollision ? webDragRef.current!.key : null);
+        return prev.map((p) => pieceKey(p) === webDragRef.current!.key ? { ...p, x: nx, y: ny } : p);
+      });
+    };
+    const handleMouseUp = () => {
+      if (!webDragRef.current) return;
+      const dragKey = webDragRef.current.key;
+      setPieces((prev) => {
+        const target = prev.find((p) => pieceKey(p) === dragKey);
+        if (target && checkCollision(dragKey, target.x, target.y, target.width, target.height, prev)) {
+          // 충돌 시 원래 위치로 복원
+          return prev.map((p) => pieceKey(p) === dragKey
+            ? { ...p, x: webDragRef.current!.startPieceX, y: webDragRef.current!.startPieceY }
+            : p);
+        }
+        return prev;
+      });
+      setCollisionKey(null);
+      setDraggingId(null);
+      setDraggingInstance(-1);
+      webDragRef.current = null;
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }, [editMode, getSvgCoords, scale, filmW, checkCollision]);
+
+  // SVG 빈 영역 클릭 시 선택 해제
+  const handleSvgClick = useCallback((e: React.MouseEvent) => {
+    if (editMode && e.target === svgRef.current) {
+      setSelectedKey(null);
+    }
+  }, [editMode]);
 
   return (
-    <Svg width={svgW} height={svgH}>
-      <Rect x={0} y={0} width={svgW} height={svgH} fill={colors.surface} />
-      {Array.from({ length: Math.ceil(filmH / GRID_STEP) + 1 }, (_, i) => i * GRID_STEP).map((y) => (
-        <Line key={`h-${y}`} x1={0} y1={y * scale} x2={svgW} y2={y * scale}
-          stroke={colors.border} strokeWidth={y % 100 === 0 ? 0.8 : 0.4} />
-      ))}
-      {Array.from({ length: Math.ceil(filmW / GRID_STEP) + 1 }, (_, i) => i * GRID_STEP).map((x) => (
-        <Line key={`v-${x}`} x1={x * scale} y1={0} x2={x * scale} y2={svgH}
-          stroke={colors.border} strokeWidth={x % 100 === 0 ? 0.8 : 0.4} />
-      ))}
-      {pieces.map((p) => {
-        const key = pieceKey(p);
-        const isDragging = draggingId === p.id && draggingInstance === p.instanceIndex;
-        const isCollision = collisionKey === key;
-        const isChecked = checkedKeys.has(key);
-        const sk = `${p.width}x${p.height}`;
-        const ci = sizeColorMap.get(sk) ?? (p.colorIndex % SIZE_FILL_COLORS.length);
-        const fill = isCollision ? "#FEE2E2" : SIZE_FILL_COLORS[ci];
-        const stroke = isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci];
-        const px = p.x * scale, py = p.y * scale;
-        const pw = p.width * scale, ph = p.height * scale;
-        // X 표시 크기: 조각 크기의 65% 정도로 크게
-        const xSize = Math.min(pw, ph) * 0.65;
-        const xCx = px + pw / 2;
-        const xCy = py + ph / 2;
-        const xHalf = xSize / 2;
-        return (
-          <G key={key} {...(Platform.OS !== "web" ? createPanResponder(p).panHandlers : {})}>
-            {/* 조각 배경 - 체크 시 반투명 처리 */}
-            <Rect x={px} y={py} width={pw} height={ph}
-              fill={fill} stroke={stroke}
-              strokeWidth={isDragging ? 2.5 : 1.5}
-              opacity={isChecked ? 0.45 : isDragging ? 0.85 : 1} rx={2} />
-            {/* ID / 사이즈 텍스트 */}
-            {pw > 28 && ph > 18 && !isChecked && (
-              <>
-                <SvgText
-                  x={px + pw / 2} y={py + ph / 2 - (ph > 36 ? 7 : 0)}
-                  textAnchor="middle"
-                  fontSize={Math.min(16, pw / 3.5, ph / 2.2)}
-                  fontWeight="800"
-                  fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci]}>
-                  {p.id}{p.instanceIndex > 0 ? `-${p.instanceIndex + 1}` : ""}
-                </SvgText>
-                {ph > 36 && (
+    <View>
+      <Svg
+        ref={svgRef}
+        width={svgW}
+        height={svgH}
+        {...(Platform.OS === "web" ? { onClick: handleSvgClick } : {})}
+      >
+        <Rect x={0} y={0} width={svgW} height={svgH} fill={colors.surface} />
+        {/* 모눈 가로선 */}
+        {Array.from({ length: Math.ceil(filmH / GRID_STEP) + 1 }, (_, i) => i * GRID_STEP).map((y) => (
+          <Line key={`h-${y}`} x1={0} y1={y * scale} x2={svgW} y2={y * scale}
+            stroke={colors.border} strokeWidth={y % 100 === 0 ? 0.8 : 0.4} />
+        ))}
+        {/* 모눈 세로선 */}
+        {Array.from({ length: Math.ceil(filmW / GRID_STEP) + 1 }, (_, i) => i * GRID_STEP).map((x) => (
+          <Line key={`v-${x}`} x1={x * scale} y1={0} x2={x * scale} y2={svgH}
+            stroke={colors.border} strokeWidth={x % 100 === 0 ? 0.8 : 0.4} />
+        ))}
+        {/* 조각 렌더링 */}
+        {pieces.map((p) => {
+          const key = pieceKey(p);
+          const isDragging = draggingId === p.id && draggingInstance === p.instanceIndex;
+          const isCollision = collisionKey === key;
+          const isChecked = checkedKeys.has(key);
+          const isSelected = editMode && selectedKey === key;
+          const sk = `${p.width}x${p.height}`;
+          const ci = sizeColorMap.get(sk) ?? (p.colorIndex % SIZE_FILL_COLORS.length);
+          const fill = isCollision ? "#FEE2E2" : SIZE_FILL_COLORS[ci];
+          const stroke = isCollision ? "#EF4444" : isSelected ? "#1D4ED8" : SIZE_STROKE_COLORS[ci];
+          const px = p.x * scale, py = p.y * scale;
+          const pw = p.width * scale, ph = p.height * scale;
+          const xSize = Math.min(pw, ph) * 0.65;
+          const xCx = px + pw / 2;
+          const xCy = py + ph / 2;
+          const xHalf = xSize / 2;
+
+          // 웹 이벤트 props
+          const webProps = Platform.OS === "web" ? {
+            onMouseDown: (e: React.MouseEvent) => handleWebMouseDown(e, p),
+            onClick: (e: React.MouseEvent) => {
+              e.stopPropagation();
+              if (!editMode) onPiecePress(p);
+            },
+            style: { cursor: editMode ? "grab" : "pointer" } as React.CSSProperties,
+          } : {};
+
+          return (
+            <G
+              key={key}
+              {...(Platform.OS !== "web" ? createPanResponder(p).panHandlers : {})}
+              {...(webProps as any)}
+            >
+              {/* 선택 하이라이트 배경 */}
+              {isSelected ? (
+                <Rect
+                  x={px - 3} y={py - 3} width={pw + 6} height={ph + 6}
+                  fill="none" stroke="#1D4ED8" strokeWidth={2.5}
+                  strokeDasharray="6,3" rx={4} opacity={0.8}
+                />
+              ) : (null as any)}
+              {/* 조각 배경 */}
+              <Rect x={px} y={py} width={pw} height={ph}
+                fill={fill} stroke={stroke}
+                strokeWidth={isDragging || isSelected ? 2.5 : 1.5}
+                opacity={isChecked ? 0.45 : isDragging ? 0.85 : 1} rx={2} />
+              {/* ID / 사이즈 텍스트 */}
+              {pw > 28 && ph > 18 && !isChecked ? (
+                <>
                   <SvgText
-                    x={px + pw / 2} y={py + ph / 2 + 10}
+                    x={px + pw / 2} y={py + ph / 2 - (ph > 36 ? 7 : 0)}
                     textAnchor="middle"
-                    fontSize={Math.min(13, pw / 4.5, ph / 3)}
-                    fontWeight="600"
-                    fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci] + "CC"}>
-                    {`${p.width}×${p.height}`}
+                    fontSize={Math.min(16, pw / 3.5, ph / 2.2)}
+                    fontWeight="800"
+                    fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci]}>
+                    {p.id}{p.instanceIndex > 0 ? `-${p.instanceIndex + 1}` : ""}
                   </SvgText>
-                )}
-              </>
-            )}
-            {/* 재단 완료 X 표시 오버레이 */}
-            {isChecked && (
-              <G>
-                {/* 반투명 빨간 배경 오버레이 */}
-                <Rect x={px + 1} y={py + 1} width={pw - 2} height={ph - 2}
-                  fill="#EF4444" opacity={0.18} rx={2} />
-                {/* X 선 1: 좌상 → 우하 */}
-                <Line
-                  x1={xCx - xHalf} y1={xCy - xHalf}
-                  x2={xCx + xHalf} y2={xCy + xHalf}
-                  stroke="#DC2626" strokeWidth={Math.max(2.5, xSize * 0.18)}
-                  strokeLinecap="round" />
-                {/* X 선 2: 우상 → 좌하 */}
-                <Line
-                  x1={xCx + xHalf} y1={xCy - xHalf}
-                  x2={xCx - xHalf} y2={xCy + xHalf}
-                  stroke="#DC2626" strokeWidth={Math.max(2.5, xSize * 0.18)}
-                  strokeLinecap="round" />
-              </G>
-            )}
-          </G>
-        );
-      })}
-      <Rect x={0} y={0} width={svgW} height={svgH}
-        fill="none" stroke={colors.primary} strokeWidth={1.5} />
-    </Svg>
+                  {ph > 36 ? (
+                    <SvgText
+                      x={px + pw / 2} y={py + ph / 2 + 10}
+                      textAnchor="middle"
+                      fontSize={Math.min(13, pw / 4.5, ph / 3)}
+                      fontWeight="600"
+                      fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci] + "CC"}>
+                      {`${p.width}×${p.height}`}
+                    </SvgText>
+                  ) : null}
+                </>
+              ) : (null as any)}
+              {/* 재단 완료 X 표시 */}
+              {isChecked ? (
+                <G>
+                  <Rect x={px + 1} y={py + 1} width={pw - 2} height={ph - 2}
+                    fill="#EF4444" opacity={0.18} rx={2} />
+                  <Line x1={xCx - xHalf} y1={xCy - xHalf} x2={xCx + xHalf} y2={xCy + xHalf}
+                    stroke="#DC2626" strokeWidth={Math.max(2.5, xSize * 0.18)} strokeLinecap="round" />
+                  <Line x1={xCx + xHalf} y1={xCy - xHalf} x2={xCx - xHalf} y2={xCy + xHalf}
+                    stroke="#DC2626" strokeWidth={Math.max(2.5, xSize * 0.18)} strokeLinecap="round" />
+                </G>
+              ) : (null as any)}
+              {/* 편집 모드 선택 시 회전 버튼 (웹 전용 SVG 오버레이) */}
+              {isSelected && Platform.OS === "web" && pw > 24 && ph > 24 ? (
+                <G
+                  onClick={(e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    handleRotate(key);
+                  }}
+                  style={{ cursor: "pointer" } as React.CSSProperties}
+                >
+                  {/* 회전 버튼 배경 원 */}
+                  <Rect
+                    x={px + pw - 22} y={py + 2}
+                    width={20} height={20}
+                    fill="#1D4ED8" rx={10} opacity={0.9}
+                  />
+                  {/* 회전 아이콘 텍스트 */}
+                  <SvgText
+                    x={px + pw - 12} y={py + 15}
+                    textAnchor="middle"
+                    fontSize={12}
+                    fill="white"
+                    fontWeight="700"
+                  >
+                    ↻
+                  </SvgText>
+                </G>
+              ) : (null as any)}
+            </G>
+          );
+        })}
+        {/* 필름 경계 */}
+        <Rect x={0} y={0} width={svgW} height={svgH}
+          fill="none" stroke={colors.primary} strokeWidth={1.5} />
+      </Svg>
+
+      {/* 편집 모드 안내 텍스트 */}
+      {editMode && (
+        <View style={canvasEditStyles.hint}>
+          <Text style={canvasEditStyles.hintText}>
+            조각을 드래그하여 이동 · 선택 후 우상단 ↻ 버튼으로 90° 회전
+          </Text>
+        </View>
+      )}
+
+      {/* 선택된 조각 편집 툴바 (네이티브 전용 회전 버튼) */}
+      {editMode && selectedKey && Platform.OS !== "web" && (
+        <View style={canvasEditStyles.toolbar}>
+          <TouchableOpacity
+            style={canvasEditStyles.rotateBtn}
+            onPress={() => handleRotate(selectedKey)}>
+            <Text style={canvasEditStyles.rotateBtnText}>↻ 90° 회전</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
   );
 }
+
+const canvasEditStyles = StyleSheet.create({
+  hint: {
+    marginTop: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: "#EFF6FF",
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  hintText: {
+    fontSize: 11,
+    color: "#1D4ED8",
+    fontWeight: "600",
+  },
+  toolbar: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 8,
+    gap: 10,
+  },
+  rotateBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: "#1D4ED8",
+    borderRadius: 8,
+  },
+  rotateBtnText: {
+    color: "white",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+});
 
 // ─── 결과 화면 ────────────────────────────────────────────────
 export default function ResultsScreen() {
@@ -474,27 +632,25 @@ export default function ResultsScreen() {
   const { state } = useFilm();
   const result = state.lastResult;
 
-  // ── 모든 hooks는 early return 이전에 선언 (React 규칙) ──
   const [activeGroupId, setActiveGroupId] = useState<string>(() =>
     result?.groupResults[0]?.groupId ?? "",
   );
   const [canvasWidth, setCanvasWidth] = useState(0);
   const [selectedPiece, setSelectedPiece] = useState<PlacedPiece | null>(null);
-  // AsyncStorage 키
+  // 편집 모드 상태
+  const [editMode, setEditMode] = useState(false);
   const STORAGE_KEY = "film_cutting_checked_map";
 
-  // 체크된 조각 키 Set: "id_instanceIndex" 형태
-  const [checkedMap, setCheckedMap] = useState<Record<string, Set<string>>>({})
+  const [checkedMap, setCheckedMap] = useState<Record<string, Set<string>>>({});
 
-  // result(재계산) 변경 시 activeGroupId를 첫 번째 그룹으로 초기화
-  // 이전 그룹 ID가 남아있어 새 결과를 찾지 못하는 문제 방지
+  // result 변경 시 activeGroupId를 첫 번째 그룹으로 초기화
   useEffect(() => {
     if (result?.groupResults[0]?.groupId) {
       setActiveGroupId(result.groupResults[0].groupId);
+      setEditMode(false);
     }
   }, [result]);
 
-  // 앱 시작 시 저장된 체크 상태 불러오기
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
       if (!raw) return;
@@ -508,7 +664,7 @@ export default function ResultsScreen() {
       } catch (_) {}
     });
   }, []);
-  // 뷰 모드: "canvas" | "checklist"
+
   const [viewMode, setViewMode] = useState<"canvas" | "checklist">("canvas");
 
   const groupResults = result?.groupResults ?? [];
@@ -518,20 +674,17 @@ export default function ResultsScreen() {
   const fitScale = canvasWidth > 0 ? canvasWidth / FILM_WIDTH : 0.25;
   const currentFilmGroup = state.groups.find((g) => g.groupId === currentGroup?.groupId);
 
-  // 현재 그룹의 체크 Set
   const checkedKeys: Set<string> = useMemo(
     () => checkedMap[activeGroupId] ?? new Set<string>(),
     [checkedMap, activeGroupId],
   );
 
-  // 사이즈별 색상 맵 - groupId + pieces.length + filmHeight 변경 시 갱신 (재계산 감지)
   const sizeColorMap = useMemo(
     () => buildSizeColorMap(currentGroup?.placement.pieces ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [currentGroup?.groupId, currentGroup?.placement.pieces.length, currentGroup?.placement.filmHeight],
   );
 
-  // 범례 데이터
   const legendItems = useMemo(() => {
     if (!currentGroup) return [];
     const seen = new Map<string, { sizeKey: string; label: string; ci: number; count: number }>();
@@ -546,7 +699,6 @@ export default function ResultsScreen() {
     return Array.from(seen.values()).sort((a, b) => a.ci - b.ci);
   }, [currentGroup?.groupId, currentGroup?.placement.pieces.length, currentGroup?.placement.filmHeight, sizeColorMap]);
 
-  // 체크리스트 아이템 목록 (ID + instanceIndex 기준)
   const checkItems: CheckItem[] = useMemo(() => {
     if (!currentGroup) return [];
     return currentGroup.placement.pieces.map((p) => ({
@@ -561,7 +713,6 @@ export default function ResultsScreen() {
   const checkedCount = checkItems.filter((i) => i.checked).length;
   const totalCount = checkItems.length;
 
-  // 선택된 조각의 색상 인덱스
   const selectedCi = selectedPiece
     ? (sizeColorMap.get(`${selectedPiece.width}x${selectedPiece.height}`) ?? 0)
     : 0;
@@ -574,7 +725,6 @@ export default function ResultsScreen() {
       ).length
     : 0;
 
-  // checkedMap 변경 시 AsyncStorage에 저장
   useEffect(() => {
     const serialized: Record<string, string[]> = {};
     for (const [gid, keys] of Object.entries(checkedMap)) {
@@ -583,7 +733,6 @@ export default function ResultsScreen() {
     AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(serialized)).catch(() => {});
   }, [checkedMap]);
 
-  // 체크 토글 핸들러
   const handleToggle = useCallback((id: string, instanceIndex: number) => {
     const key = `${id}_${instanceIndex}`;
     setCheckedMap((prev) => {
@@ -594,7 +743,7 @@ export default function ResultsScreen() {
       return { ...prev, [activeGroupId]: next };
     });
   }, [activeGroupId]);
-  // 전체 체크/해제
+
   const handleToggleAll = useCallback(() => {
     if (!currentGroup) return;
     const allKeys = currentGroup.placement.pieces.map((p) => `${p.id}_${p.instanceIndex}`);
@@ -605,7 +754,6 @@ export default function ResultsScreen() {
     }));
   }, [currentGroup, checkedKeys, activeGroupId]);
 
-  // early return - 결과 없음
   if (!result || groupResults.length === 0) {
     return (
       <ScreenContainer>
@@ -622,6 +770,8 @@ export default function ResultsScreen() {
       </ScreenContainer>
     );
   }
+
+  const groupBorderColor = GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length];
 
   return (
     <ScreenContainer containerClassName="bg-background">
@@ -665,7 +815,7 @@ export default function ResultsScreen() {
             <TouchableOpacity
               key={gr.groupId}
               style={[styles.tab, isActive && [styles.tabActive, { borderBottomColor: bc }]]}
-              onPress={() => setActiveGroupId(gr.groupId)}>
+              onPress={() => { setActiveGroupId(gr.groupId); setEditMode(false); }}>
               <Text style={[styles.tabText, { color: isActive ? bc : colors.muted }]}>
                 {gr.groupName}
               </Text>
@@ -680,28 +830,45 @@ export default function ResultsScreen() {
       {/* 현재 그룹 요약 + 뷰 전환 버튼 */}
       <View style={[styles.groupSummaryBar, {
         backgroundColor: GROUP_COLORS[currentGroupIndex % GROUP_COLORS.length],
-        borderBottomColor: GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] + "40",
+        borderBottomColor: groupBorderColor + "40",
       }]}>
         <View style={styles.groupSummaryRow}>
-          <Text style={[styles.groupSummaryText, { color: GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length], flex: 1 }]}>
+          <Text style={[styles.groupSummaryText, { color: groupBorderColor, flex: 1 }]}>
             효율 {currentGroup!.placement.efficiency}%  ·  필름 {formatM(currentGroup!.filmLengthM)}m  ·  높이 {formatNumber(currentGroup!.placement.filmHeight)}mm
           </Text>
-          {/* 뷰 전환 토글 */}
-          <View style={[styles.viewToggle, { borderColor: GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] + "60" }]}>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === "canvas" && { backgroundColor: GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] }]}
-              onPress={() => setViewMode("canvas")}>
-              <Text style={[styles.viewToggleBtnText, { color: viewMode === "canvas" ? "white" : GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] }]}>
-                캔버스
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.viewToggleBtn, viewMode === "checklist" && { backgroundColor: GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] }]}
-              onPress={() => setViewMode("checklist")}>
-              <Text style={[styles.viewToggleBtnText, { color: viewMode === "checklist" ? "white" : GROUP_BORDER_COLORS[currentGroupIndex % GROUP_BORDER_COLORS.length] }]}>
-                체크리스트
-              </Text>
-            </TouchableOpacity>
+          <View style={styles.groupSummaryActions}>
+            {/* 편집 모드 토글 버튼 */}
+            {viewMode === "canvas" && (
+              <TouchableOpacity
+                style={[
+                  styles.editModeBtn,
+                  editMode
+                    ? { backgroundColor: "#1D4ED8", borderColor: "#1D4ED8" }
+                    : { backgroundColor: "transparent", borderColor: groupBorderColor + "80" },
+                ]}
+                onPress={() => setEditMode((v) => !v)}>
+                <Text style={[styles.editModeBtnText, { color: editMode ? "white" : groupBorderColor }]}>
+                  {editMode ? "✓ 편집 완료" : "✎ 수동 편집"}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {/* 뷰 전환 토글 */}
+            <View style={[styles.viewToggle, { borderColor: groupBorderColor + "60" }]}>
+              <TouchableOpacity
+                style={[styles.viewToggleBtn, viewMode === "canvas" && { backgroundColor: groupBorderColor }]}
+                onPress={() => setViewMode("canvas")}>
+                <Text style={[styles.viewToggleBtnText, { color: viewMode === "canvas" ? "white" : groupBorderColor }]}>
+                  캔버스
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.viewToggleBtn, viewMode === "checklist" && { backgroundColor: groupBorderColor }]}
+                onPress={() => setViewMode("checklist")}>
+                <Text style={[styles.viewToggleBtnText, { color: viewMode === "checklist" ? "white" : groupBorderColor }]}>
+                  체크리스트
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </View>
@@ -713,6 +880,8 @@ export default function ResultsScreen() {
           contentContainerStyle={styles.canvasContainer}
           showsVerticalScrollIndicator={false}
           onLayout={(e) => setCanvasWidth(e.nativeEvent.layout.width - CANVAS_PADDING * 2)}
+          // 편집 모드에서 스크롤 비활성화 (드래그와 충돌 방지)
+          scrollEnabled={!editMode}
         >
           <View style={{ padding: CANVAS_PADDING }}>
             {canvasWidth > 0 && (
@@ -723,7 +892,8 @@ export default function ResultsScreen() {
                 colors={colors}
                 sizeColorMap={sizeColorMap}
                 checkedKeys={checkedKeys}
-                onPiecePress={(piece) => setSelectedPiece(piece)}
+                onPiecePress={(piece) => { if (!editMode) setSelectedPiece(piece); }}
+                editMode={editMode}
               />
             )}
           </View>
@@ -751,17 +921,13 @@ export default function ResultsScreen() {
       {/* 체크리스트 뷰 */}
       {viewMode === "checklist" && (
         <View style={{ flex: 1 }}>
-          {/* 진행 헤더 */}
           <View style={[styles.checklistHeader, { backgroundColor: colors.surface, borderBottomColor: colors.border }]}>
             <View style={styles.checklistProgressRow}>
-              <Text style={[styles.checklistProgressText, { color: colors.foreground }]}>
-                재단 진행
-              </Text>
+              <Text style={[styles.checklistProgressText, { color: colors.foreground }]}>재단 진행</Text>
               <Text style={[styles.checklistProgressCount, { color: checkedCount === totalCount ? "#059669" : colors.primary }]}>
                 {checkedCount} / {totalCount}
               </Text>
             </View>
-            {/* 진행 바 */}
             <View style={[styles.progressBarBg, { backgroundColor: colors.border }]}>
               <View style={[
                 styles.progressBarFill,
@@ -771,7 +937,6 @@ export default function ResultsScreen() {
                 },
               ]} />
             </View>
-            {/* 전체 체크/해제 버튼 */}
             <TouchableOpacity
               style={[styles.toggleAllBtn, { borderColor: colors.border }]}
               onPress={handleToggleAll}>
@@ -780,22 +945,13 @@ export default function ResultsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-
-          {/* 체크리스트 */}
           <FlatList
             data={checkItems}
             keyExtractor={(item) => `${item.id}_${item.instanceIndex}`}
             contentContainerStyle={styles.checklistContent}
             renderItem={({ item }) => {
               const ci = sizeColorMap.get(`${item.width}x${item.height}`) ?? 0;
-              return (
-                <CheckRow
-                  item={item}
-                  ci={ci}
-                  onToggle={handleToggle}
-                  colors={colors}
-                />
-              );
+              return <CheckRow item={item} ci={ci} onToggle={handleToggle} colors={colors} />;
             }}
             ListHeaderComponent={
               checkedCount === totalCount && totalCount > 0 ? (
@@ -858,8 +1014,11 @@ const styles = StyleSheet.create({
   tabText: { fontSize: 14, fontWeight: "700" },
   tabSubText: { fontSize: 10, marginTop: 1 },
   groupSummaryBar: { paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
-  groupSummaryRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  groupSummaryRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   groupSummaryText: { fontSize: 11, fontWeight: "600" },
+  groupSummaryActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  editModeBtn: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8, borderWidth: 1.5 },
+  editModeBtnText: { fontSize: 11, fontWeight: "700" },
   viewToggle: { flexDirection: "row", borderRadius: 8, borderWidth: 1, overflow: "hidden" },
   viewToggleBtn: { paddingHorizontal: 10, paddingVertical: 5 },
   viewToggleBtnText: { fontSize: 11, fontWeight: "700" },
