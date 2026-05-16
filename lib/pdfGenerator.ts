@@ -512,6 +512,8 @@ function generatePlacementSvgHtml(
 
   return `
 <div class="page" style="page-break-after: ${pageIndex < totalPages - 1 ? 'always' : 'auto'}">
+
+  <!-- ① 헤더 -->
   <div class="page-header">
     <div class="page-title">
       <span class="group-badge">${groupName}</span>
@@ -524,6 +526,7 @@ function generatePlacementSvgHtml(
     </div>
   </div>
 
+  <!-- ② 요약 통계 -->
   <div class="stats-row">
     <div class="stat-box"><div class="stat-label">필름 너비</div><div class="stat-value">${filmW.toLocaleString()}mm</div></div>
     <div class="stat-box"><div class="stat-label">필름 길이</div><div class="stat-value">${filmLengthM.toFixed(2)}m (${filmH.toLocaleString()}mm)</div></div>
@@ -531,32 +534,36 @@ function generatePlacementSvgHtml(
     <div class="stat-box"><div class="stat-label">조각 수</div><div class="stat-value">${pieces.length}개</div></div>
   </div>
 
-  <div class="canvas-wrap">
-    <svg xmlns="http://www.w3.org/2000/svg" width="${svgViewW}" height="${svgViewH}" viewBox="0 0 ${svgViewW} ${svgViewH}" style="border:1.5px solid #374151;display:block">
-      <rect width="${svgViewW}" height="${svgViewH}" fill="#F9FAFB"/>
-      <g>${gridLines.join('')}</g>
-      <g>${pieceRects.join('')}</g>
-      <!-- 필름 경계선 -->
-      <rect x="0" y="0" width="${svgViewW}" height="${svgViewH}" fill="none" stroke="#374151" stroke-width="2"/>
-      <!-- 상단 치수 표시 -->
-      <text x="${svgViewW / 2}" y="-14" font-size="10" fill="#374151" text-anchor="middle" font-weight="600">← ${filmW.toLocaleString()}mm →</text>
-      <!-- 좌측 치수 표시 -->
-      <text x="-12" y="${svgViewH / 2}" font-size="10" fill="#374151" text-anchor="middle" transform="rotate(-90,-12,${svgViewH / 2})">${filmH.toLocaleString()}mm</text>
-    </svg>
+  <!-- ③ 재단 배치 이미지 -->
+  <div class="section-block">
+    <div class="section-title">재단 배치도</div>
+    <div class="canvas-wrap">
+      <svg xmlns="http://www.w3.org/2000/svg" width="${svgViewW}" height="${svgViewH}" viewBox="0 0 ${svgViewW} ${svgViewH}" style="border:2px solid #374151;display:block;border-radius:4px">
+        <rect width="${svgViewW}" height="${svgViewH}" fill="#F9FAFB"/>
+        <g>${gridLines.join('')}</g>
+        <g>${pieceRects.join('')}</g>
+        <rect x="0" y="0" width="${svgViewW}" height="${svgViewH}" fill="none" stroke="#374151" stroke-width="2"/>
+        <text x="${svgViewW / 2}" y="-16" font-size="11" fill="#374151" text-anchor="middle" font-weight="700">← ${filmW.toLocaleString()}mm →</text>
+        <text x="-14" y="${svgViewH / 2}" font-size="11" fill="#374151" text-anchor="middle" transform="rotate(-90,-14,${svgViewH / 2})">${filmH.toLocaleString()}mm</text>
+      </svg>
+    </div>
   </div>
 
-  <div class="legend-section">
-    <div class="legend-title">사이즈별 범례</div>
+  <!-- ④ 사이즈별 색상 범례 -->
+  <div class="section-block">
+    <div class="section-title">사이즈별 색상 범례</div>
     <div class="legend-grid">${legendHtml}</div>
   </div>
 
-  <div class="piece-table-section">
-    <div class="section-title">조각 목록</div>
+  <!-- ⑤ 재단 목록 -->
+  <div class="section-block">
+    <div class="section-title">재단 목록</div>
     <table class="piece-table">
-      <thead><tr><th>#</th><th>ID</th><th>가로(mm)</th><th>세로(mm)</th><th>수량</th></tr></thead>
+      <thead><tr><th style="width:40px">#</th><th>ID</th><th style="width:90px">가로(mm)</th><th style="width:90px">세로(mm)</th><th style="width:60px">수량</th></tr></thead>
       <tbody>${pieceTableRows}</tbody>
     </table>
   </div>
+
 </div>
 `;
 }
@@ -579,32 +586,74 @@ export function generateCuttingLayoutHTML(
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>재단 배치도 - ${projectName}</title>
 <style>
-  @page { size: A4 landscape; margin: 15mm 12mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; }
+  @page { size: A4 landscape; margin: 12mm 14mm; }
+  * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', 'Noto Sans KR', sans-serif; }
   body { background: white; color: #111827; font-size: 12px; }
-  .page { padding: 0; margin-bottom: 0; }
-  .page-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; border-bottom: 2px solid #1D4ED8; padding-bottom: 6px; }
-  .page-title { display: flex; align-items: center; gap: 8px; }
-  .group-badge { background: #1D4ED8; color: white; padding: 3px 10px; border-radius: 12px; font-size: 14px; font-weight: 700; }
+
+  /* 페이지 */
+  .page { padding: 0; }
+
+  /* 헤더 */
+  .page-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 8px; margin-bottom: 12px;
+    border-bottom: 2.5px solid #1D4ED8;
+  }
+  .page-title { display: flex; align-items: center; gap: 10px; }
+  .group-badge {
+    background: #1D4ED8; color: white;
+    padding: 4px 14px; border-radius: 14px;
+    font-size: 15px; font-weight: 700;
+  }
   .film-label { font-size: 13px; color: #374151; font-weight: 600; }
-  .page-meta { display: flex; gap: 12px; font-size: 10px; color: #6B7280; }
-  .stats-row { display: flex; gap: 8px; margin-bottom: 10px; }
-  .stat-box { flex: 1; background: #F3F4F6; border-radius: 6px; padding: 6px 10px; }
-  .stat-label { font-size: 9px; color: #6B7280; margin-bottom: 2px; }
-  .stat-value { font-size: 12px; font-weight: 700; color: #111827; }
-  .canvas-wrap { overflow: visible; margin-bottom: 10px; padding-top: 20px; padding-left: 20px; }
-  .legend-section { margin-bottom: 10px; }
-  .legend-title, .section-title { font-size: 11px; font-weight: 700; color: #374151; margin-bottom: 6px; }
-  .legend-grid { display: flex; flex-wrap: wrap; gap: 6px; }
-  .legend-item { display: flex; align-items: center; gap: 4px; font-size: 10px; }
-  .legend-swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; border-width: 1.5px; border-style: solid; flex-shrink: 0; }
-  .legend-label { color: #111827; font-weight: 600; }
-  .legend-count { color: #6B7280; }
-  .piece-table-section { }
-  .piece-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-  .piece-table th { background: #F3F4F6; padding: 4px 8px; text-align: left; border: 1px solid #E5E7EB; font-weight: 700; }
-  .piece-table td { padding: 3px 8px; border: 1px solid #E5E7EB; }
+  .page-meta { display: flex; gap: 14px; font-size: 10px; color: #6B7280; }
+
+  /* 통계 바 */
+  .stats-row { display: flex; gap: 10px; margin-bottom: 16px; }
+  .stat-box {
+    flex: 1; background: #F3F4F6; border-radius: 8px;
+    padding: 8px 12px; border-left: 3px solid #1D4ED8;
+  }
+  .stat-label { font-size: 9px; color: #6B7280; margin-bottom: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-value { font-size: 13px; font-weight: 700; color: #111827; }
+
+  /* 섹션 공통 */
+  .section-block { margin-bottom: 20px; }
+  .section-title {
+    font-size: 12px; font-weight: 700; color: #1D4ED8;
+    margin-bottom: 8px; padding-bottom: 4px;
+    border-bottom: 1px solid #DBEAFE;
+    letter-spacing: 0.3px;
+  }
+
+  /* 배치도 캔버스 */
+  .canvas-wrap { overflow: visible; padding-top: 22px; padding-left: 22px; }
+
+  /* 범례 */
+  .legend-grid { display: flex; flex-wrap: wrap; gap: 10px 20px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; padding: 4px 10px;
+    background: #F9FAFB; border-radius: 6px;
+    border: 1px solid #E5E7EB;
+  }
+  .legend-swatch {
+    display: inline-block; width: 16px; height: 16px;
+    border-radius: 3px; border-width: 2px; border-style: solid; flex-shrink: 0;
+  }
+  .legend-label { color: #111827; font-weight: 700; }
+  .legend-count { color: #6B7280; font-size: 10px; }
+
+  /* 재단 목록 테이블 */
+  .piece-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .piece-table th {
+    background: #EFF6FF; padding: 7px 10px;
+    text-align: left; border: 1px solid #BFDBFE;
+    font-weight: 700; color: #1E40AF;
+  }
+  .piece-table td { padding: 6px 10px; border: 1px solid #E5E7EB; }
   .piece-table tr:nth-child(even) td { background: #F9FAFB; }
+  .piece-table tr:hover td { background: #EFF6FF; }
 </style>
 </head>
 <body>
@@ -623,33 +672,21 @@ export async function exportCuttingLayoutPDF(
   const html = generateCuttingLayoutHTML(groupResults, projectName);
 
   if (Platform.OS === 'web') {
-    // 웹: 숨겨진 iframe을 이용해 팝업 차단 없이 인쇄
-    const iframe = document.createElement('iframe');
-    iframe.style.position = 'fixed';
-    iframe.style.right = '0';
-    iframe.style.bottom = '0';
-    iframe.style.width = '0';
-    iframe.style.height = '0';
-    iframe.style.border = 'none';
-    document.body.appendChild(iframe);
-    const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
-    if (!iframeDoc) {
-      document.body.removeChild(iframe);
-      throw new Error('PDF 생성에 실패했습니다.');
-    }
-    iframeDoc.open();
-    iframeDoc.write(html);
-    iframeDoc.close();
-    // 렌더링 대기 후 인쇄
+    // 웹: Blob URL로 독립 HTML 파일 다운로드 (기존 PDF와 병합 없음)
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const fileName = `재단배치도_${projectName}_${timestamp}.html`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
     setTimeout(() => {
-      try {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-      } finally {
-        // 인쇄 다이얼로그 닫힌 후 iframe 제거
-        setTimeout(() => document.body.removeChild(iframe), 1000);
-      }
-    }, 800);
+      URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }, 1000);
     return;
   }
 
