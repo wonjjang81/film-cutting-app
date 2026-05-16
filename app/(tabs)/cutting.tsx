@@ -254,8 +254,10 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const [draggingInstance, setDraggingInstance] = useState<number>(-1);
   const [collisionKey, setCollisionKey] = useState<string | null>(null);
   const dragStartRef = useRef<{ x: number; y: number; pieceX: number; pieceY: number; moved: boolean } | null>(null);
-  // 웹 드래그용 SVG ref
+  // 웹 드래그용 컨테이너 ref (웹에서는 div DOM 노드를 직접 사용)
   const svgRef = useRef<any>(null);
+  const webContainerRef = useRef<HTMLDivElement | null>(null);
+  const containerLayoutRef = useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
   // 웹 드래그 중인 조각 키
   const webDragRef = useRef<{ key: string; startMouseX: number; startMouseY: number; startPieceX: number; startPieceY: number } | null>(null);
 
@@ -360,12 +362,15 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
 
   // ── 웹 마우스 이벤트 핸들러 ──────────────────────────────
   const getSvgCoords = useCallback((e: React.MouseEvent) => {
-    const svgEl = svgRef.current as SVGSVGElement | null;
-    if (!svgEl) return { x: 0, y: 0 };
-    const rect = svgEl.getBoundingClientRect();
+    // 웹에서는 div DOM의 getBoundingClientRect를 사용하여 스크롤 오프셋도 자동 반영
+    if (Platform.OS === 'web' && webContainerRef.current) {
+      const rect = webContainerRef.current.getBoundingClientRect();
+      containerLayoutRef.current = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+    }
+    const layout = containerLayoutRef.current;
     return {
-      x: (e.clientX - rect.left) / scale,
-      y: (e.clientY - rect.top) / scale,
+      x: (e.clientX - layout.x) / scale,
+      y: (e.clientY - layout.y) / scale,
     };
   }, [scale]);
 
@@ -387,11 +392,14 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
     // 전역 mousemove/mouseup 이벤트 등록
     const handleMouseMove = (ev: MouseEvent) => {
       if (!webDragRef.current) return;
-      const svgEl = svgRef.current as SVGSVGElement | null;
-      if (!svgEl) return;
-      const rect = svgEl.getBoundingClientRect();
-      const mx = (ev.clientX - rect.left) / scale;
-      const my = (ev.clientY - rect.top) / scale;
+      // 스크롤 중에도 정확한 좌표를 위해 매번 getBoundingClientRect 갱신
+      if (webContainerRef.current) {
+        const rect = webContainerRef.current.getBoundingClientRect();
+        containerLayoutRef.current = { x: rect.left, y: rect.top, width: rect.width, height: rect.height };
+      }
+      const layout = containerLayoutRef.current;
+      const mx = (ev.clientX - layout.x) / scale;
+      const my = (ev.clientY - layout.y) / scale;
       const dx = mx - webDragRef.current.startMouseX;
       const dy = my - webDragRef.current.startMouseY;
       setPieces((prev) => {
@@ -437,6 +445,10 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
 
   return (
     <View>
+      {/* 웹 전용: div로 감싸서 getBoundingClientRect 사용 가능하게 함 */}
+      {Platform.OS === 'web' && (
+        <div ref={webContainerRef} style={{ position: 'absolute', top: 0, left: 0, width: svgW, height: svgH, pointerEvents: 'none' }} />
+      )}
       <Svg
         ref={svgRef}
         width={svgW}
