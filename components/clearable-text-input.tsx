@@ -15,19 +15,8 @@ export interface ClearableTextInputProps extends TextInputProps {
 
 /**
  * x 버튼으로 텍스트를 초기화할 수 있는 TextInput 컴포넌트
- * 포커스 시 테두리 색상이 변경되어 현재 활성 입력 필드를 시각적으로 표시합니다.
- *
- * 사용 예:
- * ```tsx
- * <ClearableTextInput
- *   value={text}
- *   onChangeText={setText}
- *   placeholder="입력하세요"
- *   focusBorderColor={colors.primary}
- *   showClearButton={text.length > 0}
- *   clearButtonColor={colors.error}
- * />
- * ```
+ * - X 버튼은 input 오른쪽 외부에 배치되어 텍스트와 겹치지 않습니다.
+ * - 포커스 시 테두리 색상이 변경되어 현재 활성 입력 필드를 시각적으로 표시합니다.
  */
 export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInputProps>(
   (
@@ -38,10 +27,11 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
       containerStyle,
       inputStyle,
       showClearButton = true,
-      clearButtonColor = '#EF4444',
+      clearButtonColor = '#9CA3AF',
       focusBorderColor,
       onFocus,
       onBlur,
+      style,
       ...textInputProps
     },
     ref
@@ -69,8 +59,9 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
     }, [onBlur]);
 
     // 포커스 상태에 따라 테두리 색상 결정
-    // focusBorderColor가 설정된 경우에만 포커스 시각화 적용
     const activeBorderColor = focusBorderColor && isFocused ? focusBorderColor : undefined;
+
+    const showBtn = showClearButton && isVisible;
 
     return (
       <View style={[styles.container, containerStyle]}>
@@ -83,11 +74,13 @@ export const ClearableTextInput = React.forwardRef<TextInput, ClearableTextInput
           onBlur={handleBlur}
           style={[
             styles.input,
-            inputStyle,
+            style,
+            // X 버튼이 보일 때 오른쪽 패딩 확보 (버튼 너비 28px + 여유 4px)
+            showBtn ? { paddingRight: 32 } : undefined,
             activeBorderColor ? { borderColor: activeBorderColor, borderWidth: 2 } : undefined,
           ]}
         />
-        {showClearButton && isVisible && (
+        {showBtn && (
           <TouchableOpacity
             onPress={handleClear}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -111,19 +104,19 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
     borderRadius: 8,
     borderWidth: 1.5,
   },
   clearButton: {
     position: 'absolute',
-    right: 12,
+    right: 6,
     padding: 4,
   },
   clearButtonText: {
-    fontSize: 20,
+    fontSize: 13,
     fontWeight: '600',
   },
 });

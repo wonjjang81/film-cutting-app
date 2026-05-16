@@ -160,7 +160,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           <View key={field} style={styles.cellInput}>
             <ClearableTextInput
               ref={ref}
-              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background, paddingRight: 32 }]}
+              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
               value={val}
               onChangeText={setter}
               onBlur={() => handleBlur(field, val)}
@@ -179,7 +179,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
       <View style={styles.cellQty}>
         <ClearableTextInput
           ref={quantityRef}
-          style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background, paddingRight: 32 }]}
+          style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
           value={qText}
           onChangeText={setQText}
           onBlur={() => handleBlur("quantity", qText)}
@@ -269,7 +269,7 @@ function GroupCard({
         <View style={styles.materialRow}>
           <Text style={[styles.materialLabel, { color: colors.muted }]}>필름명</Text>
           <ClearableTextInput
-            style={[styles.filmNameInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background, paddingRight: 32 }]}
+            style={[styles.filmNameInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
             value={filmNameText}
             onChangeText={setFilmNameText}
             onBlur={() => onFilmNameChange(filmNameText)}
@@ -300,7 +300,7 @@ function GroupCard({
             {useCustomCost ? (
               <View style={styles.costInputWrapper}>
                 <ClearableTextInput
-                  style={[styles.costInput, { color: colors.foreground, borderColor: borderColor, backgroundColor: colors.background, paddingRight: 32 }]}
+                  style={[styles.costInput, { color: colors.foreground, borderColor: borderColor, backgroundColor: colors.background }]}
                   value={costText}
                   onChangeText={setCostText}
                   onBlur={() => {
@@ -464,7 +464,8 @@ export default function InputScreen() {
             onPress={handleReset}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Text style={styles.resetBtnText}>전체 초기화</Text>
+            <Text style={styles.resetBtnIcon}>🗑</Text>
+            <Text style={styles.resetBtnText}>초기화</Text>
           </TouchableOpacity>
         </View>
 
@@ -555,8 +556,9 @@ const styles = StyleSheet.create({
   headerLeft: { flex: 1 },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "white" },
   headerSub: { fontSize: 12, marginTop: 2 },
-  resetBtn: { backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, marginLeft: 12 },
-  resetBtnText: { color: "white", fontSize: 13, fontWeight: "600" },
+  resetBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 13, paddingVertical: 8, borderRadius: 20, marginLeft: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
+  resetBtnIcon: { fontSize: 14 },
+  resetBtnText: { color: "rgba(255,255,255,0.95)", fontSize: 13, fontWeight: "600" },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
   emptyIcon: { fontSize: 48, marginBottom: 14 },
   emptyTitle: { fontSize: 17, fontWeight: "600", marginBottom: 8, textAlign: "center" },
@@ -584,19 +586,19 @@ const styles = StyleSheet.create({
   costInput: { flex: 1, borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, textAlign: "right", fontWeight: "500" },
   costUnit: { fontSize: 11, fontWeight: "500" },
   costDefaultText: { fontSize: 12 },
-  tableHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: 1 },
-  thId: { width: 52, fontSize: 11, fontWeight: "600", textAlign: "center" },
+  tableHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 7, borderBottomWidth: 1 },
+  thId: { width: 48, fontSize: 11, fontWeight: "600", textAlign: "center" },
   thInput: { flex: 1, fontSize: 11, fontWeight: "600", textAlign: "center" },
-  thQty: { width: 52, fontSize: 11, fontWeight: "600", textAlign: "center" },
-  pieceRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 8, paddingVertical: 6, borderBottomWidth: StyleSheet.hairlineWidth },
-  cellId: { width: 52, alignItems: "center" },
+  thQty: { width: 60, fontSize: 11, fontWeight: "600", textAlign: "center" },
+  pieceRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth },
+  cellId: { width: 48, alignItems: "center" },
   idText: { fontSize: 11, fontWeight: "600", textDecorationLine: "underline" },
   idEditHint: { fontSize: 8, textAlign: "center", marginTop: 1 },
-  idInput: { fontSize: 11, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 4, width: 48, textAlign: "center", fontWeight: "500" },
-  cellInput: { flex: 1, paddingHorizontal: 3 },
-  cellQty: { width: 52, paddingHorizontal: 3 },
-  cellDelete: { width: 32, alignItems: "center" },
-  input: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 14, textAlign: "center", height: 42, fontWeight: "500" },
+  idInput: { fontSize: 11, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 4, width: 44, textAlign: "center", fontWeight: "500" },
+  cellInput: { flex: 1, paddingHorizontal: 3, minWidth: 0 },
+  cellQty: { width: 60, paddingHorizontal: 3 },
+  cellDelete: { width: 28, alignItems: "center" },
+  input: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, fontSize: 13, textAlign: "center", height: 40, fontWeight: "500" },
   addPieceBtn: { margin: 10, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderStyle: "dashed", alignItems: "center" },
   addPieceBtnText: { fontSize: 13, fontWeight: "600" },
   addGroupBtn: { marginHorizontal: 12, marginVertical: 8, paddingVertical: 13, borderRadius: 10, borderWidth: 1.5, alignItems: "center" },
