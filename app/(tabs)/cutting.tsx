@@ -30,8 +30,70 @@ import {
 
 const CANVAS_PADDING = 12;
 const SNAP = 5;
+const SNAP_EDGE = 30; // 인접 조각 스냅 임계값 (mm)
 
 function snapToGrid(v: number) { return Math.round(v / SNAP) * SNAP; }
+
+/**
+ * 드래그 중인 조각(nx, ny, w, h)을 주변 조각 및 필름 경계에 스냅시킨다.
+ * 스냅 가이드라인 좌표도 반환한다.
+ */
+function applyEdgeSnap(
+  nx: number, ny: number, w: number, h: number,
+  filmW: number,
+  others: PlacedPiece[],
+  dragKey: string,
+): { x: number; y: number; guideX: number | null; guideY: number | null } {
+  let bestX = nx;
+  let bestY = ny;
+  let minDX = SNAP_EDGE;
+  let minDY = SNAP_EDGE;
+  let guideX: number | null = null;
+  let guideY: number | null = null;
+
+  // 후보 X 스냅 가장자리: 필름 경계 + 다른 조각의 left/right
+  const xCandidates: { edge: number; guide: number }[] = [
+    { edge: 0, guide: 0 },                   // 필름 왼쪽 경계 (조각 left → 0)
+    { edge: filmW - w, guide: filmW },        // 필름 오른쪽 경계 (조각 right → filmW)
+  ];
+  // 후보 Y 스냅 가장자리: y=0 + 다른 조각의 top/bottom
+  const yCandidates: { edge: number; guide: number }[] = [
+    { edge: 0, guide: 0 },                   // 필름 상단 경계
+  ];
+
+  for (const p of others) {
+    if (`${p.id}_${p.instanceIndex}` === dragKey) continue;
+    // X: 내 right → 상대 left (붙이기), 내 left → 상대 right
+    xCandidates.push({ edge: p.x - w, guide: p.x });        // 내 오른쪽이 상대 왼쪽에 붙음
+    xCandidates.push({ edge: p.x + p.width, guide: p.x + p.width }); // 내 왼쪽이 상대 오른쪽에 붙음
+    xCandidates.push({ edge: p.x, guide: p.x });            // 내 왼쪽이 상대 왼쪽 정렬
+    xCandidates.push({ edge: p.x + p.width - w, guide: p.x + p.width }); // 내 오른쪽이 상대 오른쪽 정렬
+    // Y: 내 bottom → 상대 top, 내 top → 상대 bottom
+    yCandidates.push({ edge: p.y - h, guide: p.y });         // 내 아래쪽이 상대 위쪽에 붙음
+    yCandidates.push({ edge: p.y + p.height, guide: p.y + p.height }); // 내 위쪽이 상대 아래쪽에 붙음
+    yCandidates.push({ edge: p.y, guide: p.y });             // 내 위쪽이 상대 위쪽 정렬
+    yCandidates.push({ edge: p.y + p.height - h, guide: p.y + p.height }); // 내 아래쪽이 상대 아래쪽 정렬
+  }
+
+  for (const { edge, guide } of xCandidates) {
+    const d = Math.abs(nx - edge);
+    if (d < minDX) { minDX = d; bestX = edge; guideX = guide; }
+  }
+  for (const { edge, guide } of yCandidates) {
+    const d = Math.abs(ny - edge);
+    if (d < minDY) { minDY = d; bestY = edge; guideY = guide; }
+  }
+
+  // 스냅 없으면 5mm 그리드 스냅으로 폴백
+  if (minDX >= SNAP_EDGE) bestX = snapToGrid(nx);
+  if (minDY >= SNAP_EDGE) bestY = snapToGrid(ny);
+
+  // 경계 클램프
+  bestX = Math.max(0, Math.min(bestX, filmW - w));
+  bestY = Math.max(0, bestY);
+
+  return { x: bestX, y: bestY, guideX: minDX < SNAP_EDGE ? guideX : null, guideY: minDY < SNAP_EDGE ? guideY : null };
+}
 function isOverlapping(
   ax: number, ay: number, aw: number, ah: number,
   bx: number, by: number, bw: number, bh: number,
@@ -263,6 +325,8 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
   const webDragRef = useRef<{ key: string; startMouseX: number; startMouseY: number; startPieceX: number; startPieceY: number } | null>(null);
   // 회전 실패 시 빨간 테두리 표시용
   const [rotateFailKey, setRotateFailKey] = useState<string | null>(null);
+  // 스냅 가이드라인 좌표 (SVG 단위, null이면 표시 안 함)
+  const [snapGuide, setSnapGuide] = useState<{ x: number | null; y: number | null }>({ x: null, y: null });
 
   // placement prop이 변경될 때 (재계산 시) pieces 상태를 동기화
   useEffect(() => {
@@ -422,11 +486,13 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
         if (!drag) return prev;
         const target = prev.find((p) => pieceKey(p) === drag.key);
         if (!target) return prev;
-        const nx = Math.max(0, Math.min(snapToGrid(drag.startPieceX + dx), filmW - target.width));
-        const ny = Math.max(0, snapToGrid(drag.startPieceY + dy));
-        const hasCollision = checkCollision(drag.key, nx, ny, target.width, target.height, prev);
+        const rawX = drag.startPieceX + dx;
+        const rawY = drag.startPieceY + dy;
+        const snapped = applyEdgeSnap(rawX, rawY, target.width, target.height, filmW, prev, drag.key);
+        setSnapGuide({ x: snapped.guideX, y: snapped.guideY });
+        const hasCollision = checkCollision(drag.key, snapped.x, snapped.y, target.width, target.height, prev);
         setCollisionKey(hasCollision ? drag.key : null);
-        return prev.map((p) => pieceKey(p) === drag.key ? { ...p, x: nx, y: ny } : p);
+        return prev.map((p) => pieceKey(p) === drag.key ? { ...p, x: snapped.x, y: snapped.y } : p);
       });
     };
     const handleMouseUp = () => {
@@ -450,6 +516,7 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
         return prev;
       });
       setCollisionKey(null);
+      setSnapGuide({ x: null, y: null });
       setDraggingId(null);
       setDraggingInstance(-1);
     };
@@ -576,6 +643,23 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
             </G>
           );
         })}
+        {/* 스냅 가이드라인 */}
+        {snapGuide.x !== null ? (
+          <Line
+            x1={snapGuide.x * scale} y1={0}
+            x2={snapGuide.x * scale} y2={svgH}
+            stroke="#3B82F6" strokeWidth={1.5}
+            strokeDasharray="6,4" opacity={0.85}
+          />
+        ) : (null as any)}
+        {snapGuide.y !== null ? (
+          <Line
+            x1={0} y1={snapGuide.y * scale}
+            x2={svgW} y2={snapGuide.y * scale}
+            stroke="#3B82F6" strokeWidth={1.5}
+            strokeDasharray="6,4" opacity={0.85}
+          />
+        ) : (null as any)}
         {/* 필름 경계 */}
         <Rect x={0} y={0} width={svgW} height={svgH}
           fill="none" stroke={colors.primary} strokeWidth={1.5} />
