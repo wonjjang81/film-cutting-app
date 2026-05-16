@@ -12,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 import { router } from "expo-router";
 import * as Haptics from "expo-haptics";
@@ -76,6 +77,15 @@ function BrandSelector({ selected, onSelect, colors, groupIndex }: {
 
 // ─── 조각 행 ─────────────────────────────────────────────────
 
+/** 반응형 컬럼 크기 */
+interface ColSizes {
+  idW: number;
+  qtyW: number;
+  delW: number;
+  inputH: number;
+  fontSize: number;
+}
+
 interface PieceRowProps {
   piece: FilmPiece;
   onUpdate: (field: "width" | "height" | "quantity", value: number) => void;
@@ -85,10 +95,11 @@ interface PieceRowProps {
   focusBorderColor: string;
   /** 이 조각의 수량 필드에서 다음 조각(또는 다음 그룹)으로 포커스를 이동하는 콜백 */
   onQuantitySubmit?: () => void;
+  colSizes: ColSizes;
 }
 
 // forwardRef를 사용하여 부모(GroupCard)에서 첫 번째 조각의 가로 입력 필드에 직접 포커스를 부여할 수 있도록 합니다.
-const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece, onUpdate, onDelete, onRenameId, colors, focusBorderColor, onQuantitySubmit }, forwardedRef) => {
+const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece, onUpdate, onDelete, onRenameId, colors, focusBorderColor, onQuantitySubmit, colSizes }, forwardedRef) => {
   const [wText, setWText] = useState(piece.width > 0 ? String(piece.width) : "");
   const [hText, setHText] = useState(piece.height > 0 ? String(piece.height) : "");
   const [qText, setQText] = useState(String(piece.quantity));
@@ -120,12 +131,14 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
     }
   }, [onQuantitySubmit]);
 
+  const dynInput = { height: colSizes.inputH, fontSize: colSizes.fontSize };
+
   return (
     <View style={[styles.pieceRow, { borderBottomColor: colors.border }]}>
-      <View style={styles.cellId}>
+      <View style={[styles.cellId, { width: colSizes.idW }]}>
         {editingId ? (
           <TextInput
-            style={[styles.idInput, { color: colors.foreground, borderColor: focusBorderColor, backgroundColor: colors.background }]}
+            style={[styles.idInput, { color: colors.foreground, borderColor: focusBorderColor, backgroundColor: colors.background, width: colSizes.idW - 4, fontSize: colSizes.fontSize }]}
             value={idText}
             onChangeText={setIdText}
             autoFocus
@@ -147,7 +160,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           />
         ) : (
           <TouchableOpacity onPress={() => { setIdText(piece.id); setEditingId(true); }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-            <Text style={[styles.idText, { color: colors.primary }]} numberOfLines={1}>{piece.id}</Text>
+            <Text style={[styles.idText, { color: colors.primary, fontSize: colSizes.fontSize }]} numberOfLines={1}>{piece.id}</Text>
             <Text style={[styles.idEditHint, { color: colors.muted }]}>✏</Text>
           </TouchableOpacity>
         )}
@@ -160,7 +173,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           <View key={field} style={styles.cellInput}>
             <ClearableTextInput
               ref={ref}
-              style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+              style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
               value={val}
               onChangeText={setter}
               onBlur={() => handleBlur(field, val)}
@@ -176,10 +189,10 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           </View>
         );
       })}
-      <View style={styles.cellQty}>
+      <View style={[styles.cellQty, { width: colSizes.qtyW }]}>
         <ClearableTextInput
           ref={quantityRef}
-          style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+          style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
           value={qText}
           onChangeText={setQText}
           onBlur={() => handleBlur("quantity", qText)}
@@ -193,8 +206,8 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           focusBorderColor={focusBorderColor}
         />
       </View>
-      <TouchableOpacity style={styles.cellDelete} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Text style={{ color: colors.error, fontSize: 16 }}>✕</Text>
+      <TouchableOpacity style={[styles.cellDelete, { width: colSizes.delW }]} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Text style={{ color: colors.error, fontSize: Math.max(12, colSizes.fontSize) }}>✕</Text>
       </TouchableOpacity>
     </View>
   );
@@ -221,12 +234,13 @@ interface GroupCardProps {
   onLastPieceQuantitySubmit?: () => void;
   /** 이 그룹의 첫 번째 조각 가로 입력 필드에 포커스를 부여하는 ref 등록 콜백 */
   registerFirstFieldRef?: (ref: TextInput | null) => void;
+  colSizes: ColSizes;
 }
 
 function GroupCard({
   group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
   onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
-  onMaterialCostChange, onLastPieceQuantitySubmit, registerFirstFieldRef,
+  onMaterialCostChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
 }: GroupCardProps) {
   const [filmNameText, setFilmNameText] = useState(group.filmName);
   const [costText, setCostText] = useState(group.materialCostPerM ? String(group.materialCostPerM) : "");
@@ -333,11 +347,11 @@ function GroupCard({
       </View>
 
       <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.thId, { color: colors.muted }]}>ID</Text>
-        <Text style={[styles.thInput, { color: colors.muted }]}>가로(mm)</Text>
-        <Text style={[styles.thInput, { color: colors.muted }]}>세로(mm)</Text>
-        <Text style={[styles.thQty, { color: colors.muted }]}>수량</Text>
-        <View style={styles.cellDelete} />
+        <Text style={[styles.thId, { color: colors.muted, width: colSizes.idW }]} numberOfLines={1}>ID</Text>
+        <Text style={[styles.thInput, { color: colors.muted, fontSize: colSizes.fontSize }]} numberOfLines={1}>{colSizes.fontSize < 12 ? '가로' : '가로(mm)'}</Text>
+        <Text style={[styles.thInput, { color: colors.muted, fontSize: colSizes.fontSize }]} numberOfLines={1}>{colSizes.fontSize < 12 ? '세로' : '세로(mm)'}</Text>
+        <Text style={[styles.thQty, { color: colors.muted, width: colSizes.qtyW, fontSize: colSizes.fontSize }]} numberOfLines={1}>수량</Text>
+        <View style={[styles.cellDelete, { width: colSizes.delW }]} />
       </View>
 
       {group.pieces.map((piece, pieceIndex) => (
@@ -356,6 +370,7 @@ function GroupCard({
           onDelete={() => onDeletePiece(piece.id)}
           onRenameId={(newId) => onRenamePiece(piece.id, newId)}
           onQuantitySubmit={() => handlePieceQuantitySubmit(pieceIndex)}
+          colSizes={colSizes}
         />
       ))}
 
@@ -368,6 +383,27 @@ function GroupCard({
 
 // ─── 입력 탭 화면 ─────────────────────────────────────────────
 
+/** 화면 폭에 따른 반응형 컬럼 크기 계산
+ * 테이블 구조: [ID | 가로 | 세로 | 수량 | 삭제]
+ * - ID, 수량, 삭제는 고정 최소 폭 보장
+ * - 가로/세로는 남은 공간을 flex:1로 균등 분배
+ */
+function calcColSizes(screenW: number): ColSizes {
+  // 카드 패딩(12*2) + 테이블 패딩(6*2) = 36
+  const usable = Math.max(screenW - 36, 200);
+
+  // 화면 폭 기준 비례 계수 (320px 기준 1.0, 최대 1.3)
+  const scale = Math.min(Math.max(usable / 360, 0.72), 1.3);
+
+  const idW   = Math.round(Math.max(36, 48 * scale));
+  const qtyW  = Math.round(Math.max(44, 60 * scale));
+  const delW  = Math.round(Math.max(22, 28 * scale));
+  const inputH = Math.round(Math.max(32, 40 * scale));
+  const fontSize = Math.round(Math.max(10, 13 * scale));
+
+  return { idW, qtyW, delW, inputH, fontSize };
+}
+
 export default function InputScreen() {
   const colors = useColors();
   const { state, dispatch } = useFilm();
@@ -375,6 +411,10 @@ export default function InputScreen() {
   const [renameTarget, setRenameTarget] = useState<{ groupId: string; groupName: string } | null>(null);
   const [renameText, setRenameText] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
+
+  // 화면 폭 감지 → 반응형 컬럼 크기 계산
+  const { width: screenW } = useWindowDimensions();
+  const colSizes = calcColSizes(screenW);
 
   // 각 그룹의 첫 번째 조각 가로 필드 ref를 보관 (그룹 간 포커스 이동에 사용)
   const groupFirstFieldRefs = useRef<(TextInput | null)[]>([]);
@@ -505,6 +545,7 @@ export default function InputScreen() {
                 registerFirstFieldRef={(ref) => {
                   groupFirstFieldRefs.current[index] = ref;
                 }}
+                colSizes={colSizes}
               />
             )}
             ListFooterComponent={
@@ -588,17 +629,17 @@ const styles = StyleSheet.create({
   costDefaultText: { fontSize: 12 },
   tableHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 7, borderBottomWidth: 1 },
   thId: { width: 48, fontSize: 11, fontWeight: "600", textAlign: "center" },
-  thInput: { flex: 1, fontSize: 11, fontWeight: "600", textAlign: "center" },
+  thInput: { flex: 1, fontSize: 11, fontWeight: "600", textAlign: "center", overflow: "hidden" },
   thQty: { width: 60, fontSize: 11, fontWeight: "600", textAlign: "center" },
-  pieceRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 5, borderBottomWidth: StyleSheet.hairlineWidth },
-  cellId: { width: 48, alignItems: "center" },
+  pieceRow: { flexDirection: "row", alignItems: "center", paddingHorizontal: 6, paddingVertical: 4, borderBottomWidth: StyleSheet.hairlineWidth },
+  cellId: { width: 48, alignItems: "center", flexShrink: 0 },
   idText: { fontSize: 11, fontWeight: "600", textDecorationLine: "underline" },
   idEditHint: { fontSize: 8, textAlign: "center", marginTop: 1 },
-  idInput: { fontSize: 11, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 4, width: 44, textAlign: "center", fontWeight: "500" },
-  cellInput: { flex: 1, paddingHorizontal: 3, minWidth: 0 },
-  cellQty: { width: 60, paddingHorizontal: 3 },
-  cellDelete: { width: 28, alignItems: "center" },
-  input: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 8, fontSize: 13, textAlign: "center", height: 40, fontWeight: "500" },
+  idInput: { fontSize: 11, borderWidth: 1.5, borderRadius: 6, paddingHorizontal: 4, paddingVertical: 4, width: 44, textAlign: "center", fontWeight: "500" },
+  cellInput: { flex: 1, paddingHorizontal: 2, minWidth: 0, flexShrink: 1 },
+  cellQty: { width: 60, paddingHorizontal: 2, flexShrink: 0 },
+  cellDelete: { width: 28, alignItems: "center", flexShrink: 0 },
+  input: { borderWidth: 1.5, borderRadius: 8, paddingHorizontal: 6, paddingVertical: 6, fontSize: 13, textAlign: "center", height: 40, fontWeight: "500", minWidth: 0 },
   addPieceBtn: { margin: 10, paddingVertical: 9, borderRadius: 8, borderWidth: 1, borderStyle: "dashed", alignItems: "center" },
   addPieceBtnText: { fontSize: 13, fontWeight: "600" },
   addGroupBtn: { marginHorizontal: 12, marginVertical: 8, paddingVertical: 13, borderRadius: 10, borderWidth: 1.5, alignItems: "center" },
