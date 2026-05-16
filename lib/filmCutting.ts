@@ -147,14 +147,15 @@ function isOverlapping(
 }
 
 /**
- * Guillotine 기반 배치 알고리즘 (수정판)
+ * 고효율 배치 알고리즘 (다중 휴리스틱 + Best-Fit Decreasing)
  *
- * 핵심 수정 사항:
+ * 핵심 개선 사항 (v4):
  * 1. 조각 width/height 원본값 유지 (스냅은 배치 위치에만 적용)
- * 2. 수량(quantity)만큼 개별 인스턴스로 전개하여 각각 배치
+ * 2. 수량(quantity)만큼 개별 인스턴스로 전개
  * 3. 같은 ID 조각이 여러 개일 때 instanceIndex로 구분
- * 4. allowRotation=true 시 90도 회전 배치도 시도하여 더 효율적인 위치 선택
- *    allowRotation=false(무늬 고정) 시 입력된 width/height 방향 그대로만 배치
+ * 4. allowRotation=true: 원본/회전 모두 시도 (무늬 고정 false)
+ * 5. 다중 정렬 전략(4가지)을 모두 시도하여 최소 filmHeight 선택
+ * 6. Best-Fit 점수: y 가중치 + 좌측/상단 접촉 보너스로 타이트한 배치 유도
  */
 export function placeFilmPieces(
   pieces: FilmPiece[],
@@ -162,7 +163,7 @@ export function placeFilmPieces(
   groupId: string = '',
   allowRotation: boolean = true,
 ): PlacementResult {
-  // 수량 전개: 각 조각을 quantity만큼 개별 인스턴스로 분리
+  // 수량 전개
   interface ExpandedPiece {
     piece: FilmPiece;
     instanceIndex: number;
@@ -179,60 +180,78 @@ export function placeFilmPieces(
     return { pieces: [], filmHeight: 0, filmWidth, efficiency: 0, totalArea: 0, usedArea: 0 };
   }
 
-  // 면적 내림차순 정렬 (큰 조각 먼저)
-  expanded.sort((a, b) =>
-    b.piece.width * b.piece.height - a.piece.width * a.piece.height,
-  );
-
-  // 같은 크기 그룹에 colorIndex 부여
+  // 같은 크기 그룹에 colorIndex 부여 (정렬 무관 고정)
   const sizeKey = (p: FilmPiece) => `${p.width}x${p.height}`;
   const sizeColorMap = new Map<string, number>();
   let colorCounter = 0;
-  for (const { piece } of expanded) {
-    const key = sizeKey(piece);
-    if (!sizeColorMap.has(key)) {
-      sizeColorMap.set(key, colorCounter % PIECE_COLORS.length);
-      colorCounter++;
-    }
+  // colorIndex는 원본 조각 면적 내림차순 기준으로 부여 (일관성 유지)
+  const colorOrder = [...new Set(
+    [...expanded]
+      .sort((a, b) => b.piece.width * b.piece.height - a.piece.width * a.piece.height)
+      .map((e) => sizeKey(e.piece)),
+  )];
+  for (const k of colorOrder) {
+    sizeColorMap.set(k, colorCounter % PIECE_COLORS.length);
+    colorCounter++;
   }
 
-  const placed: PlacedPiece[] = [];
-  let maxY = 0;
+  // 조각 실제 면적 합계 (quantity 포함)
+  const totalArea = expanded.reduce(
+    (sum, { piece }) => sum + piece.width * piece.height,
+    0,
+  );
 
-  for (const { piece, instanceIndex } of expanded) {
-    const pw = piece.width;   // 원본 크기 유지
-    const ph = piece.height;  // 원본 크기 유지
+  // ─── 내부 함수: 한 가지 정렬 전략으로 배치 시도 ───
+  function tryStrategy(sortedPieces: ExpandedPiece[]): PlacedPiece[] {
+    const placed: PlacedPiece[] = [];
+    let maxY = 0;
 
-    if (pw <= 0 || ph <= 0) continue;
+    for (const { piece, instanceIndex } of sortedPieces) {
+      const pw = piece.width;
+      const ph = piece.height;
 
-    // 회전 후보 목록 결정
-    // allowRotation=true: 원본 방향과 90도 회전 방향 모두 시도
-    // allowRotation=false(무늬 고정): 원본 방향만 사용
-    type Candidate = { w: number; h: number; rotated: boolean };
-    const candidates: Candidate[] = [];
-    if (pw <= filmWidth) candidates.push({ w: pw, h: ph, rotated: false });
-    if (allowRotation && ph !== pw && ph <= filmWidth) {
-      candidates.push({ w: ph, h: pw, rotated: true });
-    }
-    // 배치 가능한 후보가 없으면 스킵
-    if (candidates.length === 0) continue;
+      if (pw <= 0 || ph <= 0) continue;
 
-    let bestX = -1;
-    let bestY = Number.MAX_SAFE_INTEGER;
-    let bestW = pw;
-    let bestH = ph;
+      // 회전 후보 목록
+      type Candidate = { w: number; h: number };
+      const candidates: Candidate[] = [];
+      if (pw <= filmWidth) candidates.push({ w: pw, h: ph });
+      if (allowRotation && ph !== pw && ph <= filmWidth) {
+        candidates.push({ w: ph, h: pw });
+      }
+      if (candidates.length === 0) continue;
 
-    // 각 후보(원본/회전)에 대해 최적 위치 탐색 후 더 위쪽(y가 작은) 위치 선택
-    for (const cand of candidates) {
-      const cw = cand.w;
-      const ch = cand.h;
+      let bestX = -1;
+      let bestY = Number.MAX_SAFE_INTEGER;
+      let bestScore = Number.MAX_SAFE_INTEGER;
+      let bestW = pw;
+      let bestH = ph;
 
-      let candX = -1;
-      let candY = -1;
+      // 후보 위치 생성 (모서리 포인트 기반)
+      // - (0, 0) 기본 시작점
+      // - 이미 배치된 조각들의 우측 상단 모서리 (x+w, y)
+      // - 이미 배치된 조각들의 좌측 하단 모서리 (x, y+h)
+      const candidatePoints: Array<{ x: number; y: number }> = [{ x: 0, y: 0 }];
+      for (const pp of placed) {
+        candidatePoints.push({ x: pp.x + pp.width, y: pp.y });
+        candidatePoints.push({ x: pp.x, y: pp.y + pp.height });
+      }
 
-      // 좌상단부터 SNAP 단위로 탐색
-      outer: for (let y = 0; y <= maxY + ch; y += SNAP) {
-        for (let x = 0; x + cw <= filmWidth; x += SNAP) {
+      // 각 회전 후보 × 각 후보 위치에 대해 점수 계산 (Best-Fit)
+      for (const cand of candidates) {
+        const cw = cand.w;
+        const ch = cand.h;
+
+        for (const pt of candidatePoints) {
+          // SNAP 정렬
+          const x = Math.ceil(pt.x / SNAP) * SNAP;
+          const y = Math.ceil(pt.y / SNAP) * SNAP;
+
+          // 경계 체크
+          if (x < 0 || y < 0) continue;
+          if (x + cw > filmWidth) continue;
+
+          // 충돌 체크
           let collision = false;
           for (const pp of placed) {
             if (isOverlapping(x, y, cw, ch, pp.x, pp.y, pp.width, pp.height)) {
@@ -240,65 +259,129 @@ export function placeFilmPieces(
               break;
             }
           }
-          if (!collision) {
-            candX = x;
-            candY = y;
-            break outer;
+          if (collision) continue;
+
+          // 점수: y가 작을수록 좋음 (1순위)
+          // y 동점일 때 좌측이 작을수록 좋음 (2순위)
+          // 접촉면이 길수록(이웃 조각이나 경계와 맞닿을수록) 보너스
+          const touchScore = computeTouchScore(x, y, cw, ch, placed, filmWidth);
+          const score = y * 10000 + x * 10 - touchScore;
+
+          if (score < bestScore) {
+            bestScore = score;
+            bestX = x;
+            bestY = y;
+            bestW = cw;
+            bestH = ch;
           }
         }
       }
 
-      if (candX !== -1 && candY < bestY) {
-        bestX = candX;
-        bestY = candY;
-        bestW = cw;
-        bestH = ch;
+      // 배치 위치를 찾지 못한 경우 현재 maxY 아래에 강제 배치
+      if (bestX === -1) {
+        // 원본 방향과 회전 방향 중 하나라도 배치 가능한 것 선택
+        const fallback = candidates[0];
+        bestX = 0;
+        bestY = snapUp(maxY);
+        bestW = fallback.w;
+        bestH = fallback.h;
       }
+
+      placed.push({
+        id: piece.id,
+        instanceIndex,
+        x: bestX,
+        y: bestY,
+        width: bestW,
+        height: bestH,
+        colorIndex: sizeColorMap.get(sizeKey(piece)) ?? 0,
+        groupId,
+      });
+
+      maxY = Math.max(maxY, bestY + bestH);
     }
 
-    // 배치 위치를 찾지 못한 경우 현재 maxY 아래에 강제 배치 (원본 방향 우선)
-    if (bestX === -1) {
-      bestX = 0;
-      bestY = snapUp(maxY);
-      bestW = candidates[0].w;
-      bestH = candidates[0].h;
-    }
-
-    placed.push({
-      id: piece.id,
-      instanceIndex,
-      x: bestX,
-      y: bestY,
-      width: bestW,
-      height: bestH,
-      colorIndex: sizeColorMap.get(sizeKey(piece)) ?? 0,
-      groupId,
-    });
-
-    maxY = Math.max(maxY, bestY + bestH);
+    return placed;
   }
 
-  // 필름 높이: 실제 사용된 최대 y + 마지막 조각 높이 (스냅 올림)
-  const filmHeight = snapUp(maxY);
+  // ─── 다중 정렬 전략 ───
+  const strategies: Array<(a: ExpandedPiece, b: ExpandedPiece) => number> = [
+    // 1. 면적 내림차순 (고전적)
+    (a, b) => b.piece.width * b.piece.height - a.piece.width * a.piece.height,
+    // 2. 높이 내림차순 (긴 조각 먼저)
+    (a, b) => b.piece.height - a.piece.height,
+    // 3. 너비 내림차순 (넓은 조각 먼저)
+    (a, b) => b.piece.width - a.piece.width,
+    // 4. 긴 변 내림차순
+    (a, b) => Math.max(b.piece.width, b.piece.height) - Math.max(a.piece.width, a.piece.height),
+  ];
 
-  // 조각 실제 면적 합계 (quantity 포함)
-  const totalArea = expanded.reduce(
-    (sum, { piece }) => sum + piece.width * piece.height,
-    0,
-  );
+  let bestPlaced: PlacedPiece[] = [];
+  let bestFilmHeight = Number.MAX_SAFE_INTEGER;
+
+  for (const sortFn of strategies) {
+    const sorted = [...expanded].sort(sortFn);
+    const result = tryStrategy(sorted);
+    if (result.length === 0) continue;
+    const fh = result.reduce((m, p) => Math.max(m, p.y + p.height), 0);
+    if (fh < bestFilmHeight) {
+      bestFilmHeight = fh;
+      bestPlaced = result;
+    }
+  }
+
+  // 전체 실패 시 빈 결과
+  if (bestPlaced.length === 0) {
+    return { pieces: [], filmHeight: 0, filmWidth, efficiency: 0, totalArea, usedArea: 0 };
+  }
+
+  const filmHeight = snapUp(bestFilmHeight);
   const usedArea = filmWidth * filmHeight;
   const efficiency = usedArea > 0
     ? Math.min(100, (totalArea / usedArea) * 100)
     : 0;
 
   return {
-    pieces: placed,
+    pieces: bestPlaced,
     filmHeight,
     filmWidth,
     efficiency: Math.round(efficiency * 10) / 10,
     totalArea,
     usedArea,
   };
+}
+
+/**
+ * Best-Fit 점수 - 접촉되는 둘레 길이 계산
+ * 조각이 경계나 이웃 조각과 접촉할수록 높은 점수 반환
+ */
+function computeTouchScore(
+  x: number, y: number, w: number, h: number,
+  placed: PlacedPiece[], filmWidth: number,
+): number {
+  let score = 0;
+  // 좌측 경계 접촉
+  if (x === 0) score += h;
+  // 우측 경계 접촉
+  if (x + w === filmWidth) score += h;
+  // 상단 경계 접촉
+  if (y === 0) score += w;
+
+  // 다른 배치된 조각과의 접촉
+  for (const p of placed) {
+    // 좌·우쪽 접촉 (수직 변)
+    if (x === p.x + p.width || x + w === p.x) {
+      const overlapY = Math.max(0, Math.min(y + h, p.y + p.height) - Math.max(y, p.y));
+      score += overlapY;
+    }
+    // 상·하단 접촉 (수평 변)
+    if (y === p.y + p.height || y + h === p.y) {
+      const overlapX = Math.max(0, Math.min(x + w, p.x + p.width) - Math.max(x, p.x));
+      score += overlapX;
+    }
+  }
+
+  return score;
 }
 
 // ─── 자재비 계산 ─────────────────────────────────────────────
