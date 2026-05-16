@@ -627,7 +627,7 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
                   <SvgText
                     x={px + pw / 2} y={py + ph / 2 - (ph > 36 ? 7 : 0)}
                     textAnchor="middle"
-                    fontSize={Math.min(16, pw / 3.5, ph / 2.2)}
+                    fontSize={Math.min(24, pw / 2.3, ph / 1.5)}
                     fontWeight="800"
                     fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci]}>
                     {p.id}{p.instanceIndex > 0 ? `-${p.instanceIndex + 1}` : ""}
@@ -636,7 +636,7 @@ function GridCanvas({ placement, scale, colors, sizeColorMap, checkedKeys, onPie
                     <SvgText
                       x={px + pw / 2} y={py + ph / 2 + 10}
                       textAnchor="middle"
-                      fontSize={Math.min(13, pw / 4.5, ph / 3)}
+                      fontSize={Math.min(19, pw / 3.0, ph / 2.0)}
                       fontWeight="600"
                       fill={isCollision ? "#EF4444" : SIZE_STROKE_COLORS[ci] + "CC"}>
                       {`${p.width}×${p.height}`}

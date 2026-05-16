@@ -452,8 +452,8 @@ function generatePlacementSvgHtml(
       const cy = py + ph / 2;
       const label = p.instanceIndex > 0 ? `${p.id}-${p.instanceIndex + 1}` : p.id;
       const sizeLabel = `${p.width}×${p.height}`;
-      pieceRects.push(`<text x="${cx}" y="${cy - 5}" font-size="9" fill="${stroke}" text-anchor="middle" font-weight="600">${label}</text>`);
-      pieceRects.push(`<text x="${cx}" y="${cy + 7}" font-size="8" fill="${stroke}" text-anchor="middle">${sizeLabel}</text>`);
+      pieceRects.push(`<text x="${cx}" y="${cy - 5}" font-size="13.5" fill="${stroke}" text-anchor="middle" font-weight="600">${label}</text>`);
+      pieceRects.push(`<text x="${cx}" y="${cy + 7}" font-size="12" fill="${stroke}" text-anchor="middle">${sizeLabel}</text>`);
     }
   }
 
