@@ -44,7 +44,7 @@ import {
   FilmPiece,
   GROUP_BORDER_COLORS,
   GROUP_COLORS,
-  calculateFromGroups,
+  calculateWithMergedGroups,
   formatNumber,
 } from "@/lib/filmCutting";
 
@@ -532,16 +532,16 @@ export default function InputScreen() {
   }, [dispatch, renameTarget, renameText]);
 
   const handleCalculate = useCallback(async () => {
-    // 선택된 그룹만 필터링
-    const targetGroups = selectedGroupIds.size === 0
-      ? state.groups
-      : state.groups.filter((g) => selectedGroupIds.has(g.groupId));
+    // 선택된 그룹 목록
+    const selectedArr = state.groups.filter((g) => selectedGroupIds.has(g.groupId));
+    if (selectedArr.length === 0) return;
 
-    const validGroups = targetGroups
+    // 유효 조각 필터링
+    const validSelected = selectedArr
       .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
       .filter((g) => g.pieces.length > 0);
 
-    if (validGroups.length === 0) {
+    if (validSelected.length === 0) {
       if (Platform.OS === "web") {
         window.alert("선택된 그룹에 유효한 조각 데이터가 없습니다.");
       } else {
@@ -550,15 +550,25 @@ export default function InputScreen() {
       return;
     }
 
-    // 선택된 그룹 ID를 Context에 저장 (견적 탭에서 재계산 시 동일한 그룹만 사용)
-    const selectedIds = selectedGroupIds.size === 0 ? null : Array.from(selectedGroupIds);
+    // 선택되지 않은 그룹은 개별 배치 (soloGroups)
+    const unselectedGroups = state.groups
+      .filter((g) => !selectedGroupIds.has(g.groupId))
+      .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
+      .filter((g) => g.pieces.length > 0);
+
+    // 선택된 그룹 ID를 Context에 저장
+    const selectedIds = Array.from(selectedGroupIds);
     dispatch({ type: "SET_SELECTED_GROUP_IDS", payload: selectedIds });
 
     setIsCalculating(true);
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       dispatch({ type: "CLEAR_RESULTS" });
-      const result = calculateFromGroups(validGroups, state.materialCostPerM, state.constructionPricePerM2);
+      // 선택된 그룹이 2개 이상이면 하나의 롤로 병합 배치
+      // 선택된 그룹이 1개면 soloGroups로 처리 (기존 방식)
+      const mergeGroups = validSelected.length >= 2 ? validSelected : [];
+      const soloGroups = validSelected.length >= 2 ? unselectedGroups : [...validSelected, ...unselectedGroups];
+      const result = calculateWithMergedGroups(soloGroups, mergeGroups, state.materialCostPerM, state.constructionPricePerM2);
       dispatch({ type: "SET_RESULT", payload: result });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.push("/(tabs)/cutting" as any);
@@ -566,7 +576,7 @@ export default function InputScreen() {
       if (Platform.OS === "web") {
         window.alert("배치 계산 중 오류가 발생했습니다.");
       } else {
-        Alert.alert("계산 오류", "배치 계산 중 오류가 발삭했습니다.");
+        Alert.alert("계산 오류", "배치 계산 중 오류가 발생했습니다.");
       }
     } finally {
       setIsCalculating(false);
@@ -688,7 +698,7 @@ export default function InputScreen() {
                 </Text>
               </TouchableOpacity>
               <Text style={[styles.selectionHint, { color: colors.muted }]}>
-                선택한 그룹만 배치
+                {selectedGroupIds.size >= 2 ? '선택 그룹 합쳐서 배치' : '선택 그룹 배치'}
               </Text>
             </View>
             <TouchableOpacity
@@ -697,8 +707,8 @@ export default function InputScreen() {
             >
               {isCalculating ? <ActivityIndicator color="white" /> : (
                 <Text style={styles.calcBtnText}>
-                  ✂️  {selectedGroupIds.size > 0 && selectedGroupIds.size < state.groups.length
-                    ? `${selectedGroupIds.size}개 그룹 배치 계산`
+                  ✂️  {selectedGroupIds.size >= 2
+                    ? `${selectedGroupIds.size}개 그룹 합쳐서 배치`
                     : '배치 계산하기'}
                 </Text>
               )}

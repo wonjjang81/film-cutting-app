@@ -62,6 +62,10 @@ export interface GroupPlacementResult {
   filmLengthM: number;
   materialCost: number;
   materialCostPerM: number;  // 적용된 그룹별 단가
+  /** 여러 그룹이 하나의 롤로 병합된 경우 원본 그룹 ID 목록 */
+  mergedGroupIds?: string[];
+  /** 병합된 경우 원본 그룹 이름 목록 */
+  mergedGroupNames?: string[];
 }
 
 export interface GroupInvoice {
@@ -488,6 +492,189 @@ export function calculateFromGroups(
   // 최저/최고 시공비 기준 범위 계산
   // 시공비 최저 = totalFilmAreaM2 × CONSTRUCTION_PRICE_MIN
   // 시공비 최고 = totalFilmAreaM2 × CONSTRUCTION_PRICE_MAX
+  const constructionCostMin = Math.round(totalFilmAreaM2 * CONSTRUCTION_PRICE_MIN);
+  const constructionCostMax = Math.round(totalFilmAreaM2 * CONSTRUCTION_PRICE_MAX);
+  const totalMin = Math.round((totalMaterialCost + constructionCostMin) * (1 - discountRate));
+  const totalMax = Math.round((totalMaterialCost + constructionCostMax) * (1 - discountRate));
+
+  return {
+    groupResults,
+    invoice: {
+      groupInvoices,
+      totalFilmLengthM,
+      totalFilmAreaM2,
+      totalMaterialCost,
+      totalConstructionCost,
+      subtotal,
+      discount,
+      discountRate,
+      total: { min: totalMin, max: totalMax },
+      constructionPricePerM2,
+    },
+  };
+}
+
+// ─── 병합 그룹 배치 계산 ─────────────────────────────────────
+
+/**
+ * 여러 그룹을 하나의 필름 롤에 합쳐서 배치하고 견적을 계산한다.
+ *
+ * - mergeGroups: 하나의 롤로 합칠 그룹 목록 (조각을 모두 합쳐 단일 placeFilmPieces 호출)
+ * - soloGroups: 기존 방식대로 각각 별도 배치할 그룹 목록
+ * - 병합 그룹의 자재비는 그룹별 단가를 면적 가중 평균으로 산출
+ * - 병합 그룹의 시공비도 동일 방식
+ */
+export function calculateWithMergedGroups(
+  soloGroups: FilmGroup[],
+  mergeGroups: FilmGroup[],
+  materialCostPerM: number = DEFAULT_MATERIAL_COST_PER_M,
+  constructionPricePerM2: number = CONSTRUCTION_PRICE_DEFAULT,
+): CalculationResult {
+  const groupResults: GroupPlacementResult[] = [];
+  const groupInvoices: GroupInvoice[] = [];
+
+  let totalFilmLengthM = 0;
+  let totalFilmAreaM2 = 0;
+  let totalMaterialCost = 0;
+  let totalConstructionCost = 0;
+
+  // 1) 개별 배치 그룹 처리 (기존 방식)
+  for (const group of soloGroups) {
+    const validPieces = group.pieces.filter(
+      (p) => p.width > 0 && p.height > 0 && p.quantity > 0,
+    );
+    if (validPieces.length === 0) continue;
+
+    const groupMaterialCostPerM = group.materialCostPerM ?? materialCostPerM;
+    const groupConstructionPricePerM2 = group.constructionPricePerM2 ?? constructionPricePerM2;
+
+    const placement = placeFilmPieces(validPieces, FILM_WIDTH, group.groupId, !group.patternFixed);
+    const filmLengthM = filmHeightToLinearM(placement.filmHeight);
+    const filmAreaM2 = FILM_WIDTH_M * filmLengthM;
+    const materialCost = Math.round(filmLengthM * groupMaterialCostPerM);
+    const constructionCost = Math.round(filmAreaM2 * groupConstructionPricePerM2);
+
+    groupResults.push({
+      groupId: group.groupId,
+      groupName: group.groupName,
+      brand: group.brand,
+      filmName: group.filmName,
+      placement,
+      filmLengthM,
+      materialCost,
+      materialCostPerM: groupMaterialCostPerM,
+    });
+
+    groupInvoices.push({
+      groupId: group.groupId,
+      groupName: group.groupName,
+      brand: group.brand,
+      filmName: group.filmName,
+      filmLengthM,
+      filmAreaM2,
+      materialCostPerM: groupMaterialCostPerM,
+      materialCost,
+      constructionPricePerM2: groupConstructionPricePerM2,
+      constructionCost,
+      subtotal: materialCost + constructionCost,
+    });
+
+    totalFilmLengthM += filmLengthM;
+    totalFilmAreaM2 += filmAreaM2;
+    totalMaterialCost += materialCost;
+    totalConstructionCost += constructionCost;
+  }
+
+  // 2) 병합 배치 그룹 처리
+  if (mergeGroups.length > 0) {
+    // 모든 조각을 하나로 합침 (groupId를 조각 id에 prefix로 유지)
+    const allPieces: FilmPiece[] = [];
+    for (const group of mergeGroups) {
+      const validPieces = group.pieces.filter(
+        (p) => p.width > 0 && p.height > 0 && p.quantity > 0,
+      );
+      for (const p of validPieces) {
+        // id에 그룹 prefix를 붙여 구분 (PlacedPiece.id로 원본 그룹 역추적 가능)
+        allPieces.push({ ...p, id: `${group.groupId}__${p.id}` });
+      }
+    }
+
+    if (allPieces.length > 0) {
+      // 병합 그룹의 무늬 고정: 하나라도 patternFixed이면 회전 금지
+      const anyPatternFixed = mergeGroups.some((g) => g.patternFixed);
+      const mergedGroupId = `merged__${mergeGroups.map((g) => g.groupId).join('_')}`;
+      const placement = placeFilmPieces(allPieces, FILM_WIDTH, mergedGroupId, !anyPatternFixed);
+      const filmLengthM = filmHeightToLinearM(placement.filmHeight);
+      const filmAreaM2 = FILM_WIDTH_M * filmLengthM;
+
+      // 자재비: 그룹별 단가를 조각 수량 기준 가중 평균
+      const totalPieceCount = mergeGroups.reduce(
+        (sum, g) => sum + g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
+          .reduce((s, p) => s + p.quantity, 0),
+        0,
+      );
+      let weightedMaterialCostPerM = materialCostPerM;
+      let weightedConstructionPricePerM2 = constructionPricePerM2;
+      if (totalPieceCount > 0) {
+        let matSum = 0;
+        let constrSum = 0;
+        for (const g of mergeGroups) {
+          const gCount = g.pieces
+            .filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
+            .reduce((s, p) => s + p.quantity, 0);
+          matSum += (g.materialCostPerM ?? materialCostPerM) * gCount;
+          constrSum += (g.constructionPricePerM2 ?? constructionPricePerM2) * gCount;
+        }
+        weightedMaterialCostPerM = matSum / totalPieceCount;
+        weightedConstructionPricePerM2 = constrSum / totalPieceCount;
+      }
+
+      const materialCost = Math.round(filmLengthM * weightedMaterialCostPerM);
+      const constructionCost = Math.round(filmAreaM2 * weightedConstructionPricePerM2);
+
+      // 병합 그룹 이름: 참여 그룹 이름을 '+' 로 연결
+      const mergedGroupName = mergeGroups.map((g) => g.groupName).join(' + ');
+      // 브랜드/필름명: 첫 번째 그룹 기준
+      const firstGroup = mergeGroups[0];
+
+      groupResults.push({
+        groupId: mergedGroupId,
+        groupName: mergedGroupName,
+        brand: firstGroup.brand,
+        filmName: firstGroup.filmName,
+        placement,
+        filmLengthM,
+        materialCost,
+        materialCostPerM: weightedMaterialCostPerM,
+        mergedGroupIds: mergeGroups.map((g) => g.groupId),
+        mergedGroupNames: mergeGroups.map((g) => g.groupName),
+      });
+
+      groupInvoices.push({
+        groupId: mergedGroupId,
+        groupName: mergedGroupName,
+        brand: firstGroup.brand,
+        filmName: firstGroup.filmName,
+        filmLengthM,
+        filmAreaM2,
+        materialCostPerM: weightedMaterialCostPerM,
+        materialCost,
+        constructionPricePerM2: weightedConstructionPricePerM2,
+        constructionCost,
+        subtotal: materialCost + constructionCost,
+      });
+
+      totalFilmLengthM += filmLengthM;
+      totalFilmAreaM2 += filmAreaM2;
+      totalMaterialCost += materialCost;
+      totalConstructionCost += constructionCost;
+    }
+  }
+
+  const subtotal = totalMaterialCost + totalConstructionCost;
+  const discountRate = getDiscountRate(totalFilmAreaM2);
+  const discount = Math.round(subtotal * discountRate);
+
   const constructionCostMin = Math.round(totalFilmAreaM2 * CONSTRUCTION_PRICE_MIN);
   const constructionCostMax = Math.round(totalFilmAreaM2 * CONSTRUCTION_PRICE_MAX);
   const totalMin = Math.round((totalMaterialCost + constructionCostMin) * (1 - discountRate));

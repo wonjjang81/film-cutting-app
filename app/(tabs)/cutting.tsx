@@ -978,16 +978,26 @@ export default function ResultsScreen() {
         {groupResults.map((gr, idx) => {
           const bc = GROUP_BORDER_COLORS[idx % GROUP_BORDER_COLORS.length];
           const isActive = activeGroupId === gr.groupId;
+          const isMerged = !!(gr.mergedGroupIds && gr.mergedGroupIds.length > 1);
           return (
             <TouchableOpacity
               key={gr.groupId}
               style={[styles.tab, isActive && [styles.tabActive, { borderBottomColor: bc }]]}
               onPress={() => { setActiveGroupId(gr.groupId); setEditMode(false); }}>
-              <Text style={[styles.tabText, { color: isActive ? bc : colors.muted }]}>
-                {gr.groupName}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                {isMerged && (
+                  <View style={[styles.mergedBadge, { backgroundColor: bc + "22", borderColor: bc + "60" }]}>
+                    <Text style={[styles.mergedBadgeText, { color: bc }]}>구분 없이 배치</Text>
+                  </View>
+                )}
+                <Text style={[styles.tabText, { color: isActive ? bc : colors.muted }]}>
+                  {isMerged ? (gr.mergedGroupNames ?? []).join(" + ") : gr.groupName}
+                </Text>
+              </View>
               <Text style={[styles.tabSubText, { color: isActive ? bc + "CC" : colors.muted + "99" }]} numberOfLines={1}>
-                {gr.brand}{gr.filmName ? ` · ${gr.filmName}` : ""}
+                {isMerged
+                  ? `합치기 배치 (${gr.mergedGroupIds!.length}개 그룹)`
+                  : `${gr.brand}${gr.filmName ? ` · ${gr.filmName}` : ""}`}
               </Text>
             </TouchableOpacity>
           );
@@ -1196,6 +1206,8 @@ const styles = StyleSheet.create({
   tabActive: {},
   tabText: { fontSize: 14, fontWeight: "700" },
   tabSubText: { fontSize: 10, marginTop: 1 },
+  mergedBadge: { paddingHorizontal: 5, paddingVertical: 2, borderRadius: 4, borderWidth: 1 },
+  mergedBadgeText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.2 },
   groupSummaryBar: { paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1 },
   groupSummaryRow: { flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" },
   groupSummaryText: { fontSize: 11, fontWeight: "600" },
