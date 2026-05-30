@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -221,6 +221,8 @@ interface GroupCardProps {
   group: FilmGroup;
   groupIndex: number;
   colors: ReturnType<typeof useColors>;
+  isSelected: boolean;
+  onToggleSelect: () => void;
   onRenamePress: () => void;
   onDeleteGroup: () => void;
   onAddPiece: () => void;
@@ -239,7 +241,7 @@ interface GroupCardProps {
 }
 
 function GroupCard({
-  group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
+  group, groupIndex, colors, isSelected, onToggleSelect, onRenamePress, onDeleteGroup, onAddPiece,
   onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
   onMaterialCostChange, onPatternFixedChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
 }: GroupCardProps) {
@@ -264,11 +266,25 @@ function GroupCard({
   }, [onLastPieceQuantitySubmit]);
 
   return (
-    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor }]}>
-      <View style={[styles.groupHeader, { backgroundColor: bgColor, borderBottomColor: borderColor + "60" }]}>
+    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: isSelected ? borderColor : colors.border, borderWidth: isSelected ? 2 : 1.5 }]}>
+      <View style={[styles.groupHeader, { backgroundColor: isSelected ? bgColor : colors.surface, borderBottomColor: borderColor + "60" }]}>
+        {/* 선택 체크박스 */}
+        <TouchableOpacity
+          onPress={onToggleSelect}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={styles.groupSelectCheckbox}
+        >
+          <View style={[
+            styles.groupCheckboxInner,
+            { borderColor: isSelected ? borderColor : colors.border },
+            isSelected && { backgroundColor: borderColor },
+          ]}>
+            {isSelected && <Text style={styles.groupCheckMark}>✓</Text>}
+          </View>
+        </TouchableOpacity>
         <TouchableOpacity onPress={onRenamePress} style={styles.groupNameBtn}>
-          <Text style={[styles.groupName, { color: borderColor }]}>{group.groupName}</Text>
-          <Text style={[styles.groupNameHint, { color: borderColor + "80" }]}> ✏</Text>
+          <Text style={[styles.groupName, { color: isSelected ? borderColor : colors.foreground }]}>{group.groupName}</Text>
+          <Text style={[styles.groupNameHint, { color: (isSelected ? borderColor : colors.muted) + "80" }]}> ✏</Text>
         </TouchableOpacity>
         <Text style={[styles.groupPieceCount, { color: colors.muted }]}>{group.pieces.length}개</Text>
         <TouchableOpacity onPress={onDeleteGroup} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
@@ -438,6 +454,34 @@ export default function InputScreen() {
   const [renameText, setRenameText] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
 
+  // 다중 그룹 선택 상태: null = 전체, 배열 = 선택된 그룹 ID
+  // Context의 selectedGroupIds를 로컈 UI 상태로 동기화
+  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => {
+    // 초기화: 전체 선택 (모든 그룹 ID)
+    return new Set(state.groups.map((g) => g.groupId));
+  });
+
+  // 그룹 목록 변경 시 selectedGroupIds 동기화
+  // 새 그룹이 추가되면 자동 선택, 삭제된 그룹은 제거
+  const prevGroupIdsRef = useRef<string[]>([]);
+  useEffect(() => {
+    const currentIds = state.groups.map((g) => g.groupId);
+    const prev = prevGroupIdsRef.current;
+    setSelectedGroupIds((prevSel) => {
+      const next = new Set(prevSel);
+      // 새로 추가된 그룹 자동 선택
+      for (const id of currentIds) {
+        if (!prev.includes(id)) next.add(id);
+      }
+      // 삭제된 그룹 제거
+      for (const id of prev) {
+        if (!currentIds.includes(id)) next.delete(id);
+      }
+      return next;
+    });
+    prevGroupIdsRef.current = currentIds;
+  }, [state.groups]);
+
   // 화면 폭 감지 → 반응형 컬럼 크기 계산
   const { width: screenW } = useWindowDimensions();
   const colSizes = calcColSizes(screenW);
@@ -488,34 +532,70 @@ export default function InputScreen() {
   }, [dispatch, renameTarget, renameText]);
 
   const handleCalculate = useCallback(async () => {
-    const validGroups = state.groups
+    // 선택된 그룹만 필터링
+    const targetGroups = selectedGroupIds.size === 0
+      ? state.groups
+      : state.groups.filter((g) => selectedGroupIds.has(g.groupId));
+
+    const validGroups = targetGroups
       .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
       .filter((g) => g.pieces.length > 0);
 
     if (validGroups.length === 0) {
-      Alert.alert("입력 오류", "유효한 조각 데이터를 하나 이상 입력해 주세요.");
+      if (Platform.OS === "web") {
+        window.alert("선택된 그룹에 유효한 조각 데이터가 없습니다.");
+      } else {
+        Alert.alert("입력 오류", "선택된 그룹에 유효한 조각 데이터를 하나 이상 입력해 주세요.");
+      }
       return;
     }
 
+    // 선택된 그룹 ID를 Context에 저장 (견적 탭에서 재계산 시 동일한 그룹만 사용)
+    const selectedIds = selectedGroupIds.size === 0 ? null : Array.from(selectedGroupIds);
+    dispatch({ type: "SET_SELECTED_GROUP_IDS", payload: selectedIds });
+
     setIsCalculating(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
-      // 이전 배치 결과를 먼저 완전히 제거하여 React가 변경을 정확히 감지하도록 함
       dispatch({ type: "CLEAR_RESULTS" });
       const result = calculateFromGroups(validGroups, state.materialCostPerM, state.constructionPricePerM2);
       dispatch({ type: "SET_RESULT", payload: result });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.push("/(tabs)/cutting" as any);
     } catch {
-      Alert.alert("계산 오류", "배치 계산 중 오류가 발생했습니다.");
+      if (Platform.OS === "web") {
+        window.alert("배치 계산 중 오류가 발생했습니다.");
+      } else {
+        Alert.alert("계산 오류", "배치 계산 중 오류가 발삭했습니다.");
+      }
     } finally {
       setIsCalculating(false);
     }
-  }, [state, dispatch]);
+  }, [state, dispatch, selectedGroupIds]);
 
-  const hasValidPieces = state.groups.some((g) =>
-    g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0),
-  );
+  // 선택된 그룹 중 유효한 조각이 있는지 확인
+  const hasValidPieces = (selectedGroupIds.size === 0 ? state.groups : state.groups.filter((g) => selectedGroupIds.has(g.groupId)))
+    .some((g) => g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0));
+
+  // 전체 선택/해제 토글
+  const allSelected = state.groups.length > 0 && state.groups.every((g) => selectedGroupIds.has(g.groupId));
+  const handleToggleAll = useCallback(() => {
+    if (allSelected) {
+      setSelectedGroupIds(new Set());
+    } else {
+      setSelectedGroupIds(new Set(state.groups.map((g) => g.groupId)));
+    }
+  }, [allSelected, state.groups]);
+
+  // 개별 그룹 선택 토글
+  const handleToggleGroup = useCallback((groupId: string) => {
+    setSelectedGroupIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupId)) next.delete(groupId);
+      else next.add(groupId);
+      return next;
+    });
+  }, []);
 
   return (
     <ScreenContainer containerClassName="bg-background">
@@ -554,6 +634,8 @@ export default function InputScreen() {
             renderItem={({ item: group, index }) => (
               <GroupCard
                 group={group} groupIndex={index} colors={colors}
+                isSelected={selectedGroupIds.has(group.groupId)}
+                onToggleSelect={() => handleToggleGroup(group.groupId)}
                 onRenamePress={() => { setRenameTarget({ groupId: group.groupId, groupName: group.groupName }); setRenameText(group.groupName); setRenameModalVisible(true); }}
                 onDeleteGroup={() => handleDeleteGroup(group.groupId)}
                 onAddPiece={() => dispatch({ type: "ADD_PIECE", payload: { groupId: group.groupId } })}
@@ -587,11 +669,39 @@ export default function InputScreen() {
 
         {state.groups.length > 0 && (
           <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
+            {/* 그룹 선택 요약 헤더 */}
+            <View style={[styles.selectionHeader, { borderColor: colors.border }]}>
+              <TouchableOpacity
+                style={[styles.selectAllBtn, { borderColor: allSelected ? colors.primary : colors.border }]}
+                onPress={handleToggleAll}
+              >
+                <View style={[
+                  styles.selectAllCheckbox,
+                  { borderColor: allSelected ? colors.primary : colors.border },
+                  allSelected && { backgroundColor: colors.primary },
+                ]}>
+                  {allSelected && <Text style={styles.checkMark}>✓</Text>}
+                  {!allSelected && selectedGroupIds.size > 0 && <Text style={[styles.checkMark, { color: colors.primary }]}>−</Text>}
+                </View>
+                <Text style={[styles.selectAllText, { color: allSelected ? colors.primary : colors.muted }]}>
+                  {allSelected ? '전체 선택' : selectedGroupIds.size > 0 ? `${selectedGroupIds.size}개 그룹 선택됨` : '그룹 선택 안됨'}
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.selectionHint, { color: colors.muted }]}>
+                선택한 그룹만 배치
+              </Text>
+            </View>
             <TouchableOpacity
-              style={[styles.calcBtn, { backgroundColor: hasValidPieces ? colors.primary : colors.muted }]}
-              onPress={handleCalculate} disabled={!hasValidPieces || isCalculating}
+              style={[styles.calcBtn, { backgroundColor: hasValidPieces && selectedGroupIds.size > 0 ? colors.primary : colors.muted }]}
+              onPress={handleCalculate} disabled={!hasValidPieces || isCalculating || selectedGroupIds.size === 0}
             >
-              {isCalculating ? <ActivityIndicator color="white" /> : <Text style={styles.calcBtnText}>✂️  배치 계산하기</Text>}
+              {isCalculating ? <ActivityIndicator color="white" /> : (
+                <Text style={styles.calcBtnText}>
+                  ✂️  {selectedGroupIds.size > 0 && selectedGroupIds.size < state.groups.length
+                    ? `${selectedGroupIds.size}개 그룹 배치 계산`
+                    : '배치 계산하기'}
+                </Text>
+              )}
             </TouchableOpacity>
           </View>
         )}
@@ -690,4 +800,15 @@ const styles = StyleSheet.create({
   patternFixedCheckmark: { color: "white", fontSize: 13, fontWeight: "700", lineHeight: 16 },
   patternFixedLabel: { fontSize: 13, fontWeight: "600" },
   patternFixedDesc: { fontSize: 11, marginLeft: 4 },
+  // 그룹 선택 체크박스
+  groupSelectCheckbox: { paddingRight: 8, paddingVertical: 4 },
+  groupCheckboxInner: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  groupCheckMark: { color: "white", fontSize: 13, fontWeight: "800", lineHeight: 16 },
+  // 하단 바 선택 UI
+  selectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
+  selectAllBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1 },
+  selectAllCheckbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, alignItems: "center", justifyContent: "center" },
+  checkMark: { color: "white", fontSize: 12, fontWeight: "800", lineHeight: 15 },
+  selectAllText: { fontSize: 13, fontWeight: "600" },
+  selectionHint: { fontSize: 12, fontWeight: "500" },
 });

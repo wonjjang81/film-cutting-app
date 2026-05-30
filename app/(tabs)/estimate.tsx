@@ -269,15 +269,20 @@ export default function EstimateScreen() {
   const [discountRateText, setDiscountRateText] = useState("");
 
   // 재계산 헬퍼 (그룹별 단가 포함)
+  // selectedGroupIds가 설정된 경우 해당 그룹만 재계산
   const recalculate = useCallback((matCost: number, constrPrice: number) => {
-    const validGroups = state.groups
+    const selectedIds = state.selectedGroupIds;
+    const targetGroups = selectedIds
+      ? state.groups.filter((g) => selectedIds.includes(g.groupId))
+      : state.groups;
+    const validGroups = targetGroups
       .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
       .filter((g) => g.pieces.length > 0);
     if (validGroups.length > 0) {
       const newResult = calculateFromGroups(validGroups, matCost, constrPrice);
       dispatch({ type: "SET_RESULT", payload: newResult });
     }
-  }, [state.groups, dispatch]);
+  }, [state.groups, state.selectedGroupIds, dispatch]);
 
   // 시공비 변경 시 재계산
   const handleConstructionChange = useCallback((val: number) => {
@@ -296,12 +301,16 @@ export default function EstimateScreen() {
   // 그룹별 시공비 단가 변경 핸들러
   const handleGroupConstructionPriceChange = useCallback((groupId: string, price: number | undefined) => {
     dispatch({ type: "UPDATE_GROUP_CONSTRUCTION_PRICE", payload: { groupId, constructionPricePerM2: price } });
-    // 그룹 단가 변경 후 재계산 (state.groups는 아직 업데이트 전이므로 직접 반영)
+    // 그룹 단가 변경 후 재계산 (state.groups는 아직 업데이트 전이으로 직접 반영)
     const matCost = parseFloat(materialCostText) || DEFAULT_MATERIAL_COST_PER_M;
+    const selectedIds = state.selectedGroupIds;
     const updatedGroups = state.groups.map((g) =>
       g.groupId === groupId ? { ...g, constructionPricePerM2: price } : g
     );
-    const validGroups = updatedGroups
+    const targetGroups = selectedIds
+      ? updatedGroups.filter((g) => selectedIds.includes(g.groupId))
+      : updatedGroups;
+    const validGroups = targetGroups
       .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
       .filter((g) => g.pieces.length > 0);
     if (validGroups.length > 0) {
