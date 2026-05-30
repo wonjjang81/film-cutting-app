@@ -44,7 +44,7 @@ import {
   FilmPiece,
   GROUP_BORDER_COLORS,
   GROUP_COLORS,
-  calculateWithMergedGroups,
+  calculateFromGroups,
   formatNumber,
 } from "@/lib/filmCutting";
 
@@ -221,8 +221,6 @@ interface GroupCardProps {
   group: FilmGroup;
   groupIndex: number;
   colors: ReturnType<typeof useColors>;
-  isSelected: boolean;
-  onToggleSelect: () => void;
   onRenamePress: () => void;
   onDeleteGroup: () => void;
   onAddPiece: () => void;
@@ -233,6 +231,7 @@ interface GroupCardProps {
   onFilmNameChange: (name: string) => void;
   onMaterialCostChange: (cost: number | undefined) => void;
   onPatternFixedChange: (patternFixed: boolean) => void;
+  onMergeGroupIdChange: (mergeGroupId: string | undefined) => void;
   /** 이 그룹의 마지막 조각 수량 입력 완료 시 다음 그룹 첫 번째 필드로 포커스 이동하는 콜백 */
   onLastPieceQuantitySubmit?: () => void;
   /** 이 그룹의 첫 번째 조각 가로 입력 필드에 포커스를 부여하는 ref 등록 콜백 */
@@ -240,16 +239,20 @@ interface GroupCardProps {
   colSizes: ColSizes;
 }
 
+// 합치기 그룹 ID 옵션 (1~5번 버튼)
+const MERGE_OPTIONS = ['1', '2', '3', '4', '5'] as const;
+
 function GroupCard({
-  group, groupIndex, colors, isSelected, onToggleSelect, onRenamePress, onDeleteGroup, onAddPiece,
+  group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
   onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
-  onMaterialCostChange, onPatternFixedChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
+  onMaterialCostChange, onPatternFixedChange, onMergeGroupIdChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
 }: GroupCardProps) {
   const [filmNameText, setFilmNameText] = useState(group.filmName);
   const [costText, setCostText] = useState(group.materialCostPerM ? String(group.materialCostPerM) : "");
   const [useCustomCost, setUseCustomCost] = useState(group.materialCostPerM !== undefined);
   const bgColor = GROUP_COLORS[groupIndex % GROUP_COLORS.length];
   const borderColor = GROUP_BORDER_COLORS[groupIndex % GROUP_BORDER_COLORS.length];
+  const hasMerge = !!group.mergeGroupId;
 
   // 각 조각의 첫 번째 필드(가로) ref를 보관하는 배열
   const pieceFirstFieldRefs = useRef<(TextInput | null)[]>([]);
@@ -266,26 +269,17 @@ function GroupCard({
   }, [onLastPieceQuantitySubmit]);
 
   return (
-    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: isSelected ? borderColor : colors.border, borderWidth: isSelected ? 2 : 1.5 }]}>
-      <View style={[styles.groupHeader, { backgroundColor: isSelected ? bgColor : colors.surface, borderBottomColor: borderColor + "60" }]}>
-        {/* 선택 체크박스 */}
-        <TouchableOpacity
-          onPress={onToggleSelect}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          style={styles.groupSelectCheckbox}
-        >
-          <View style={[
-            styles.groupCheckboxInner,
-            { borderColor: isSelected ? borderColor : colors.border },
-            isSelected && { backgroundColor: borderColor },
-          ]}>
-            {isSelected && <Text style={styles.groupCheckMark}>✓</Text>}
-          </View>
-        </TouchableOpacity>
+    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: hasMerge ? borderColor : colors.border, borderWidth: hasMerge ? 2 : 1.5 }]}>
+      <View style={[styles.groupHeader, { backgroundColor: hasMerge ? bgColor : colors.surface, borderBottomColor: borderColor + "60" }]}>
         <TouchableOpacity onPress={onRenamePress} style={styles.groupNameBtn}>
-          <Text style={[styles.groupName, { color: isSelected ? borderColor : colors.foreground }]}>{group.groupName}</Text>
-          <Text style={[styles.groupNameHint, { color: (isSelected ? borderColor : colors.muted) + "80" }]}> ✏</Text>
+          <Text style={[styles.groupName, { color: hasMerge ? borderColor : colors.foreground }]}>{group.groupName}</Text>
+          <Text style={[styles.groupNameHint, { color: (hasMerge ? borderColor : colors.muted) + "80" }]}> ✏</Text>
         </TouchableOpacity>
+        {hasMerge && (
+          <View style={[styles.mergeGroupBadge, { backgroundColor: borderColor }]}>
+            <Text style={styles.mergeGroupBadgeText}>합치기 {group.mergeGroupId}</Text>
+          </View>
+        )}
         <Text style={[styles.groupPieceCount, { color: colors.muted }]}>{group.pieces.length}개</Text>
         <TouchableOpacity onPress={onDeleteGroup} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
           <Text style={{ color: colors.error, fontSize: 14, fontWeight: "600" }}>삭제</Text>
@@ -386,6 +380,36 @@ function GroupCard({
             {group.patternFixed ? '• 회전 금지' : '• 회전 허용'}
           </Text>
         </TouchableOpacity>
+
+        {/* 합치기 그룹 설정 */}
+        <View style={styles.mergeGroupRow}>
+          <Text style={[styles.materialLabel, { color: colors.muted }]}>합치기</Text>
+          <View style={styles.mergeGroupBtns}>
+            {MERGE_OPTIONS.map((opt) => {
+              const isActive = group.mergeGroupId === opt;
+              return (
+                <TouchableOpacity
+                  key={opt}
+                  style={[styles.mergeGroupBtn, { backgroundColor: isActive ? borderColor : colors.background, borderColor: isActive ? borderColor : colors.border }]}
+                  onPress={() => onMergeGroupIdChange(isActive ? undefined : opt)}
+                >
+                  <Text style={[styles.mergeGroupBtnText, { color: isActive ? 'white' : colors.muted }]}>{opt}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            {group.mergeGroupId && (
+              <TouchableOpacity
+                style={[styles.mergeGroupBtn, { backgroundColor: colors.background, borderColor: colors.error }]}
+                onPress={() => onMergeGroupIdChange(undefined)}
+              >
+                <Text style={[styles.mergeGroupBtnText, { color: colors.error }]}>해제</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={[styles.mergeGroupHint, { color: colors.muted }]}>
+            {group.mergeGroupId ? `그룹 ${group.mergeGroupId}과 합쳐서 배치` : '없음'}
+          </Text>
+        </View>
       </View>
 
       <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
@@ -454,34 +478,6 @@ export default function InputScreen() {
   const [renameText, setRenameText] = useState("");
   const [isCalculating, setIsCalculating] = useState(false);
 
-  // 다중 그룹 선택 상태: null = 전체, 배열 = 선택된 그룹 ID
-  // Context의 selectedGroupIds를 로컈 UI 상태로 동기화
-  const [selectedGroupIds, setSelectedGroupIds] = useState<Set<string>>(() => {
-    // 초기화: 전체 선택 (모든 그룹 ID)
-    return new Set(state.groups.map((g) => g.groupId));
-  });
-
-  // 그룹 목록 변경 시 selectedGroupIds 동기화
-  // 새 그룹이 추가되면 자동 선택, 삭제된 그룹은 제거
-  const prevGroupIdsRef = useRef<string[]>([]);
-  useEffect(() => {
-    const currentIds = state.groups.map((g) => g.groupId);
-    const prev = prevGroupIdsRef.current;
-    setSelectedGroupIds((prevSel) => {
-      const next = new Set(prevSel);
-      // 새로 추가된 그룹 자동 선택
-      for (const id of currentIds) {
-        if (!prev.includes(id)) next.add(id);
-      }
-      // 삭제된 그룹 제거
-      for (const id of prev) {
-        if (!currentIds.includes(id)) next.delete(id);
-      }
-      return next;
-    });
-    prevGroupIdsRef.current = currentIds;
-  }, [state.groups]);
-
   // 화면 폭 감지 → 반응형 컬럼 크기 계산
   const { width: screenW } = useWindowDimensions();
   const colSizes = calcColSizes(screenW);
@@ -532,43 +528,23 @@ export default function InputScreen() {
   }, [dispatch, renameTarget, renameText]);
 
   const handleCalculate = useCallback(async () => {
-    // 선택된 그룹 목록
-    const selectedArr = state.groups.filter((g) => selectedGroupIds.has(g.groupId));
-    if (selectedArr.length === 0) return;
-
-    // 유효 조각 필터링
-    const validSelected = selectedArr
-      .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
-      .filter((g) => g.pieces.length > 0);
-
-    if (validSelected.length === 0) {
+    const hasValid = state.groups.some((g) =>
+      g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
+    );
+    if (!hasValid) {
       if (Platform.OS === "web") {
-        window.alert("선택된 그룹에 유효한 조각 데이터가 없습니다.");
+        window.alert("유효한 조각 데이터를 하나 이상 입력해 주세요.");
       } else {
-        Alert.alert("입력 오류", "선택된 그룹에 유효한 조각 데이터를 하나 이상 입력해 주세요.");
+        Alert.alert("입력 오류", "유효한 조각 데이터를 하나 이상 입력해 주세요.");
       }
       return;
     }
-
-    // 선택되지 않은 그룹은 개별 배치 (soloGroups)
-    const unselectedGroups = state.groups
-      .filter((g) => !selectedGroupIds.has(g.groupId))
-      .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
-      .filter((g) => g.pieces.length > 0);
-
-    // 선택된 그룹 ID를 Context에 저장
-    const selectedIds = Array.from(selectedGroupIds);
-    dispatch({ type: "SET_SELECTED_GROUP_IDS", payload: selectedIds });
 
     setIsCalculating(true);
     if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     try {
       dispatch({ type: "CLEAR_RESULTS" });
-      // 선택된 그룹이 2개 이상이면 하나의 롤로 병합 배치
-      // 선택된 그룹이 1개면 soloGroups로 처리 (기존 방식)
-      const mergeGroups = validSelected.length >= 2 ? validSelected : [];
-      const soloGroups = validSelected.length >= 2 ? unselectedGroups : [...validSelected, ...unselectedGroups];
-      const result = calculateWithMergedGroups(soloGroups, mergeGroups, state.materialCostPerM, state.constructionPricePerM2);
+      const result = calculateFromGroups(state.groups, state.materialCostPerM, state.constructionPricePerM2);
       dispatch({ type: "SET_RESULT", payload: result });
       if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.push("/(tabs)/cutting" as any);
@@ -581,31 +557,11 @@ export default function InputScreen() {
     } finally {
       setIsCalculating(false);
     }
-  }, [state, dispatch, selectedGroupIds]);
+  }, [state, dispatch]);
 
-  // 선택된 그룹 중 유효한 조각이 있는지 확인
-  const hasValidPieces = (selectedGroupIds.size === 0 ? state.groups : state.groups.filter((g) => selectedGroupIds.has(g.groupId)))
-    .some((g) => g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0));
-
-  // 전체 선택/해제 토글
-  const allSelected = state.groups.length > 0 && state.groups.every((g) => selectedGroupIds.has(g.groupId));
-  const handleToggleAll = useCallback(() => {
-    if (allSelected) {
-      setSelectedGroupIds(new Set());
-    } else {
-      setSelectedGroupIds(new Set(state.groups.map((g) => g.groupId)));
-    }
-  }, [allSelected, state.groups]);
-
-  // 개별 그룹 선택 토글
-  const handleToggleGroup = useCallback((groupId: string) => {
-    setSelectedGroupIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupId)) next.delete(groupId);
-      else next.add(groupId);
-      return next;
-    });
-  }, []);
+  const hasValidPieces = state.groups.some((g) =>
+    g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
+  );
 
   return (
     <ScreenContainer containerClassName="bg-background">
@@ -644,8 +600,6 @@ export default function InputScreen() {
             renderItem={({ item: group, index }) => (
               <GroupCard
                 group={group} groupIndex={index} colors={colors}
-                isSelected={selectedGroupIds.has(group.groupId)}
-                onToggleSelect={() => handleToggleGroup(group.groupId)}
                 onRenamePress={() => { setRenameTarget({ groupId: group.groupId, groupName: group.groupName }); setRenameText(group.groupName); setRenameModalVisible(true); }}
                 onDeleteGroup={() => handleDeleteGroup(group.groupId)}
                 onAddPiece={() => dispatch({ type: "ADD_PIECE", payload: { groupId: group.groupId } })}
@@ -656,6 +610,7 @@ export default function InputScreen() {
                 onFilmNameChange={(filmName) => dispatch({ type: "UPDATE_GROUP_FILM_NAME", payload: { groupId: group.groupId, filmName } })}
                 onMaterialCostChange={(cost) => dispatch({ type: "UPDATE_GROUP_MATERIAL_COST", payload: { groupId: group.groupId, materialCostPerM: cost } })}
                 onPatternFixedChange={(patternFixed) => dispatch({ type: "UPDATE_GROUP_PATTERN_FIXED", payload: { groupId: group.groupId, patternFixed } })}
+                onMergeGroupIdChange={(mergeGroupId) => dispatch({ type: "UPDATE_GROUP_MERGE_ID", payload: { groupId: group.groupId, mergeGroupId } })}
                 onLastPieceQuantitySubmit={() => {
                   // 다음 그룹의 첫 번째 필드로 포커스 이동
                   const nextRef = groupFirstFieldRefs.current[index + 1];
@@ -679,38 +634,12 @@ export default function InputScreen() {
 
         {state.groups.length > 0 && (
           <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
-            {/* 그룹 선택 요약 헤더 */}
-            <View style={[styles.selectionHeader, { borderColor: colors.border }]}>
-              <TouchableOpacity
-                style={[styles.selectAllBtn, { borderColor: allSelected ? colors.primary : colors.border }]}
-                onPress={handleToggleAll}
-              >
-                <View style={[
-                  styles.selectAllCheckbox,
-                  { borderColor: allSelected ? colors.primary : colors.border },
-                  allSelected && { backgroundColor: colors.primary },
-                ]}>
-                  {allSelected && <Text style={styles.checkMark}>✓</Text>}
-                  {!allSelected && selectedGroupIds.size > 0 && <Text style={[styles.checkMark, { color: colors.primary }]}>−</Text>}
-                </View>
-                <Text style={[styles.selectAllText, { color: allSelected ? colors.primary : colors.muted }]}>
-                  {allSelected ? '전체 선택' : selectedGroupIds.size > 0 ? `${selectedGroupIds.size}개 그룹 선택됨` : '그룹 선택 안됨'}
-                </Text>
-              </TouchableOpacity>
-              <Text style={[styles.selectionHint, { color: colors.muted }]}>
-                {selectedGroupIds.size >= 2 ? '선택 그룹 합쳐서 배치' : '선택 그룹 배치'}
-              </Text>
-            </View>
             <TouchableOpacity
-              style={[styles.calcBtn, { backgroundColor: hasValidPieces && selectedGroupIds.size > 0 ? colors.primary : colors.muted }]}
-              onPress={handleCalculate} disabled={!hasValidPieces || isCalculating || selectedGroupIds.size === 0}
+              style={[styles.calcBtn, { backgroundColor: hasValidPieces ? colors.primary : colors.muted }]}
+              onPress={handleCalculate} disabled={!hasValidPieces || isCalculating}
             >
               {isCalculating ? <ActivityIndicator color="white" /> : (
-                <Text style={styles.calcBtnText}>
-                  ✂️  {selectedGroupIds.size >= 2
-                    ? `${selectedGroupIds.size}개 그룹 합쳐서 배치`
-                    : '배치 계산하기'}
-                </Text>
+                <Text style={styles.calcBtnText}>✂️  배치 계산하기</Text>
               )}
             </TouchableOpacity>
           </View>
@@ -810,15 +739,12 @@ const styles = StyleSheet.create({
   patternFixedCheckmark: { color: "white", fontSize: 13, fontWeight: "700", lineHeight: 16 },
   patternFixedLabel: { fontSize: 13, fontWeight: "600" },
   patternFixedDesc: { fontSize: 11, marginLeft: 4 },
-  // 그룹 선택 체크박스
-  groupSelectCheckbox: { paddingRight: 8, paddingVertical: 4 },
-  groupCheckboxInner: { width: 22, height: 22, borderRadius: 6, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  groupCheckMark: { color: "white", fontSize: 13, fontWeight: "800", lineHeight: 16 },
-  // 하단 바 선택 UI
-  selectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 8, marginBottom: 8, borderBottomWidth: StyleSheet.hairlineWidth },
-  selectAllBtn: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 8, borderWidth: 1 },
-  selectAllCheckbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 2, alignItems: "center", justifyContent: "center" },
-  checkMark: { color: "white", fontSize: 12, fontWeight: "800", lineHeight: 15 },
-  selectAllText: { fontSize: 13, fontWeight: "600" },
-  selectionHint: { fontSize: 12, fontWeight: "500" },
+  // 합치기 그룹 UI
+  mergeGroupRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  mergeGroupBtns: { flexDirection: "row", gap: 5 },
+  mergeGroupBtn: { width: 36, height: 30, borderRadius: 6, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  mergeGroupBtnText: { fontSize: 12, fontWeight: "700" },
+  mergeGroupHint: { fontSize: 11, flex: 1 },
+  mergeGroupBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, marginRight: 4 },
+  mergeGroupBadgeText: { color: "white", fontSize: 10, fontWeight: "700" },
 });

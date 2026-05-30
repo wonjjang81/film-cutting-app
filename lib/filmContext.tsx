@@ -32,7 +32,7 @@ interface FilmState {
   constructionPricePerM2: number;
   isLoading: boolean;
   savedProjects: SavedProject[]; // 저장된 프로젝트 목록
-  selectedGroupIds: string[] | null; // null = 전체 선택, 배열 = 선택된 그룹 ID 목록
+  selectedGroupIds?: string[] | null; // 하위 호환성 유지 (mergeGroupId 방식으로 대체됨)
 }
 
 // ─── 액션 타입 ────────────────────────────────────────────────
@@ -51,6 +51,7 @@ type FilmAction =
   | { type: 'UPDATE_GROUP_MATERIAL_COST'; payload: { groupId: string; materialCostPerM: number | undefined } }
   | { type: 'UPDATE_GROUP_CONSTRUCTION_PRICE'; payload: { groupId: string; constructionPricePerM2: number | undefined } }
   | { type: 'UPDATE_GROUP_PATTERN_FIXED'; payload: { groupId: string; patternFixed: boolean } }
+  | { type: 'UPDATE_GROUP_MERGE_ID'; payload: { groupId: string; mergeGroupId: string | undefined } }
   | { type: 'DELETE_GROUP'; payload: string }
   | { type: 'ADD_PIECE'; payload: { groupId: string } }
   | { type: 'UPDATE_PIECE'; payload: { groupId: string; pieceId: string; field: 'width' | 'height' | 'quantity'; value: number } }
@@ -58,7 +59,6 @@ type FilmAction =
   | { type: 'DELETE_PIECE'; payload: { groupId: string; pieceId: string } }
   | { type: 'SET_RESULT'; payload: CalculationResult }
   | { type: 'CLEAR_RESULTS' }
-  | { type: 'SET_SELECTED_GROUP_IDS'; payload: string[] | null }
   | { type: 'RESET_GROUPS' }
   | { type: 'SET_MATERIAL_COST_PER_M'; payload: number }
   | { type: 'SET_CONSTRUCTION_PRICE'; payload: number }
@@ -197,13 +197,19 @@ function filmReducer(state: FilmState, action: FilmAction): FilmState {
         ),
       };
 
+    case 'UPDATE_GROUP_MERGE_ID':
+      return {
+        ...state,
+        groups: state.groups.map((g) =>
+          g.groupId === action.payload.groupId
+            ? { ...g, mergeGroupId: action.payload.mergeGroupId }
+            : g,
+        ),
+      };
+
     case 'DELETE_GROUP': {
       const remaining = state.groups.filter((g) => g.groupId !== action.payload);
-      // 삭제된 그룹이 selectedGroupIds에 있으면 제거
-      const newSelected = state.selectedGroupIds
-        ? state.selectedGroupIds.filter((id) => id !== action.payload)
-        : null;
-      return { ...state, groups: remaining, selectedGroupIds: newSelected };
+      return { ...state, groups: remaining };
     }
 
     case 'RESET_GROUPS':
@@ -268,9 +274,6 @@ function filmReducer(state: FilmState, action: FilmAction): FilmState {
 
     case 'CLEAR_RESULTS':
       return { ...state, lastResult: null };
-
-    case 'SET_SELECTED_GROUP_IDS':
-      return { ...state, selectedGroupIds: action.payload };
 
     case 'SET_MATERIAL_COST_PER_M':
       return { ...state, materialCostPerM: action.payload };

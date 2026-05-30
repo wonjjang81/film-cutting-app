@@ -979,6 +979,7 @@ export default function ResultsScreen() {
           const bc = GROUP_BORDER_COLORS[idx % GROUP_BORDER_COLORS.length];
           const isActive = activeGroupId === gr.groupId;
           const isMerged = !!(gr.mergedGroupIds && gr.mergedGroupIds.length > 1);
+          // 합치기 그룹 ID는 mergedGroupNames의 첫 번째 그룹의 mergeGroupId를 참조
           return (
             <TouchableOpacity
               key={gr.groupId}
@@ -987,7 +988,7 @@ export default function ResultsScreen() {
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
                 {isMerged && (
                   <View style={[styles.mergedBadge, { backgroundColor: bc + "22", borderColor: bc + "60" }]}>
-                    <Text style={[styles.mergedBadgeText, { color: bc }]}>구분 없이 배치</Text>
+                    <Text style={[styles.mergedBadgeText, { color: bc }]}>합치기 배치</Text>
                   </View>
                 )}
                 <Text style={[styles.tabText, { color: isActive ? bc : colors.muted }]}>
@@ -996,7 +997,7 @@ export default function ResultsScreen() {
               </View>
               <Text style={[styles.tabSubText, { color: isActive ? bc + "CC" : colors.muted + "99" }]} numberOfLines={1}>
                 {isMerged
-                  ? `합치기 배치 (${gr.mergedGroupIds!.length}개 그룹)`
+                  ? `${gr.mergedGroupIds!.length}개 그룹 합쳐서 배치`
                   : `${gr.brand}${gr.filmName ? ` · ${gr.filmName}` : ""}`}
               </Text>
             </TouchableOpacity>

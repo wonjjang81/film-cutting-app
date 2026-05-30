@@ -26,7 +26,7 @@ import {
   DEFAULT_MATERIAL_COST_PER_M,
   GROUP_BORDER_COLORS,
   GROUP_COLORS,
-  calculateWithMergedGroups,
+  calculateFromGroups,
   formatM,
   formatNumber,
 } from "@/lib/filmCutting";
@@ -268,26 +268,11 @@ export default function EstimateScreen() {
   const [customDiscountRate, setCustomDiscountRate] = useState<number | null>(null);
   const [discountRateText, setDiscountRateText] = useState("");
 
-  // 재계산 헬퍼: 선택된 그룹을 병합 배치, 나머지는 개별 배치
+  // 재계산 헬퍼: mergeGroupId 기준 자동 병합 배치
   const recalculate = useCallback((matCost: number, constrPrice: number) => {
-    const selectedIds = state.selectedGroupIds;
-    const allValid = state.groups
-      .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
-      .filter((g) => g.pieces.length > 0);
-    if (allValid.length === 0) return;
-    if (!selectedIds || selectedIds.length === 0) {
-      // 선택 정보 없으면 전체 개별 배치
-      const newResult = calculateWithMergedGroups(allValid, [], matCost, constrPrice);
-      dispatch({ type: "SET_RESULT", payload: newResult });
-      return;
-    }
-    const selectedGroups = allValid.filter((g) => selectedIds.includes(g.groupId));
-    const unselectedGroups = allValid.filter((g) => !selectedIds.includes(g.groupId));
-    const mergeGroups = selectedGroups.length >= 2 ? selectedGroups : [];
-    const soloGroups = selectedGroups.length >= 2 ? unselectedGroups : [...selectedGroups, ...unselectedGroups];
-    const newResult = calculateWithMergedGroups(soloGroups, mergeGroups, matCost, constrPrice);
+    const newResult = calculateFromGroups(state.groups, matCost, constrPrice);
     dispatch({ type: "SET_RESULT", payload: newResult });
-  }, [state.groups, state.selectedGroupIds, dispatch]);
+  }, [state.groups, dispatch]);
 
   // 시공비 변경 시 재계산
   const handleConstructionChange = useCallback((val: number) => {
@@ -307,26 +292,12 @@ export default function EstimateScreen() {
   const handleGroupConstructionPriceChange = useCallback((groupId: string, price: number | undefined) => {
     dispatch({ type: "UPDATE_GROUP_CONSTRUCTION_PRICE", payload: { groupId, constructionPricePerM2: price } });
     const matCost = parseFloat(materialCostText) || DEFAULT_MATERIAL_COST_PER_M;
-    const selectedIds = state.selectedGroupIds;
     const updatedGroups = state.groups.map((g) =>
       g.groupId === groupId ? { ...g, constructionPricePerM2: price } : g
     );
-    const allValid = updatedGroups
-      .map((g) => ({ ...g, pieces: g.pieces.filter((p) => p.width > 0 && p.height > 0 && p.quantity > 0) }))
-      .filter((g) => g.pieces.length > 0);
-    if (allValid.length === 0) return;
-    if (!selectedIds || selectedIds.length === 0) {
-      const newResult = calculateWithMergedGroups(allValid, [], matCost, constructionPrice);
-      dispatch({ type: "SET_RESULT", payload: newResult });
-      return;
-    }
-    const selectedGroups = allValid.filter((g) => selectedIds.includes(g.groupId));
-    const unselectedGroups = allValid.filter((g) => !selectedIds.includes(g.groupId));
-    const mergeGroups = selectedGroups.length >= 2 ? selectedGroups : [];
-    const soloGroups = selectedGroups.length >= 2 ? unselectedGroups : [...selectedGroups, ...unselectedGroups];
-    const newResult = calculateWithMergedGroups(soloGroups, mergeGroups, matCost, constructionPrice);
+    const newResult = calculateFromGroups(updatedGroups, matCost, constructionPrice);
     dispatch({ type: "SET_RESULT", payload: newResult });
-  }, [state.groups, state.selectedGroupIds, materialCostText, constructionPrice, dispatch]);
+  }, [state.groups, materialCostText, constructionPrice, dispatch]);
 
   // 할인율 계산
   const autoDiscountRate = result ? result.invoice.discountRate : 0;
