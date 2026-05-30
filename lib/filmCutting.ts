@@ -520,7 +520,7 @@ export function calculateFromGroups(
     const allPieces: FilmPiece[] = [];
     for (const group of mergeGroups) {
       for (const p of group.pieces) {
-        allPieces.push({ ...p, id: `${group.groupId}__${p.id}` });
+        allPieces.push({ ...p });
       }
     }
 
