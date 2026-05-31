@@ -6,6 +6,7 @@ on:
       - main
     paths-ignore:
       - '**.md'
+  workflow_dispatch:
 
 jobs:
   deploy-web:
@@ -29,8 +30,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Clear Metro cache
+        run: |
+          rm -rf node_modules/react-native-css-interop/.cache || true
+          rm -rf $TMPDIR/metro-* || true
+          rm -rf $TMPDIR/haste-* || true
+
       - name: Build web
-        run: node_modules/.bin/expo export --platform web --output-dir dist
+        run: |
+          EXPO_NO_CACHE=1 node_modules/.bin/expo export \
+            --platform web \
+            --output-dir dist \
+            --clear
 
       - name: Deploy to GitHub Pages
         run: |

@@ -8,18 +8,13 @@ on:
       - '**.md'
       - '.github/workflows/deploy-web.yml'
   workflow_dispatch:
-    inputs:
-      version_bump:
-        description: '버전 업 유형 (patch / minor / major)'
-        required: false
-        default: 'patch'
 
 jobs:
   build-apk:
     name: EAS Build APK
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # GitHub Releases 생성 권한
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -45,64 +40,96 @@ jobs:
       - name: Get app version
         id: version
         run: |
-          VERSION=$(node -e "const c = require('./app.config.ts'); console.log(c.default?.version ?? '1.0.0')" 2>/dev/null || \
-                   node -e "const c = require('./app.config.js'); console.log(c.default?.version ?? '1.0.0')" 2>/dev/null || \
-                   node -p "require('./package.json').version")
+          VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "App version: $VERSION"
 
-      - name: Build APK (EAS)
+      - name: Build APK via EAS
         id: build
         run: |
-          BUILD_OUTPUT=$(eas build \
+          # EAS 빌드 시작 후 빌드 ID 추출
+          BUILD_JSON=$(eas build \
             --platform android \
             --profile production \
             --non-interactive \
             --json \
-            --no-wait=false \
             2>&1)
-          echo "$BUILD_OUTPUT"
-          # EAS 빌드 URL 추출
-          BUILD_URL=$(echo "$BUILD_OUTPUT" | grep -oP 'https://expo\.dev/artifacts/eas/[^\s"]+\.apk' | head -1)
-          if [ -z "$BUILD_URL" ]; then
-            # JSON 파싱으로 URL 추출 시도
-            BUILD_URL=$(echo "$BUILD_OUTPUT" | python3 -c "
+          echo "EAS output: $BUILD_JSON"
+
+          # buildId 추출
+          BUILD_ID=$(echo "$BUILD_JSON" | python3 -c "
           import sys, json, re
           text = sys.stdin.read()
-          # JSON 배열 찾기
-          matches = re.findall(r'\[.*\]', text, re.DOTALL)
-          for m in matches:
-              try:
-                  data = json.loads(m)
-                  if isinstance(data, list) and data:
-                      url = data[0].get('artifacts', {}).get('buildUrl', '')
-                      if url:
-                          print(url)
-                          break
-              except:
-                  pass
+          # JSON 배열 파싱 시도
+          try:
+              arr = json.loads(text)
+              if isinstance(arr, list) and arr:
+                  print(arr[0].get('id', ''))
+                  sys.exit(0)
+          except:
+              pass
+          # id 패턴 직접 검색
+          m = re.search(r'\"id\":\s*\"([a-f0-9-]{36})\"', text)
+          if m:
+              print(m.group(1))
           " 2>/dev/null || echo "")
+
+          echo "Build ID: $BUILD_ID"
+          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
+
+          # 빌드 완료 대기 (최대 30분)
+          if [ -n "$BUILD_ID" ]; then
+            echo "빌드 완료 대기 중..."
+            for i in $(seq 1 60); do
+              sleep 30
+              STATUS=$(eas build:view "$BUILD_ID" --json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              print(d.get('status', 'UNKNOWN'))
+          except:
+              print('UNKNOWN')
+          " 2>/dev/null || echo "UNKNOWN")
+              echo "[$i/60] 빌드 상태: $STATUS"
+              if [ "$STATUS" = "FINISHED" ]; then
+                break
+              elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
+                echo "빌드 실패: $STATUS"
+                exit 1
+              fi
+            done
+
+            # APK URL 추출
+            APK_URL=$(eas build:view "$BUILD_ID" --json 2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              d = json.load(sys.stdin)
+              url = d.get('artifacts', {}).get('buildUrl', '')
+              print(url)
+          except:
+              pass
+          " 2>/dev/null || echo "")
+            echo "APK URL: $APK_URL"
+            echo "apk_url=$APK_URL" >> $GITHUB_OUTPUT
           fi
-          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
-          echo "Build URL: $BUILD_URL"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Download APK
         run: |
-          BUILD_URL="${{ steps.build.outputs.build_url }}"
-          if [ -z "$BUILD_URL" ]; then
-            echo "빌드 URL을 찾지 못했습니다. EAS 대시보드에서 확인하세요."
+          APK_URL="${{ steps.build.outputs.apk_url }}"
+          if [ -z "$APK_URL" ]; then
+            echo "APK URL을 찾지 못했습니다."
             exit 1
           fi
-          echo "APK 다운로드 중: $BUILD_URL"
-          curl -L -o film-cutting-app.apk "$BUILD_URL"
+          echo "APK 다운로드: $APK_URL"
+          curl -L -o film-cutting-app.apk "$APK_URL"
           ls -lh film-cutting-app.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.version }}-${{ github.run_number }}
+          tag_name: v${{ steps.version.outputs.version }}-build${{ github.run_number }}
           name: "필름 재단 계산기 v${{ steps.version.outputs.version }} (빌드 #${{ github.run_number }})"
           body: |
             ## 📱 필름 재단 계산기 APK 다운로드
