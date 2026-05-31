@@ -1,0 +1,126 @@
+name: Build APK & Release
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+    inputs:
+      version_bump:
+        description: '버전 업 유형 (patch / minor / major)'
+        required: false
+        default: 'patch'
+
+jobs:
+  build-apk:
+    name: EAS Build APK
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # GitHub Releases 생성 권한
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Get app version
+        id: version
+        run: |
+          VERSION=$(node -e "const c = require('./app.config.ts'); console.log(c.default?.version ?? '1.0.0')" 2>/dev/null || \
+                   node -e "const c = require('./app.config.js'); console.log(c.default?.version ?? '1.0.0')" 2>/dev/null || \
+                   node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "App version: $VERSION"
+
+      - name: Build APK (EAS)
+        id: build
+        run: |
+          BUILD_OUTPUT=$(eas build \
+            --platform android \
+            --profile production \
+            --non-interactive \
+            --json \
+            --no-wait=false \
+            2>&1)
+          echo "$BUILD_OUTPUT"
+          # EAS 빌드 URL 추출
+          BUILD_URL=$(echo "$BUILD_OUTPUT" | grep -oP 'https://expo\.dev/artifacts/eas/[^\s"]+\.apk' | head -1)
+          if [ -z "$BUILD_URL" ]; then
+            # JSON 파싱으로 URL 추출 시도
+            BUILD_URL=$(echo "$BUILD_OUTPUT" | python3 -c "
+          import sys, json, re
+          text = sys.stdin.read()
+          # JSON 배열 찾기
+          matches = re.findall(r'\[.*\]', text, re.DOTALL)
+          for m in matches:
+              try:
+                  data = json.loads(m)
+                  if isinstance(data, list) and data:
+                      url = data[0].get('artifacts', {}).get('buildUrl', '')
+                      if url:
+                          print(url)
+                          break
+              except:
+                  pass
+          " 2>/dev/null || echo "")
+          fi
+          echo "build_url=$BUILD_URL" >> $GITHUB_OUTPUT
+          echo "Build URL: $BUILD_URL"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Download APK
+        run: |
+          BUILD_URL="${{ steps.build.outputs.build_url }}"
+          if [ -z "$BUILD_URL" ]; then
+            echo "빌드 URL을 찾지 못했습니다. EAS 대시보드에서 확인하세요."
+            exit 1
+          fi
+          echo "APK 다운로드 중: $BUILD_URL"
+          curl -L -o film-cutting-app.apk "$BUILD_URL"
+          ls -lh film-cutting-app.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}-${{ github.run_number }}
+          name: "필름 재단 계산기 v${{ steps.version.outputs.version }} (빌드 #${{ github.run_number }})"
+          body: |
+            ## 📱 필름 재단 계산기 APK 다운로드
+
+            **버전**: v${{ steps.version.outputs.version }}
+            **빌드**: #${{ github.run_number }}
+            **커밋**: ${{ github.sha }}
+
+            ### 설치 방법
+            1. 아래 `film-cutting-app.apk` 파일을 다운로드
+            2. Android 기기에서 파일 열기
+            3. "알 수 없는 출처" 설치 허용 후 설치
+
+            > ⚠️ 설치 전 기기 설정 → 보안 → "알 수 없는 앱 설치" 허용 필요
+          files: film-cutting-app.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

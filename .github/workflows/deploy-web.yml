@@ -1,0 +1,52 @@
+name: Deploy Web (GitHub Pages)
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - '**.md'
+
+jobs:
+  deploy-web:
+    name: Build & Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web
+        run: node_modules/.bin/expo export --platform web --output-dir dist
+
+      - name: Deploy to GitHub Pages
+        run: |
+          cd dist
+          git init && git checkout -b gh-pages
+          touch .nojekyll
+          cat > 404.html << 'EOF'
+          <!DOCTYPE html><html><head><meta charset="utf-8"><title>Film Cutting App</title>
+          <script>var l=window.location;l.replace(l.protocol+'//'+l.hostname+(l.port?':'+l.port:'')+l.pathname.split('/').slice(0,2).join('/')+'/?/'+l.pathname.slice(1).split('/').slice(1).join('/').replace(/&/g,'~and~')+(l.search?'&'+l.search.slice(1).replace(/&/g,'~and~'):'')+l.hash);</script>
+          </head></html>
+          EOF
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add -A
+          git commit -m "Deploy web: ${{ github.sha }}"
+          git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          git push -f origin gh-pages

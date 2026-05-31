@@ -126,6 +126,11 @@ const config: ExpoConfig = {
     reactCompiler: true,
     baseUrl: "/film-cutting-app",
   },
+  extra: {
+    eas: {
+      projectId: "c0eda26d-a287-42b0-8134-4e48d9ae62bd",
+    },
+  },
 };
 
 export default config;

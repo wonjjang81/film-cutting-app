@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,11 @@ import * as Haptics from "expo-haptics";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+
+// ─── APK 다운로드 설정 ───────────────────────────────────────────
+const GITHUB_REPO = "wonjjang81/film-cutting-app";
+const RELEASES_API = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+const RELEASES_PAGE = `https://github.com/${GITHUB_REPO}/releases/latest`;
 
 // ─── 업체 정보 타입 ───────────────────────────────────────────
 
@@ -107,11 +113,43 @@ const fieldStyles = StyleSheet.create({
 
 // ─── 설정 화면 ────────────────────────────────────────────────
 
+// ─── APK 다운로드 훅 ─────────────────────────────────────────────
+function useLatestRelease() {
+  const [version, setVersion] = useState<string | null>(null);
+  const [apkUrl, setApkUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const fetchRelease = useCallback(async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const res = await fetch(RELEASES_API);
+      if (!res.ok) throw new Error('fetch failed');
+      const data = await res.json();
+      setVersion(data.tag_name ?? null);
+      const apk = data.assets?.find((a: { name: string; browser_download_url: string }) =>
+        a.name.endsWith('.apk'),
+      );
+      setApkUrl(apk?.browser_download_url ?? null);
+    } catch {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchRelease(); }, [fetchRelease]);
+
+  return { version, apkUrl, loading, error, refetch: fetchRelease };
+}
+
 export default function SettingsScreen() {
   const colors = useColors();
   const [info, setInfo] = useState<CompanyInfo>(DEFAULT_COMPANY_INFO);
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { version, apkUrl, loading: apkLoading, error: apkError, refetch } = useLatestRelease();
 
   // 앱 시작 시 저장된 정보 불러오기
   useEffect(() => {
@@ -255,6 +293,55 @@ export default function SettingsScreen() {
             </View>
           )}
 
+          {/* APK 다운로드 섹션 */}
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={styles.sectionTitleRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>📱 앱 업데이트</Text>
+              {version && (
+                <View style={[styles.versionBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
+                  <Text style={[styles.versionBadgeText, { color: colors.primary }]}>{version}</Text>
+                </View>
+              )}
+            </View>
+            <Text style={[styles.sectionHint, { color: colors.muted }]}>
+              최신 APK를 다운로드하여 Android 기기에 설치할 수 있습니다.
+            </Text>
+
+            {apkLoading && (
+              <Text style={[styles.apkStatusText, { color: colors.muted }]}>🔄 최신 버전 확인 중...</Text>
+            )}
+            {apkError && (
+              <Text style={[styles.apkStatusText, { color: colors.error }]}>⚠️ 버전 정보를 불러올 수 없습니다.</Text>
+            )}
+
+            <View style={styles.apkBtnRow}>
+              <TouchableOpacity
+                style={[styles.apkBtn, { backgroundColor: apkUrl ? colors.primary : colors.muted + '40' }]}
+                onPress={() => {
+                  const url = apkUrl ?? RELEASES_PAGE;
+                  Linking.openURL(url);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }}
+                disabled={apkLoading}
+              >
+                <Text style={[styles.apkBtnText, { color: apkUrl ? 'white' : colors.muted }]}>
+                  {apkUrl ? '⬇️  APK 다운로드' : '🔗 릴리즈 페이지'}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.apkRefreshBtn, { borderColor: colors.border }]}
+                onPress={refetch}
+                disabled={apkLoading}
+              >
+                <Text style={{ fontSize: 16 }}>🔄</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.apkInstallHint, { color: colors.muted }]}>
+              설치 전 기기 설정 → 보안 → "알 수 없는 앱 설치" 허용 필요
+            </Text>
+          </View>
+
           {/* 버튼 영역 */}
           <View style={styles.btnRow}>
             <TouchableOpacity
@@ -372,5 +459,45 @@ const styles = StyleSheet.create({
   resetBtnText: {
     fontSize: 14,
     fontWeight: "600",
+  },
+  versionBadge: {
+    borderRadius: 8,
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  versionBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  apkStatusText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  apkBtnRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  apkBtn: {
+    flex: 1,
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  apkBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  apkRefreshBtn: {
+    width: 46,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  apkInstallHint: {
+    fontSize: 11,
+    lineHeight: 16,
+    fontStyle: "italic",
   },
 });
