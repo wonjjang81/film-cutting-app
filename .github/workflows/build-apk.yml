@@ -31,11 +31,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Setup EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Setup EAS CLI
+        run: npm install -g eas-cli
 
       - name: Get app version
         id: version
@@ -47,84 +44,60 @@ jobs:
       - name: Build APK via EAS
         id: build
         run: |
-          # EAS 빌드 시작 후 빌드 ID 추출
-          BUILD_JSON=$(eas build \
+          echo "EAS 빌드 시작..."
+          eas build \
             --platform android \
             --profile production \
             --non-interactive \
-            --json \
-            2>&1)
-          echo "EAS output: $BUILD_JSON"
-
-          # buildId 추출
-          BUILD_ID=$(echo "$BUILD_JSON" | python3 -c "
-          import sys, json, re
-          text = sys.stdin.read()
-          # JSON 배열 파싱 시도
-          try:
-              arr = json.loads(text)
-              if isinstance(arr, list) and arr:
-                  print(arr[0].get('id', ''))
-                  sys.exit(0)
-          except:
-              pass
-          # id 패턴 직접 검색
-          m = re.search(r'\"id\":\s*\"([a-f0-9-]{36})\"', text)
-          if m:
-              print(m.group(1))
-          " 2>/dev/null || echo "")
-
-          echo "Build ID: $BUILD_ID"
-          echo "build_id=$BUILD_ID" >> $GITHUB_OUTPUT
-
-          # 빌드 완료 대기 (최대 30분)
-          if [ -n "$BUILD_ID" ]; then
-            echo "빌드 완료 대기 중..."
-            for i in $(seq 1 60); do
-              sleep 30
-              STATUS=$(eas build:view "$BUILD_ID" --json 2>/dev/null | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              print(d.get('status', 'UNKNOWN'))
-          except:
-              print('UNKNOWN')
-          " 2>/dev/null || echo "UNKNOWN")
-              echo "[$i/60] 빌드 상태: $STATUS"
-              if [ "$STATUS" = "FINISHED" ]; then
-                break
-              elif [ "$STATUS" = "ERRORED" ] || [ "$STATUS" = "CANCELED" ]; then
-                echo "빌드 실패: $STATUS"
-                exit 1
-              fi
-            done
-
-            # APK URL 추출
-            APK_URL=$(eas build:view "$BUILD_ID" --json 2>/dev/null | python3 -c "
-          import sys, json
-          try:
-              d = json.load(sys.stdin)
-              url = d.get('artifacts', {}).get('buildUrl', '')
-              print(url)
-          except:
-              pass
-          " 2>/dev/null || echo "")
-            echo "APK URL: $APK_URL"
-            echo "apk_url=$APK_URL" >> $GITHUB_OUTPUT
-          fi
+            --wait \
+            2>&1 | tee /tmp/eas-build-output.txt
+          echo "EAS 빌드 완료"
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Download APK
+      - name: Extract APK URL and Download
+        id: download
         run: |
-          APK_URL="${{ steps.build.outputs.apk_url }}"
+          echo "=== EAS 빌드 출력 ==="
+          cat /tmp/eas-build-output.txt
+
+          # 최근 완료된 빌드 URL 조회
+          APK_URL=$(eas build:list \
+            --platform android \
+            --status finished \
+            --limit 1 \
+            --json \
+            2>/dev/null | python3 -c "
+          import sys, json
+          try:
+              data = json.load(sys.stdin)
+              if isinstance(data, list) and data:
+                  url = data[0].get('artifacts', {}).get('buildUrl', '')
+                  print(url)
+          except Exception as e:
+              import sys
+              print(f'파싱 오류: {e}', file=sys.stderr)
+          " 2>/dev/null || echo "")
+
+          echo "APK URL: $APK_URL"
+
           if [ -z "$APK_URL" ]; then
+            # 출력에서 직접 URL 추출 시도
+            APK_URL=$(grep -oE 'https://expo\.dev/artifacts/eas/[^[:space:]]+\.apk' /tmp/eas-build-output.txt | head -1 || echo "")
+            echo "출력에서 추출한 URL: $APK_URL"
+          fi
+
+          if [ -n "$APK_URL" ]; then
+            curl -L -o film-cutting-app.apk "$APK_URL"
+            ls -lh film-cutting-app.apk
+            echo "apk_ready=true" >> $GITHUB_OUTPUT
+          else
             echo "APK URL을 찾지 못했습니다."
+            echo "apk_ready=false" >> $GITHUB_OUTPUT
             exit 1
           fi
-          echo "APK 다운로드: $APK_URL"
-          curl -L -o film-cutting-app.apk "$APK_URL"
-          ls -lh film-cutting-app.apk
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
