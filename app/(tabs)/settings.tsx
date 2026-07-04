@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
+import { router } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -293,6 +294,23 @@ export default function SettingsScreen() {
             </View>
           )}
 
+          {/* 사용 가이드 섹션 */}
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>📖 사용 가이드</Text>
+            <Text style={[styles.sectionHint, { color: colors.muted }]}>
+              앱 사용 방법과 기능에 대한 상세 가이드를 확인합니다.
+            </Text>
+            <TouchableOpacity
+              style={[styles.guideBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                router.push("/(tabs)/guide" as any);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              }}
+            >
+              <Text style={[styles.guideBtnText, { color: 'white' }]}>📖 가이드 보기</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* APK 다운로드 섹션 */}
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={styles.sectionTitleRow}>
@@ -499,5 +517,14 @@ const styles = StyleSheet.create({
     fontSize: 11,
     lineHeight: 16,
     fontStyle: "italic",
+  },
+  guideBtn: {
+    paddingVertical: 13,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  guideBtnText: {
+    fontSize: 15,
+    fontWeight: "700",
   },
 });
