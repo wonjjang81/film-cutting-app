@@ -25,4 +25,34 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/**
+ * Guest accounts table for temporary guest logins with expiration.
+ */
+export const guestAccounts = mysqlTable("guest_accounts", {
+  id: int("id").autoincrement().primaryKey(),
+  guestToken: varchar("guestToken", { length: 255 }).notNull().unique(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  userId: int("userId"), // NULL for guest, set when converting to user
+});
+
+export type GuestAccount = typeof guestAccounts.$inferSelect;
+export type InsertGuestAccount = typeof guestAccounts.$inferInsert;
+
+/**
+ * Sessions table for managing active sessions and enforcing single-device login.
+ */
+export const sessions = mysqlTable("sessions", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId"), // NULL for guest sessions
+  guestAccountId: int("guestAccountId"), // NULL for regular user sessions
+  deviceId: varchar("deviceId", { length: 255 }).notNull(),
+  accessTokenJti: varchar("accessTokenJti", { length: 255 }).notNull().unique(),
+  refreshTokenJti: varchar("refreshTokenJti", { length: 255 }).notNull().unique(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  expiresAt: timestamp("expiresAt").notNull(),
+  isActive: int("isActive").default(1).notNull(), // 1 = true, 0 = false
+});
+
+export type Session = typeof sessions.$inferSelect;
+export type InsertSession = typeof sessions.$inferInsert;

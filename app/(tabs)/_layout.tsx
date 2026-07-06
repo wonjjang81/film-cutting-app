@@ -39,6 +39,13 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
+        name="login"
+        options={{
+          title: "로그인",
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🔐" focused={focused} />,
+        }}
+      />
+      <Tabs.Screen
         name="index"
         options={{
           title: "홈",
