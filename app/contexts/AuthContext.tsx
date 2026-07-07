@@ -10,9 +10,11 @@ export interface GuestSession {
 }
 
 interface AuthContextType {
+  accessCodeValidated: boolean;
   guestSession: GuestSession | null;
   isLoading: boolean;
-  guestLoginError: string | null;
+  error: string | null;
+  validateAccessCode: (code: string) => Promise<void>;
   loginAsGuest: (durationMinutes: number) => Promise<void>;
   logout: () => void;
   isGuestExpired: () => boolean;
@@ -21,9 +23,10 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [accessCodeValidated, setAccessCodeValidated] = useState(false);
   const [guestSession, setGuestSession] = useState<GuestSession | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [guestLoginError, setGuestLoginError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>("");
 
   // Initialize device ID on mount
@@ -35,6 +38,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newDeviceId = uuidv4();
       localStorage.setItem("deviceId", newDeviceId);
       setDeviceId(newDeviceId);
+    }
+
+    // Load access code validation status
+    const validatedCode = localStorage.getItem("accessCodeValidated");
+    if (validatedCode === "true") {
+      setAccessCodeValidated(true);
     }
 
     // Load guest session from localStorage
@@ -54,14 +63,52 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const validateAccessCode = async (code: string) => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/trpc/auth.validateAccessCode", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: {
+            code,
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to validate access code");
+      }
+
+      const data = await response.json();
+
+      if (data.result.data.valid) {
+        setAccessCodeValidated(true);
+        localStorage.setItem("accessCodeValidated", "true");
+      } else {
+        setError(data.result.data.message || "접속코드 검증 실패");
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError(errorMessage);
+      console.error("Access code validation error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const loginAsGuest = async (durationMinutes: number) => {
     if (!deviceId) {
-      setGuestLoginError("Device ID not initialized");
+      setError("Device ID not initialized");
       return;
     }
 
     setIsLoading(true);
-    setGuestLoginError(null);
+    setError(null);
 
     try {
       const response = await fetch("/api/trpc/auth.guestLogin", {
@@ -92,10 +139,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       setGuestSession(session);
       localStorage.setItem("guestSession", JSON.stringify(session));
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      setGuestLoginError(errorMessage);
-      console.error("Guest login error:", error);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error";
+      setError(errorMessage);
+      console.error("Guest login error:", err);
     } finally {
       setIsLoading(false);
     }
@@ -103,7 +150,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = () => {
     setGuestSession(null);
+    setAccessCodeValidated(false);
     localStorage.removeItem("guestSession");
+    localStorage.removeItem("accessCodeValidated");
   };
 
   const isGuestExpired = () => {
@@ -114,9 +163,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   return (
     <AuthContext.Provider
       value={{
+        accessCodeValidated,
         guestSession,
         isLoading,
-        guestLoginError,
+        error,
+        validateAccessCode,
         loginAsGuest,
         logout,
         isGuestExpired,

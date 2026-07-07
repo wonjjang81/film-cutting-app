@@ -4,7 +4,8 @@ import { router } from "expo-router";
 import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginScreen() {
-  const { loginAsGuest, isLoading, guestLoginError } = useAuth();
+  const { loginAsGuest, isLoading } = useAuth();
+  const [error, setError] = useState<string | null>(null);
   const [selectedDuration, setSelectedDuration] = useState<number>(1440); // 24 hours default
 
   const durationOptions = [
@@ -68,9 +69,9 @@ export default function LoginScreen() {
           </Text>
         </View>
 
-        {guestLoginError && (
+        {error && (
           <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{guestLoginError}</Text>
+            <Text style={styles.errorText}>{error}</Text>
           </View>
         )}
 

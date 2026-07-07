@@ -56,3 +56,21 @@ export const sessions = mysqlTable("sessions", {
 
 export type Session = typeof sessions.$inferSelect;
 export type InsertSession = typeof sessions.$inferInsert;
+
+/**
+ * Access codes table for managing app access codes issued by admin.
+ */
+export const accessCodes = mysqlTable("access_codes", {
+  id: int("id").autoincrement().primaryKey(),
+  code: varchar("code", { length: 32 }).notNull().unique(), // e.g., "ABC123XYZ789"
+  isActive: int("isActive").default(1).notNull(), // 1 = active, 0 = revoked
+  usageLimit: int("usageLimit"), // NULL = unlimited
+  usageCount: int("usageCount").default(0).notNull(), // Current usage count
+  expiresAt: timestamp("expiresAt"), // NULL = no expiration
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdBy: varchar("createdBy", { length: 255 }), // Admin email or ID
+  notes: text("notes"), // Admin notes about this code
+});
+
+export type AccessCode = typeof accessCodes.$inferSelect;
+export type InsertAccessCode = typeof accessCodes.$inferInsert;
