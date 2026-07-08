@@ -39,13 +39,6 @@ export default function TabLayout() {
       }}
     >
       <Tabs.Screen
-        name="accesscode"
-        options={{
-          title: "접속코드",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🔑" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
         name="login"
         options={{
           title: "로그인",
@@ -78,13 +71,6 @@ export default function TabLayout() {
         options={{
           title: "견적",
           tabBarIcon: ({ focused }) => <TabIcon emoji="💰" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="admin"
-        options={{
-          title: "관리자",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👨‍💼" focused={focused} />,
         }}
       />
       <Tabs.Screen

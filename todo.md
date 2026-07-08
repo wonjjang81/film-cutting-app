@@ -47,8 +47,7 @@
 - [x] 접속코드 기반 게스트 로그인 기능 구현
 - [x] 접속코드 검증 서버 로직 추가 (auth.validateAccessCode)
 - [x] 게스트 계정 및 세션 생성 로직 추가 (auth.guestLogin)
-- [x] 접속코드 입력 화면 구현 (accesscode.tsx)
-- [x] 게스트 로그인 기간 선택 화면 구현 (login.tsx)
-- [x] 관리자 대시보드 및 코드 관리 기능 구현 (admin.tsx)
+- [x] 접속코드, 게스트 로그인, 관리자 탭을 '로그인' 탭 하나로 통합 (login.tsx)
+- [x] 탭 네비게이션 구조 최적화 및 불필요한 파일 정리 (_layout.tsx)
 - [x] 관리자 전용 통계 및 코드 관리 API 추가 (admin.*)
 - [x] 게스트 로그인 및 관리자 기능 가이드 문서 작성 (GUEST_LOGIN_GUIDE.md)
