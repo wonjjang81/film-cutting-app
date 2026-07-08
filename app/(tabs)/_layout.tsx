@@ -1,4 +1,4 @@
-import { Tabs } from "expo-router";
+import { Tabs, Redirect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Platform, Text, View } from "react-native";
 import { useColors } from "@/hooks/use-colors";
@@ -30,13 +30,17 @@ export default function TabLayout() {
 
   // 인증 상태 확인
   const { guestSession } = useGuestAuth();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
 
   // 로그인 여부 판단
   const isLoggedIn = !!guestSession || !!isAuthenticated;
 
+  // 로딩 중일 때는 아무것도 렌더링하지 않음
+  if (loading) return null;
+
   return (
     <Tabs
+      initialRouteName="login"
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         headerShown: false,
@@ -76,9 +80,7 @@ export default function TabLayout() {
             ) : (
               <DisabledTabIcon />
             ),
-          // 미로그인 시 탭 버튼을 빈 컴포넌트로 대체하여 클릭 방지
           tabBarButton: isLoggedIn ? HapticTab : () => null,
-          // href를 null로 설정하여 접근 차단
           href: isLoggedIn ? "/(tabs)/index" : null,
         }}
       />
@@ -147,11 +149,11 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 가이드 탭 - 필요에 따라 활성화 가능 */}
+      {/* 가이드 탭 - 탭 바에서 숨김 */}
       <Tabs.Screen
         name="guide"
         options={{
-          href: null, // 탭 바에서 숨김
+          href: null,
         }}
       />
     </Tabs>
