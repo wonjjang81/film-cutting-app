@@ -87,13 +87,15 @@ export default function LoginScreen() {
   };
 
   const handleAdminLogin = () => {
-    if (adminPassword === ADMIN_PASSWORD) {
+    const trimmedPassword = adminPassword.trim();
+    if (trimmedPassword === ADMIN_PASSWORD) {
       setIsAdminAuthenticated(true);
       setAdminPassword("");
       setAdminError(null);
+      // Ensure the path is correct
       router.push("/(tabs)/admin");
     } else {
-      setAdminError("관리자 비밀번호가 틀렸습니다.");
+      setAdminError(`비밀번호가 일치하지 않습니다. (입력: ${trimmedPassword.length}자)`);
       setAdminPassword("");
     }
   };
