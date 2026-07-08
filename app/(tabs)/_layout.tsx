@@ -1,13 +1,24 @@
 import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Platform, Text } from "react-native";
+import { Platform, Text, View } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 import { HapticTab } from "@/components/haptic-tab";
+import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 
-// 탭 아이콘을 이모지로 간단하게 처리 (SF Symbols 매핑 없이도 동작)
+// 탭 아이콘을 이모지로 간단하게 처리
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
     <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
+  );
+}
+
+// 비활성화된 탭 표시
+function DisabledTabIcon() {
+  return (
+    <View style={{ fontSize: 22, opacity: 0.3 }}>
+      <Text style={{ fontSize: 22, opacity: 0.3 }}>🔒</Text>
+    </View>
   );
 }
 
@@ -16,6 +27,13 @@ export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
   const tabBarHeight = 60 + bottomPadding;
+
+  // 인증 상태 확인
+  const { guestSession, accessCodeValidated } = useGuestAuth();
+  const { user, isAuthenticated } = useAuth();
+
+  // 로그인 여부 판단
+  const isLoggedIn = guestSession || isAuthenticated;
 
   return (
     <Tabs
@@ -38,6 +56,7 @@ export default function TabLayout() {
         },
       }}
     >
+      {/* 로그인 탭 - 항상 활성화 */}
       <Tabs.Screen
         name="login"
         options={{
@@ -45,39 +64,84 @@ export default function TabLayout() {
           tabBarIcon: ({ focused }) => <TabIcon emoji="🔐" focused={focused} />,
         }}
       />
+
+      {/* 홈 탭 - 로그인 후 활성화 */}
       <Tabs.Screen
         name="index"
         options={{
           title: "홈",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+          tabBarIcon: ({ focused }) =>
+            isLoggedIn ? (
+              <TabIcon emoji="🏠" focused={focused} />
+            ) : (
+              <DisabledTabIcon />
+            ),
+          tabBarButton: isLoggedIn ? HapticTab : () => null,
+          href: isLoggedIn ? "/(tabs)/index" : null,
         }}
       />
+
+      {/* 입력 탭 - 로그인 후 활성화 */}
       <Tabs.Screen
         name="input"
         options={{
           title: "입력",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="✏️" focused={focused} />,
+          tabBarIcon: ({ focused }) =>
+            isLoggedIn ? (
+              <TabIcon emoji="✏️" focused={focused} />
+            ) : (
+              <DisabledTabIcon />
+            ),
+          tabBarButton: isLoggedIn ? HapticTab : () => null,
+          href: isLoggedIn ? "/(tabs)/input" : null,
         }}
       />
+
+      {/* 재단 탭 - 로그인 후 활성화 */}
       <Tabs.Screen
         name="cutting"
         options={{
           title: "재단",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} />,
+          tabBarIcon: ({ focused }) =>
+            isLoggedIn ? (
+              <TabIcon emoji="✂️" focused={focused} />
+            ) : (
+              <DisabledTabIcon />
+            ),
+          tabBarButton: isLoggedIn ? HapticTab : () => null,
+          href: isLoggedIn ? "/(tabs)/cutting" : null,
         }}
       />
+
+      {/* 견적 탭 - 로그인 후 활성화 */}
       <Tabs.Screen
         name="estimate"
         options={{
           title: "견적",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="💰" focused={focused} />,
+          tabBarIcon: ({ focused }) =>
+            isLoggedIn ? (
+              <TabIcon emoji="💰" focused={focused} />
+            ) : (
+              <DisabledTabIcon />
+            ),
+          tabBarButton: isLoggedIn ? HapticTab : () => null,
+          href: isLoggedIn ? "/(tabs)/estimate" : null,
         }}
       />
+
+      {/* 설정 탭 - 로그인 후 활성화 */}
       <Tabs.Screen
         name="settings"
         options={{
           title: "설정",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
+          tabBarIcon: ({ focused }) =>
+            isLoggedIn ? (
+              <TabIcon emoji="⚙️" focused={focused} />
+            ) : (
+              <DisabledTabIcon />
+            ),
+          tabBarButton: isLoggedIn ? HapticTab : () => null,
+          href: isLoggedIn ? "/(tabs)/settings" : null,
         }}
       />
     </Tabs>

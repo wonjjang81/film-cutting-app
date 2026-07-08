@@ -32,12 +32,12 @@ export default function LoginScreen() {
   const [loginMode, setLoginMode] = useState<LoginMode>("accessCode");
   const [accessCode, setAccessCode] = useState("");
   const [accessCodeError, setAccessCodeError] = useState<string | null>(null);
-  const [selectedDuration, setSelectedDuration] = useState<number>(1440); // 24 hours default
+  const [selectedDuration, setSelectedDuration] = useState<number>(1440);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState<string | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  const ADMIN_PASSWORD = "won81"; // 관리자 초기 비밀번호 설정
+  const ADMIN_PASSWORD = "won81";
 
   const durationOptions = [
     { label: "1시간", value: 60 },
@@ -46,21 +46,18 @@ export default function LoginScreen() {
     { label: "7일", value: 10080 },
   ];
 
-  // Redirect if already logged in
   useEffect(() => {
     if (isAuthenticated && user) {
       router.push("/(tabs)/index");
     }
   }, [isAuthenticated, user]);
 
-  // Redirect if guest session is active
   useEffect(() => {
     if (guestSession && !guestLoading) {
       router.push("/(tabs)/input");
     }
   }, [guestSession, guestLoading]);
 
-  // Redirect if access code validated
   useEffect(() => {
     if (accessCodeValidated && !guestLoading) {
       setLoginMode("guestDuration");
@@ -92,12 +89,15 @@ export default function LoginScreen() {
       setIsAdminAuthenticated(true);
       setAdminPassword("");
       setAdminError(null);
-      // Ensure the path is correct
-      router.push("/(tabs)/admin");
     } else {
       setAdminError(`비밀번호가 일치하지 않습니다. (입력: ${trimmedPassword.length}자)`);
       setAdminPassword("");
     }
+  };
+
+  const handleAdminLogout = () => {
+    setIsAdminAuthenticated(false);
+    setLoginMode("admin");
   };
 
   const formatDuration = (minutes: number): string => {
@@ -120,7 +120,6 @@ export default function LoginScreen() {
     <ScreenContainer containerClassName="bg-background">
       <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
-          {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.foreground }]}>
               필름 재단 계산기
@@ -130,7 +129,6 @@ export default function LoginScreen() {
             </Text>
           </View>
 
-          {/* Mode Selector Tabs */}
           <View
             style={[
               styles.modeSelector,
@@ -209,7 +207,6 @@ export default function LoginScreen() {
           {/* Guest Login Mode */}
           {loginMode === "accessCode" && (
             <View>
-              {/* Access Code Input */}
               {!accessCodeValidated && (
                 <View
                   style={[
@@ -281,7 +278,6 @@ export default function LoginScreen() {
                 </View>
               )}
 
-              {/* Guest Duration Selection */}
               {accessCodeValidated && (
                 <View
                   style={[
@@ -367,7 +363,6 @@ export default function LoginScreen() {
                 </View>
               )}
 
-              {/* Info Sections */}
               {!accessCodeValidated && (
                 <>
                   <View
@@ -419,7 +414,7 @@ export default function LoginScreen() {
           )}
 
           {/* Admin Login Mode */}
-          {loginMode === "admin" && (
+          {loginMode === "admin" && !isAdminAuthenticated && (
             <View
               style={[
                 styles.section,
@@ -493,6 +488,64 @@ export default function LoginScreen() {
               </View>
             </View>
           )}
+
+          {/* Admin Dashboard Mode */}
+          {loginMode === "admin" && isAdminAuthenticated && (
+            <View>
+              <View
+                style={[
+                  styles.section,
+                  { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+              >
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+                    관리자 대시보드
+                  </Text>
+                  <TouchableOpacity
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      backgroundColor: colors.error,
+                      borderRadius: 6,
+                    }}
+                    onPress={handleAdminLogout}
+                  >
+                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
+                      로그아웃
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                <View
+                  style={[
+                    styles.infoContainer,
+                    {
+                      backgroundColor: colors.primary + "12",
+                      borderLeftColor: colors.primary,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.infoTitle, { color: colors.primary }]}>
+                    👨‍💼 관리자 모드 활성화됨
+                  </Text>
+                  <Text style={[styles.infoText, { color: colors.foreground }]}>
+                    • 새로운 접속코드 생성{"\n"}
+                    • 기존 코드 수정 및 삭제{"\n"}
+                    • 사용 현황 통계 조회{"\n"}
+                    • 코드 활성/비활성 관리
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[styles.button, { backgroundColor: colors.primary, marginTop: 16 }]}
+                  onPress={() => router.push("/(tabs)/admin")}
+                >
+                  <Text style={styles.buttonText}>관리자 대시보드 열기</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
       </ScrollView>
     </ScreenContainer>
@@ -500,143 +553,33 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  center: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  header: {
-    marginBottom: 24,
-    marginTop: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-  },
-  modeSelector: {
-    flexDirection: "row",
-    borderWidth: 1,
-    borderRadius: 12,
-    marginBottom: 24,
-    overflow: "hidden",
-  },
-  modeTab: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: "center",
-    borderBottomWidth: 3,
-  },
-  modeTabText: {
-    fontSize: 14,
-  },
-  section: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 14,
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  errorContainer: {
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderLeftWidth: 4,
-  },
-  errorText: {
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  button: {
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  optionsContainer: {
-    gap: 10,
-    marginBottom: 12,
-  },
-  optionButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-  },
-  optionText: {
-    fontSize: 15,
-  },
-  durationInfo: {
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-    marginBottom: 16,
-  },
-  durationInfoText: {
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  infoContainer: {
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    marginBottom: 20,
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  featuresContainer: {
-    padding: 16,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  featureTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  featureList: {
-    gap: 8,
-  },
-  featureItem: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
+  container: { flex: 1 },
+  content: { padding: 20, paddingBottom: 40 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  header: { marginBottom: 24, marginTop: 20 },
+  title: { fontSize: 28, fontWeight: "bold", marginBottom: 8 },
+  subtitle: { fontSize: 16 },
+  modeSelector: { flexDirection: "row", borderWidth: 1, borderRadius: 12, marginBottom: 24, overflow: "hidden" },
+  modeTab: { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 3 },
+  modeTabText: { fontSize: 14 },
+  section: { borderWidth: 1, borderRadius: 12, padding: 16, marginBottom: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: "600", marginBottom: 8 },
+  description: { fontSize: 14, marginBottom: 16, lineHeight: 20 },
+  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12, fontSize: 14, marginBottom: 12 },
+  errorContainer: { padding: 12, borderRadius: 8, marginBottom: 16, borderLeftWidth: 4 },
+  errorText: { fontSize: 14, fontWeight: "500" },
+  button: { paddingVertical: 14, borderRadius: 8, alignItems: "center" },
+  buttonText: { color: "#fff", fontSize: 16, fontWeight: "600" },
+  optionsContainer: { gap: 10, marginBottom: 12 },
+  optionButton: { paddingVertical: 12, paddingHorizontal: 16, borderRadius: 8, borderWidth: 2 },
+  optionText: { fontSize: 15 },
+  durationInfo: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 6, marginBottom: 16 },
+  durationInfoText: { fontSize: 13, fontWeight: "600" },
+  infoContainer: { padding: 16, borderRadius: 8, borderLeftWidth: 4, marginBottom: 20 },
+  infoTitle: { fontSize: 14, fontWeight: "600", marginBottom: 8 },
+  infoText: { fontSize: 13, lineHeight: 20 },
+  featuresContainer: { padding: 16, borderRadius: 8, borderWidth: 1 },
+  featureTitle: { fontSize: 14, fontWeight: "600", marginBottom: 12 },
+  featureList: { gap: 8 },
+  featureItem: { fontSize: 13, lineHeight: 18 },
 });
