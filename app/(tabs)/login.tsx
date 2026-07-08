@@ -37,7 +37,7 @@ export default function LoginScreen() {
   const [adminError, setAdminError] = useState<string | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
-  const ADMIN_PASSWORD = "admin123"; // 실제 운영 시 환경변수로 관리
+  const ADMIN_PASSWORD = "won81"; // 관리자 초기 비밀번호 설정
 
   const durationOptions = [
     { label: "1시간", value: 60 },
