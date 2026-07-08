@@ -1,82 +1,179 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  ActivityIndicator,
+} from "react-native";
 import { router } from "expo-router";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "@/app/contexts/AuthContext";
+import { useColors } from "@/hooks/use-colors";
+import { ScreenContainer } from "@/components/screen-container";
 
 export default function AccessCodeScreen() {
-  const { validateAccessCode, isLoading, error } = useAuth();
+  const colors = useColors();
+  const { validateAccessCode, isLoading, error, accessCodeValidated } = useAuth();
   const [code, setCode] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+
+  // Redirect if already validated
+  useEffect(() => {
+    if (accessCodeValidated) {
+      router.push("/(tabs)/login");
+    }
+  }, [accessCodeValidated]);
 
   const handleValidateCode = async () => {
     if (!code.trim()) {
+      setLocalError("접속코드를 입력해주세요.");
       return;
     }
+
+    if (code.trim().length < 6) {
+      setLocalError("접속코드는 최소 6자 이상이어야 합니다.");
+      return;
+    }
+
+    setLocalError(null);
     await validateAccessCode(code.trim());
-    // Navigate to login screen after successful validation
-    setTimeout(() => {
-      router.push("/(tabs)/login");
-    }, 500);
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>필름 재단 계산기</Text>
-          <Text style={styles.subtitle}>접속코드 입력</Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>접속코드를 입력하세요</Text>
-          <Text style={styles.description}>
-            관리자로부터 받은 접속코드를 입력하여 앱에 접근할 수 있습니다.
-          </Text>
-
-          <TextInput
-            style={styles.codeInput}
-            placeholder="접속코드 입력 (예: ABC123XYZ789)"
-            placeholderTextColor="#999"
-            value={code}
-            onChangeText={setCode}
-            editable={!isLoading}
-            autoCapitalize="characters"
-            maxLength={32}
-          />
-
-          {error && (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>⚠️ {error}</Text>
-            </View>
-          )}
-
-          <TouchableOpacity
-            style={[styles.validateButton, (isLoading || !code.trim()) && styles.validateButtonDisabled]}
-            onPress={handleValidateCode}
-            disabled={isLoading || !code.trim()}
-          >
-            <Text style={styles.validateButtonText}>
-              {isLoading ? "검증 중..." : "접속코드 검증"}
+    <ScreenContainer containerClassName="bg-background">
+      <ScrollView style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.content}>
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={[styles.title, { color: colors.foreground }]}>
+              필름 재단 계산기
             </Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
+              접속코드 입력
+            </Text>
+          </View>
 
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>💡 접속코드 안내</Text>
-          <Text style={styles.infoText}>
-            • 접속코드는 관리자만 발행할 수 있습니다.{"\n"}
-            • 한 번 사용한 코드도 다시 사용할 수 있습니다.{"\n"}
-            • 코드가 없으신 경우 관리자에게 문의하세요.
-          </Text>
+          {/* Main Section */}
+          <View
+            style={[
+              styles.section,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              접속코드를 입력하세요
+            </Text>
+            <Text style={[styles.description, { color: colors.muted }]}>
+              관리자로부터 받은 접속코드를 입력하여 앱에 접근할 수 있습니다.
+            </Text>
+
+            <TextInput
+              style={[
+                styles.codeInput,
+                {
+                  borderColor: localError || error ? colors.error : colors.border,
+                  color: colors.foreground,
+                  backgroundColor: colors.background,
+                },
+              ]}
+              placeholder="접속코드 입력 (예: ABC123XYZ789)"
+              placeholderTextColor={colors.muted}
+              value={code}
+              onChangeText={(text) => {
+                setCode(text);
+                setLocalError(null);
+              }}
+              editable={!isLoading}
+              autoCapitalize="characters"
+              maxLength={32}
+            />
+
+            {(localError || error) && (
+              <View
+                style={[
+                  styles.errorContainer,
+                  { backgroundColor: colors.error + "15" },
+                ]}
+              >
+                <Text style={[styles.errorText, { color: colors.error }]}>
+                  ⚠️ {localError || error}
+                </Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[
+                styles.validateButton,
+                {
+                  backgroundColor: colors.primary,
+                  opacity: isLoading || !code.trim() ? 0.6 : 1,
+                },
+              ]}
+              onPress={handleValidateCode}
+              disabled={isLoading || !code.trim()}
+            >
+              {isLoading ? (
+                <ActivityIndicator color="white" size="small" />
+              ) : (
+                <Text style={styles.validateButtonText}>접속코드 검증</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          {/* Info Section */}
+          <View
+            style={[
+              styles.infoContainer,
+              { backgroundColor: colors.primary + "12", borderLeftColor: colors.primary },
+            ]}
+          >
+            <Text style={[styles.infoTitle, { color: colors.primary }]}>
+              💡 접속코드 안내
+            </Text>
+            <Text style={[styles.infoText, { color: colors.foreground }]}>
+              • 접속코드는 관리자만 발행할 수 있습니다.{"\n"}
+              • 한 번 사용한 코드도 다시 사용할 수 있습니다.{"\n"}
+              • 코드가 없으신 경우 관리자에게 문의하세요.{"\n"}
+              • 코드는 대문자와 숫자로 구성됩니다.
+            </Text>
+          </View>
+
+          {/* Features Section */}
+          <View
+            style={[
+              styles.featuresContainer,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+            ]}
+          >
+            <Text style={[styles.featureTitle, { color: colors.foreground }]}>
+              ✨ 게스트 접근 기능
+            </Text>
+            <View style={styles.featureList}>
+              <Text style={[styles.featureItem, { color: colors.foreground }]}>
+                • 접속코드로 임시 게스트 계정 생성
+              </Text>
+              <Text style={[styles.featureItem, { color: colors.foreground }]}>
+                • 1시간 ~ 7일 범위의 접근 기간 설정
+              </Text>
+              <Text style={[styles.featureItem, { color: colors.foreground }]}>
+                • 안전한 토큰 기반 인증 시스템
+              </Text>
+              <Text style={[styles.featureItem, { color: colors.foreground }]}>
+                • 기간 만료 후 자동 접근 차단
+              </Text>
+            </View>
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
   },
   content: {
     padding: 20,
@@ -89,36 +186,29 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: "#1a1a1a",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: "#666",
   },
   section: {
-    marginBottom: 30,
-    backgroundColor: "#fff",
+    marginBottom: 24,
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1a1a1a",
     marginBottom: 12,
   },
   description: {
     fontSize: 14,
-    color: "#666",
     marginBottom: 20,
     lineHeight: 20,
   },
   codeInput: {
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 12,
@@ -128,27 +218,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   errorContainer: {
-    backgroundColor: "#fee2e2",
     padding: 12,
     borderRadius: 8,
     marginBottom: 16,
     borderLeftWidth: 4,
-    borderLeftColor: "#dc2626",
   },
   errorText: {
-    color: "#991b1b",
     fontSize: 14,
     fontWeight: "500",
   },
   validateButton: {
-    backgroundColor: "#2563eb",
     paddingVertical: 14,
     borderRadius: 8,
     alignItems: "center",
-  },
-  validateButtonDisabled: {
-    backgroundColor: "#9ca3af",
-    opacity: 0.7,
   },
   validateButtonText: {
     color: "#fff",
@@ -156,21 +238,35 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   infoContainer: {
-    backgroundColor: "#dbeafe",
     padding: 16,
     borderRadius: 8,
     borderLeftWidth: 4,
-    borderLeftColor: "#2563eb",
+    marginBottom: 24,
   },
   infoTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#0c4a6e",
     marginBottom: 8,
   },
   infoText: {
     fontSize: 13,
-    color: "#0c4a6e",
     lineHeight: 20,
+  },
+  featuresContainer: {
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  featureTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 12,
+  },
+  featureList: {
+    gap: 8,
+  },
+  featureItem: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 });

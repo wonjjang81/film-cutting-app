@@ -1,11 +1,11 @@
 import { COOKIE_NAME } from "../shared/const.js";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, adminProcedure, protectedProcedure } from "./_core/trpc";
 import { z } from "zod";
-import { db } from "./db";
-import { guestAccounts, sessions, accessCodes } from "@/drizzle/schema";
-import { eq } from "drizzle-orm";
+import { getDb } from "./db";
+import { guestAccounts, sessions, accessCodes, users } from "@/drizzle/schema";
+import { eq, and, gte, lte, desc } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import jwt from "jsonwebtoken";
 
@@ -154,6 +154,202 @@ export const appRouter = router({
           throw new Error("Failed to create guest account");
         }
       }),
+  }),
+
+  admin: router({
+    // Create a new access code (admin only)
+    createAccessCode: adminProcedure
+      .input(
+        z.object({
+          code: z.string().min(6).max(32),
+          usageLimit: z.number().int().positive().optional(),
+          expiresAt: z.string().datetime().optional(),
+          notes: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ input, ctx }) => {
+        const db = await getDb();
+        if (!db) {
+          throw new Error("Database not available");
+        }
+
+        try {
+          // Check if code already exists
+          const existing = await db
+            .select()
+            .from(accessCodes)
+            .where(eq(accessCodes.code, input.code))
+            .limit(1);
+
+          if (existing.length > 0) {
+            throw new Error("이미 존재하는 접속코드입니다.");
+          }
+
+          // Create new access code
+          const result = await db.insert(accessCodes).values({
+            code: input.code,
+            isActive: 1,
+            usageLimit: input.usageLimit || null,
+            usageCount: 0,
+            expiresAt: input.expiresAt ? new Date(input.expiresAt) : null,
+            createdBy: ctx.user?.email || ctx.user?.name || "unknown",
+            notes: input.notes || null,
+          });
+
+          return {
+            success: true,
+            codeId: (result as any).insertId,
+            message: "접속코드가 생성되었습니다.",
+          };
+        } catch (error) {
+          console.error("[Admin] Create access code failed:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Failed to create access code"
+          );
+        }
+      }),
+
+    // List all access codes (admin only)
+    listAccessCodes: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) {
+        throw new Error("Database not available");
+      }
+
+      try {
+        const codes = await db
+          .select()
+          .from(accessCodes)
+          .orderBy(desc(accessCodes.createdAt));
+
+        return codes.map((code) => ({
+          id: code.id,
+          code: code.code,
+          isActive: code.isActive === 1,
+          usageLimit: code.usageLimit,
+          usageCount: code.usageCount,
+          expiresAt: code.expiresAt?.toISOString() || null,
+          createdAt: code.createdAt?.toISOString() || null,
+          createdBy: code.createdBy,
+          notes: code.notes,
+        }));
+      } catch (error) {
+        console.error("[Admin] List access codes failed:", error);
+        throw new Error("Failed to list access codes");
+      }
+    }),
+
+    // Update access code status (admin only)
+    updateAccessCode: adminProcedure
+      .input(
+        z.object({
+          codeId: z.number().int().positive(),
+          isActive: z.boolean().optional(),
+          usageLimit: z.number().int().positive().optional(),
+          notes: z.string().max(500).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) {
+          throw new Error("Database not available");
+        }
+
+        try {
+          const updateData: Record<string, any> = {};
+
+          if (input.isActive !== undefined) {
+            updateData.isActive = input.isActive ? 1 : 0;
+          }
+          if (input.usageLimit !== undefined) {
+            updateData.usageLimit = input.usageLimit;
+          }
+          if (input.notes !== undefined) {
+            updateData.notes = input.notes;
+          }
+
+          if (Object.keys(updateData).length === 0) {
+            throw new Error("업데이트할 내용이 없습니다.");
+          }
+
+          await db
+            .update(accessCodes)
+            .set(updateData)
+            .where(eq(accessCodes.id, input.codeId));
+
+          return {
+            success: true,
+            message: "접속코드가 업데이트되었습니다.",
+          };
+        } catch (error) {
+          console.error("[Admin] Update access code failed:", error);
+          throw new Error(
+            error instanceof Error ? error.message : "Failed to update access code"
+          );
+        }
+      }),
+
+    // Delete access code (admin only)
+    deleteAccessCode: adminProcedure
+      .input(
+        z.object({
+          codeId: z.number().int().positive(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const db = await getDb();
+        if (!db) {
+          throw new Error("Database not available");
+        }
+
+        try {
+          await db.delete(accessCodes).where(eq(accessCodes.id, input.codeId));
+
+          return {
+            success: true,
+            message: "접속코드가 삭제되었습니다.",
+          };
+        } catch (error) {
+          console.error("[Admin] Delete access code failed:", error);
+          throw new Error("Failed to delete access code");
+        }
+      }),
+
+    // Get admin statistics (admin only)
+    getStatistics: adminProcedure.query(async () => {
+      const db = await getDb();
+      if (!db) {
+        throw new Error("Database not available");
+      }
+
+      try {
+        // Get total codes
+        const totalCodes = await db.select().from(accessCodes);
+        const activeCodes = totalCodes.filter((c) => c.isActive === 1);
+        const totalUsage = totalCodes.reduce((sum, c) => sum + (c.usageCount || 0), 0);
+
+        // Get active guest sessions
+        const now = new Date();
+        const activeSessions = await db
+          .select()
+          .from(sessions)
+          .where(and(eq(sessions.isActive, 1), gte(sessions.expiresAt, now)));
+
+        // Get total users
+        const totalUsers = await db.select().from(users);
+
+        return {
+          totalAccessCodes: totalCodes.length,
+          activeAccessCodes: activeCodes.length,
+          totalUsage,
+          activeSessions: activeSessions.length,
+          totalUsers: totalUsers.length,
+        };
+      } catch (error) {
+        console.error("[Admin] Get statistics failed:", error);
+        throw new Error("Failed to get statistics");
+      }
+    }),
   }),
 
   // TODO: add feature routers here, e.g.
