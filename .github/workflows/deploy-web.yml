@@ -42,6 +42,7 @@ jobs:
           
           # GitHub Pages SPA 404 리다이렉트 트릭
           # 이 스크립트는 404 발생 시 경로를 쿼리 파라미터로 바꿔서 index.html로 넘겨줍니다.
+          # pathSegmentsToKeep: 1 (저장소 이름인 /film-cutting-app을 유지하기 위함)
           cat > 404.html << 'EOF'
           <!DOCTYPE html>
           <html>
@@ -64,8 +65,6 @@ jobs:
           </html>
           EOF
 
-          # index.html 상단에도 경로 복구 스크립트 추가 (선택 사항이지만 권장)
-          
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add -A

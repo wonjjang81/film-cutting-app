@@ -23,7 +23,13 @@ export default function RootLayout() {
       const search = window.location.search;
       if (search && search.startsWith('?/')) {
         const path = search.slice(2).replace(/~and~/g, '&');
+        // 히스토리 상태를 깨끗하게 정리하고 해당 경로로 이동
         window.history.replaceState(null, '', window.location.pathname.slice(0, -1) + path + window.location.hash);
+        
+        // Expo Router에게 경로가 변경되었음을 알림
+        setTimeout(() => {
+          router.replace(path as any);
+        }, 100);
       }
     }
   }, []);
