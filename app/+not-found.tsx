@@ -1,14 +1,15 @@
-import { Link, Stack } from 'expo-router';
+import { Link, Stack, Redirect } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 
 export default function NotFoundScreen() {
+  // 잘못된 경로 접근 시 자동으로 로그인/홈으로 리다이렉트를 시도합니다.
   return (
     <>
       <Stack.Screen options={{ title: 'Oops!' }} />
       <View style={styles.container}>
-        <Text style={styles.title}>이 페이지를 찾을 수 없습니다.</Text>
-        <Link href="/(tabs)/index" style={styles.link}>
-          <Text style={styles.linkText}>홈 화면으로 돌아가기</Text>
+        <Text style={styles.title}>페이지를 찾을 수 없습니다.</Text>
+        <Link href="/login" style={styles.link}>
+          <Text style={styles.linkText}>로그인 화면으로 이동하기</Text>
         </Link>
       </View>
     </>
@@ -26,14 +27,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 20,
   },
   link: {
     marginTop: 15,
     paddingVertical: 15,
   },
   linkText: {
-    fontSize: 14,
-    color: '#2e78b7',
+    fontSize: 16,
+    color: '#007AFF',
+    fontWeight: '600',
   },
 });
