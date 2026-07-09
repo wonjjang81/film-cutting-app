@@ -39,11 +39,36 @@ jobs:
           cd dist
           git init && git checkout -b gh-pages
           touch .nojekyll
-          # SPA 404 리다이렉트 처리 (index.html을 404.html로 복사)
-          cp index.html 404.html
+          
+          # GitHub Pages SPA 404 리다이렉트 트릭
+          # 이 스크립트는 404 발생 시 경로를 쿼리 파라미터로 바꿔서 index.html로 넘겨줍니다.
+          cat > 404.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Film Cutting App</title>
+              <script type="text/javascript">
+                var pathSegmentsToKeep = 1;
+                var l = window.location;
+                l.replace(
+                  l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                  l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+                  l.pathname.split('/').slice(1 + pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+                  (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+                  l.hash
+                );
+              </script>
+            </head>
+            <body></body>
+          </html>
+          EOF
+
+          # index.html 상단에도 경로 복구 스크립트 추가 (선택 사항이지만 권장)
+          
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add -A
-          git commit -m "Deploy web: ${{ github.sha }}"
+          git commit -m "Deploy web with SPA routing fix: ${{ github.sha }}"
           git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push -f origin gh-pages
