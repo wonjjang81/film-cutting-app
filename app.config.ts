@@ -124,6 +124,7 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+    // GitHub Pages 서브 디렉토리 배포를 위한 설정
     baseUrl: "/film-cutting-app",
   },
   extra: {
