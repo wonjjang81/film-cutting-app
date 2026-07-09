@@ -260,7 +260,7 @@ export default function GuideScreen() {
               { backgroundColor: colors.primary, opacity: pressed ? 0.8 : 1 },
             ]}
           >
-            <Text style={[styles.feedbackButtonText, { color: colors.primaryForeground }]}>
+            <Text style={[styles.feedbackButtonText, { color: colors.foreground }]}>
               설정으로 이동
             </Text>
           </Pressable>
