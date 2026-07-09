@@ -1,10 +1,10 @@
-import { Tabs } from "expo-router";
+import { Tabs, router } from "expo-router";
 import React, { useState, useEffect } from "react";
 
 export default function TabLayout() {
-  // 초기 상태를 즉시 계산 (SSR 및 초기 렌더링 지연 방지)
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
     if (typeof localStorage !== 'undefined') {
@@ -15,7 +15,10 @@ export default function TabLayout() {
       setIsAdmin(adminStatus);
       setIsLoggedIn(loggedInStatus);
     }
+    setIsReady(true);
   }, []);
+
+  if (!isReady) return null;
 
   return (
     <Tabs
@@ -37,6 +40,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "홈",
+          // 비로그인 시 탭 접근 차단 (href: null)
           href: isLoggedIn ? "/index" : null,
         }}
       />
