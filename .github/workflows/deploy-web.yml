@@ -31,18 +31,14 @@ jobs:
         run: pnpm install --no-frozen-lockfile
 
       - name: Build web
-        run: |
-          npx expo export --platform web --output-dir dist
+        run: npx expo export --platform web --output-dir dist
 
-      - name: Deploy to GitHub Pages
+      - name: Prepare Deployment
         run: |
           cd dist
-          git init && git checkout -b gh-pages
           touch .nojekyll
           
           # GitHub Pages SPA 404 리다이렉트 트릭
-          # 이 스크립트는 404 발생 시 경로를 쿼리 파라미터로 바꿔서 index.html로 넘겨줍니다.
-          # pathSegmentsToKeep: 1 (저장소 이름인 /film-cutting-app을 유지하기 위함)
           cat > 404.html << 'EOF'
           <!DOCTYPE html>
           <html>
@@ -65,9 +61,14 @@ jobs:
           </html>
           EOF
 
+      - name: Deploy to GitHub Pages
+        run: |
+          cd dist
+          git init
+          git checkout -b gh-pages
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add -A
-          git commit -m "Deploy web with SPA routing fix: ${{ github.sha }}"
+          git commit -m "Deploy: ${{ github.sha }}"
           git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push -f origin gh-pages
