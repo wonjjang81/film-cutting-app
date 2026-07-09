@@ -18,8 +18,6 @@ import { useAuth } from "@/app/contexts/AuthContext";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
-import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
-import { useAuth } from "@/hooks/use-auth";
 
 // ─── APK 다운로드 설정 ───────────────────────────────────────────
 const GITHUB_REPO = "wonjjang81/film-cutting-app";
