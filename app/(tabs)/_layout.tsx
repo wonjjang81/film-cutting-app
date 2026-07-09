@@ -1,39 +1,21 @@
 import { Tabs } from "expo-router";
-import { View, Text, ActivityIndicator } from "react-native";
 import React, { useState, useEffect } from "react";
 
 export default function TabLayout() {
-  const [isReady, setIsReady] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  // 초기 상태를 즉시 계산 (SSR 및 초기 렌더링 지연 방지)
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
-    // 로컬 스토리지에서 상태 읽기
     if (typeof localStorage !== 'undefined') {
-      const guest = localStorage.getItem("guestSession");
-      const admin = localStorage.getItem("isAdmin");
-      const validated = localStorage.getItem("accessCodeValidated");
-      
-      if (admin === "true") {
-        setIsAdmin(true);
-        setIsLoggedIn(true);
-      } else if (guest || validated === "true") {
-        setIsLoggedIn(true);
-      }
+      const adminStatus = localStorage.getItem("isAdmin") === "true";
+      const loggedInStatus = adminStatus || 
+                             localStorage.getItem("guestSession") !== null || 
+                             localStorage.getItem("accessCodeValidated") === "true";
+      setIsAdmin(adminStatus);
+      setIsLoggedIn(loggedInStatus);
     }
-    
-    // 0.1초 후 즉시 렌더링
-    const timer = setTimeout(() => setIsReady(true), 100);
-    return () => clearTimeout(timer);
   }, []);
-
-  if (!isReady) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#fff' }}>
-        <ActivityIndicator size="large" color="#007AFF" />
-      </View>
-    );
-  }
 
   return (
     <Tabs
