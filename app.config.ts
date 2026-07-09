@@ -124,7 +124,7 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
-    baseUrl: "",
+    baseUrl: "/film-cutting-app",
   },
   extra: {
     eas: {
