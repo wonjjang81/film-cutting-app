@@ -1,6 +1,6 @@
-import { Tabs, usePathname } from "expo-router";
+import { Tabs, usePathname, router } from "expo-router";
 import React, { useState, useEffect } from "react";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
 
 export default function TabLayout() {
   const [isAdmin, setIsAdmin] = useState(false);
@@ -18,6 +18,11 @@ export default function TabLayout() {
         
         setIsAdmin(adminStatus);
         setIsLoggedIn(loggedInStatus);
+
+        // 웹 환경에서 로그인이 안 되어 있는데 다른 페이지에 있다면 로그인 페이지로 강제 이동
+        if (!loggedInStatus && pathname !== "/login" && Platform.OS === 'web') {
+          router.replace("/login");
+        }
       }
       setIsReady(true);
     };
@@ -25,10 +30,7 @@ export default function TabLayout() {
     checkAuth();
     const interval = setInterval(checkAuth, 1000);
     return () => clearInterval(interval);
-  }, []);
-
-  // 로그인이 안 되어 있거나 현재 경로가 로그인인 경우 탭바를 물리적으로 숨김
-  const shouldHideTabBar = !isLoggedIn || pathname === "/login";
+  }, [pathname]);
 
   if (!isReady) {
     return (
@@ -38,13 +40,14 @@ export default function TabLayout() {
     );
   }
 
+  const shouldHideTabBar = !isLoggedIn || pathname === "/login";
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
           display: shouldHideTabBar ? 'none' : 'flex',
-          // 웹에서 강제로 숨기기 위한 스타일 추가
           position: shouldHideTabBar ? 'absolute' : 'relative',
           height: shouldHideTabBar ? 0 : 60,
           opacity: shouldHideTabBar ? 0 : 1,
