@@ -14,7 +14,6 @@ export default function TabLayout() {
         const adminStatus = localStorage.getItem("isAdmin") === "true";
         const guestSession = localStorage.getItem("guestSession");
         const accessCodeValidated = localStorage.getItem("accessCodeValidated") === "true";
-        
         const loggedInStatus = adminStatus || guestSession !== null || accessCodeValidated;
         
         setIsAdmin(adminStatus);
@@ -24,10 +23,12 @@ export default function TabLayout() {
     };
     
     checkAuth();
-    // 0.5초마다 상태 재확인 (스토리지 변경 대응 강화)
-    const interval = setInterval(checkAuth, 500);
+    const interval = setInterval(checkAuth, 1000);
     return () => clearInterval(interval);
   }, []);
+
+  // 로그인이 안 되어 있거나 현재 경로가 로그인인 경우 탭바를 물리적으로 숨김
+  const shouldHideTabBar = !isLoggedIn || pathname === "/login";
 
   if (!isReady) {
     return (
@@ -37,15 +38,16 @@ export default function TabLayout() {
     );
   }
 
-  // 현재 경로가 로그인 페이지이거나 로그인이 안 된 경우 탭바를 완전히 숨김
-  const shouldHideTabBar = pathname === "/login" || !isLoggedIn;
-
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
           display: shouldHideTabBar ? 'none' : 'flex',
+          // 웹에서 강제로 숨기기 위한 스타일 추가
+          position: shouldHideTabBar ? 'absolute' : 'relative',
+          height: shouldHideTabBar ? 0 : 60,
+          opacity: shouldHideTabBar ? 0 : 1,
         },
       }}
     >
