@@ -19,7 +19,7 @@ export default function TabLayout() {
         setIsAdmin(adminStatus);
         setIsLoggedIn(loggedInStatus);
 
-        // 현재 경로가 로그인 페이지가 아닌데 로그인이 안 되어 있다면 로그인 페이지로 강제 이동
+        // 로그인 안된 상태에서 다른 페이지 접근 시 로그인 페이지로 강제 이동
         if (!loggedInStatus && pathname !== "/login" && Platform.OS === 'web') {
           router.replace("/login");
         }
@@ -28,7 +28,6 @@ export default function TabLayout() {
     };
     
     checkAuth();
-    // 상태 변화를 감지하기 위해 인터벌 유지
     const interval = setInterval(checkAuth, 500);
     return () => clearInterval(interval);
   }, [pathname]);
@@ -41,7 +40,6 @@ export default function TabLayout() {
     );
   }
 
-  // 로그인 여부 및 현재 경로에 따른 탭바 노출 결정
   const isLoginPage = pathname === "/login";
   const shouldHideTabBar = !isLoggedIn || isLoginPage;
 
@@ -52,7 +50,7 @@ export default function TabLayout() {
         tabBarStyle: shouldHideTabBar ? { display: 'none' } : { height: 60, paddingBottom: 8 },
       }}
     >
-      {/* 로그인 화면: 로그인이 안 된 경우에만 활성화 */}
+      {/* 로그인 화면을 탭바의 가장 처음에 배치하여 기본 진입점으로 설정 */}
       <Tabs.Screen
         name="login"
         options={{
@@ -61,7 +59,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 메인 화면들: 로그인 된 경우에만 활성화 */}
       <Tabs.Screen
         name="index"
         options={{
@@ -70,6 +67,7 @@ export default function TabLayout() {
           tabBarIcon: () => "🏠",
         }}
       />
+      
       <Tabs.Screen
         name="input"
         options={{
@@ -78,6 +76,7 @@ export default function TabLayout() {
           tabBarIcon: () => "✏️",
         }}
       />
+      
       <Tabs.Screen
         name="cutting"
         options={{
@@ -86,6 +85,7 @@ export default function TabLayout() {
           tabBarIcon: () => "✂️",
         }}
       />
+      
       <Tabs.Screen
         name="estimate"
         options={{
@@ -94,6 +94,7 @@ export default function TabLayout() {
           tabBarIcon: () => "💰",
         }}
       />
+      
       <Tabs.Screen
         name="settings"
         options={{
@@ -103,7 +104,6 @@ export default function TabLayout() {
         }}
       />
       
-      {/* 관리자 전용 탭 */}
       <Tabs.Screen
         name="admin"
         options={{
@@ -113,7 +113,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 가이드 등 숨겨진 탭 */}
       <Tabs.Screen name="guide" options={{ href: null }} />
     </Tabs>
   );
