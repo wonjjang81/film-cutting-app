@@ -5,20 +5,12 @@ import { useColors } from "@/hooks/use-colors";
 import { HapticTab } from "@/components/haptic-tab";
 import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
 import { useAuth } from "@/hooks/use-auth";
+import React, { useState, useEffect } from "react";
 
 // 탭 아이콘을 이모지로 처리
 function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
   return (
     <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
-  );
-}
-
-// 비활성화된 탭 표시
-function DisabledTabIcon() {
-  return (
-    <View style={{ alignItems: 'center', justifyContent: 'center' }}>
-      <Text style={{ fontSize: 22, opacity: 0.3 }}>🔒</Text>
-    </View>
   );
 }
 
@@ -30,19 +22,25 @@ export default function TabLayout() {
 
   // 인증 상태 확인
   const { guestSession, isAdmin } = useGuestAuth();
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
 
-  // 로그인 여부 판단
-  const isLoggedIn = !!guestSession || !!isAuthenticated || isAdmin;
-
-  // 로딩 중일 때는 로딩 표시 (최대 3초만 대기 후 진행)
-  const [showLoading, setShowLoading] = (require('react')).useState(true);
-  (require('react')).useEffect(() => {
-    const timer = setTimeout(() => setShowLoading(false), 3000);
+  // 로딩 상태 강제 해제 타이머 (최대 3초)
+  const [forceReady, setForceReady] = useState(false);
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setForceReady(true);
+    }, 3000);
     return () => clearTimeout(timer);
   }, []);
 
-  if (loading && showLoading) {
+  // 로그인 여부 판단
+  const isLoggedIn = !!guestSession || !!isAuthenticated || isAdmin;
+  
+  // 로딩 중 판단 (authLoading이 true이면서 아직 3초가 지나지 않았을 때만 로딩 표시)
+  const isLoading = authLoading && !forceReady;
+
+  if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
@@ -74,17 +72,15 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* 로그인 탭 - 로그인 안된 경우에만 접근 가능하거나, 항상 첫 화면으로 사용 */}
       <Tabs.Screen
         name="login"
         options={{
           title: "로그인",
           tabBarIcon: ({ focused }) => <TabIcon emoji="🔐" focused={focused} />,
-          href: isLoggedIn ? null : "/login", // 로그인 후에는 탭바에서 숨김
+          href: isLoggedIn ? null : "/login",
         }}
       />
 
-      {/* 홈 탭 */}
       <Tabs.Screen
         name="index"
         options={{
@@ -94,7 +90,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 입력 탭 */}
       <Tabs.Screen
         name="input"
         options={{
@@ -104,7 +99,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 재단 탭 */}
       <Tabs.Screen
         name="cutting"
         options={{
@@ -114,7 +108,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 견적 탭 */}
       <Tabs.Screen
         name="estimate"
         options={{
@@ -124,7 +117,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 설정 탭 */}
       <Tabs.Screen
         name="settings"
         options={{
@@ -134,7 +126,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 관리자 탭 - 관리자인 경우에만 노출 */}
       <Tabs.Screen
         name="admin"
         options={{
@@ -144,7 +135,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* 가이드 탭 - 탭 바에서 숨김 */}
       <Tabs.Screen
         name="guide"
         options={{
