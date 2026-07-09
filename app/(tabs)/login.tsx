@@ -22,7 +22,8 @@ export default function LoginScreen() {
                              localStorage.getItem("guestSession") !== null || 
                              localStorage.getItem("accessCodeValidated") === "true";
       if (loggedInStatus) {
-        router.replace("/index");
+        // (tabs)/index로 명시적 이동하여 404 방지
+        router.replace("/(tabs)/index");
       }
     }
   }, []);
@@ -35,13 +36,15 @@ export default function LoginScreen() {
     if (typeof localStorage !== 'undefined') {
       if (code === "won81") {
         localStorage.setItem("isAdmin", "true");
+      } else {
+        localStorage.setItem("isAdmin", "false");
+        localStorage.setItem("guestSession", Date.now().toString());
       }
       localStorage.setItem("accessCodeValidated", "true");
       
       setIsLoading(false);
-      // window.location 대신 router.replace를 사용하여 SPA 라우팅 유지
-      // GitHub Pages의 404 오류를 방지합니다.
-      router.replace("/index");
+      // (tabs)/index로 명시적 이동하여 GitHub Pages의 404 오류를 방지합니다.
+      router.replace("/(tabs)/index");
     } else {
       setIsLoading(false);
       Alert.alert("오류", "브라우저 환경이 아닙니다.");
