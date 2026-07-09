@@ -8,7 +8,6 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
 
 export default function LoginScreen() {
   const [code, setCode] = useState("");
@@ -19,6 +18,7 @@ export default function LoginScreen() {
     
     setIsLoading(true);
     
+    // 로컬 스토리지에 상태 저장 및 페이지 강제 이동
     if (typeof localStorage !== 'undefined') {
       if (code === "won81") {
         localStorage.setItem("isAdmin", "true");
@@ -26,10 +26,8 @@ export default function LoginScreen() {
       localStorage.setItem("accessCodeValidated", "true");
       
       setIsLoading(false);
-      
-      // window.location 대신 Expo Router의 replace를 사용하여 SPA 라우팅 유지
-      // GitHub Pages의 404 문제를 방지합니다.
-      router.replace("/index");
+      // GitHub Pages 서브 디렉토리 경로 고려
+      window.location.href = "/film-cutting-app/index";
     } else {
       setIsLoading(false);
       Alert.alert("오류", "브라우저 환경이 아닙니다.");
