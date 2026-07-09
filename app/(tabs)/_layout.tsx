@@ -35,11 +35,18 @@ export default function TabLayout() {
   // 로그인 여부 판단
   const isLoggedIn = !!guestSession || !!isAuthenticated || isAdmin;
 
-  // 로딩 중일 때는 로딩 표시
-  if (loading) {
+  // 로딩 중일 때는 로딩 표시 (최대 3초만 대기 후 진행)
+  const [showLoading, setShowLoading] = (require('react')).useState(true);
+  (require('react')).useEffect(() => {
+    const timer = setTimeout(() => setShowLoading(false), 3000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  if (loading && showLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
         <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={{ marginTop: 16, color: colors.muted }}>인증 정보를 확인 중입니다...</Text>
       </View>
     );
   }
