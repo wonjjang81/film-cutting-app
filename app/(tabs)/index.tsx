@@ -99,7 +99,7 @@ export default function HomeScreen() {
   React.useEffect(() => {
     if (!authLoading && !isLoggedIn) {
       // 웹 환경에서 GitHub Pages 서브 디렉토리 문제를 피하기 위해 상대 경로 사용 검토
-      router.replace("/login");
+      router.replace("/(tabs)/login");
     }
   }, [isLoggedIn, authLoading]);
 

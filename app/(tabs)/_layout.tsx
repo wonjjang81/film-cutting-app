@@ -1,6 +1,6 @@
-import { Tabs, Redirect } from "expo-router";
+import { Tabs } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Platform, Text, View } from "react-native";
+import { Platform, Text, View, ActivityIndicator } from "react-native";
 import { useColors } from "@/hooks/use-colors";
 import { HapticTab } from "@/components/haptic-tab";
 import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
@@ -35,7 +35,7 @@ export default function TabLayout() {
   // 로그인 여부 판단
   const isLoggedIn = !!guestSession || !!isAuthenticated;
 
-  // 로딩 중일 때는 아무것도 렌더링하지 않음
+  // 로딩 중일 때는 로딩 표시
   if (loading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
@@ -46,7 +46,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      initialRouteName="login"
+      initialRouteName={isLoggedIn ? "index" : "login"}
       screenOptions={{
         tabBarActiveTintColor: colors.primary,
         headerShown: false,
@@ -58,6 +58,7 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
+          display: isLoggedIn ? 'flex' : 'none', // 로그인 안되었을 때는 탭바 숨김 (로그인 화면만 노출)
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -66,12 +67,13 @@ export default function TabLayout() {
         },
       }}
     >
-      {/* 로그인 탭 - 항상 노출 및 활성화 */}
+      {/* 로그인 탭 - 로그인 안된 경우에만 접근 가능하거나, 항상 첫 화면으로 사용 */}
       <Tabs.Screen
         name="login"
         options={{
           title: "로그인",
           tabBarIcon: ({ focused }) => <TabIcon emoji="🔐" focused={focused} />,
+          href: isLoggedIn ? null : "/login", // 로그인 후에는 탭바에서 숨김
         }}
       />
 
@@ -80,14 +82,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "홈",
-          tabBarIcon: ({ focused }) =>
-            isLoggedIn ? (
-              <TabIcon emoji="🏠" focused={focused} />
-            ) : (
-              <DisabledTabIcon />
-            ),
-          tabBarButton: isLoggedIn ? HapticTab : () => null,
-          href: isLoggedIn ? "/(tabs)/index" : null,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+          href: isLoggedIn ? "/index" : null,
         }}
       />
 
@@ -96,14 +92,8 @@ export default function TabLayout() {
         name="input"
         options={{
           title: "입력",
-          tabBarIcon: ({ focused }) =>
-            isLoggedIn ? (
-              <TabIcon emoji="✏️" focused={focused} />
-            ) : (
-              <DisabledTabIcon />
-            ),
-          tabBarButton: isLoggedIn ? HapticTab : () => null,
-          href: isLoggedIn ? "/(tabs)/input" : null,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="✏️" focused={focused} />,
+          href: isLoggedIn ? "/input" : null,
         }}
       />
 
@@ -112,14 +102,8 @@ export default function TabLayout() {
         name="cutting"
         options={{
           title: "재단",
-          tabBarIcon: ({ focused }) =>
-            isLoggedIn ? (
-              <TabIcon emoji="✂️" focused={focused} />
-            ) : (
-              <DisabledTabIcon />
-            ),
-          tabBarButton: isLoggedIn ? HapticTab : () => null,
-          href: isLoggedIn ? "/(tabs)/cutting" : null,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} />,
+          href: isLoggedIn ? "/cutting" : null,
         }}
       />
 
@@ -128,14 +112,8 @@ export default function TabLayout() {
         name="estimate"
         options={{
           title: "견적",
-          tabBarIcon: ({ focused }) =>
-            isLoggedIn ? (
-              <TabIcon emoji="💰" focused={focused} />
-            ) : (
-              <DisabledTabIcon />
-            ),
-          tabBarButton: isLoggedIn ? HapticTab : () => null,
-          href: isLoggedIn ? "/(tabs)/estimate" : null,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="💰" focused={focused} />,
+          href: isLoggedIn ? "/estimate" : null,
         }}
       />
 
@@ -144,14 +122,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: "설정",
-          tabBarIcon: ({ focused }) =>
-            isLoggedIn ? (
-              <TabIcon emoji="⚙️" focused={focused} />
-            ) : (
-              <DisabledTabIcon />
-            ),
-          tabBarButton: isLoggedIn ? HapticTab : () => null,
-          href: isLoggedIn ? "/(tabs)/settings" : null,
+          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
+          href: isLoggedIn ? "/settings" : null,
         }}
       />
 

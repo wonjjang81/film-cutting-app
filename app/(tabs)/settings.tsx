@@ -17,6 +17,8 @@ import { router } from "expo-router";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
+import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 
 // ─── APK 다운로드 설정 ───────────────────────────────────────────
 const GITHUB_REPO = "wonjjang81/film-cutting-app";
@@ -152,6 +154,10 @@ export default function SettingsScreen() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { version, apkUrl, loading: apkLoading, error: apkError, refetch } = useLatestRelease();
 
+  // 인증 관련
+  const { logout: guestLogout } = useGuestAuth();
+  const { logout: authLogout } = useAuth();
+
   // 앱 시작 시 저장된 정보 불러오기
   useEffect(() => {
     loadCompanyInfo().then(setInfo);
@@ -199,6 +205,24 @@ export default function SettingsScreen() {
       ]);
     }
   }, [info]);
+
+  const handleLogout = useCallback(() => {
+    const doLogout = async () => {
+      guestLogout();
+      await authLogout();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      router.replace("/(tabs)/login");
+    };
+
+    if (Platform.OS === "web") {
+      if (window.confirm("로그아웃 하시겠습니까?")) doLogout();
+    } else {
+      Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
+        { text: "취소", style: "cancel" },
+        { text: "로그아웃", style: "destructive", onPress: doLogout },
+      ]);
+    }
+  }, [guestLogout, authLogout]);
 
   const isAnyFilled = Object.values(info).some((v) => v.trim() !== "");
 
@@ -360,13 +384,24 @@ export default function SettingsScreen() {
             </Text>
           </View>
 
+          {/* 계정 관리 섹션 */}
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🔐 계정 관리</Text>
+            <TouchableOpacity
+              style={[styles.logoutBtn, { borderColor: colors.error + "60" }]}
+              onPress={handleLogout}
+            >
+              <Text style={[styles.logoutBtnText, { color: colors.error }]}>로그아웃</Text>
+            </TouchableOpacity>
+          </View>
+
           {/* 버튼 영역 */}
           <View style={styles.btnRow}>
             <TouchableOpacity
               style={[styles.saveBtn, { backgroundColor: colors.primary }]}
               onPress={handleSaveNow}
             >
-              <Text style={styles.saveBtnText}>💾 저장하기</Text>
+              <Text style={styles.saveBtnText}>설정 저장</Text>
             </TouchableOpacity>
             {isAnyFilled && (
               <TouchableOpacity
@@ -526,5 +561,16 @@ const styles = StyleSheet.create({
   guideBtnText: {
     fontSize: 15,
     fontWeight: "700",
+  },
+  logoutBtn: {
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoutBtnText: {
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
