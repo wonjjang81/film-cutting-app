@@ -14,6 +14,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { router } from "expo-router";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 import { ScreenContainer } from "@/components/screen-container";
 import { useColors } from "@/hooks/use-colors";
@@ -147,6 +148,7 @@ function useLatestRelease() {
 
 export default function SettingsScreen() {
   const colors = useColors();
+  const { logout } = useAuth();
   const [info, setInfo] = useState<CompanyInfo>(DEFAULT_COMPANY_INFO);
   const [saved, setSaved] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -308,6 +310,33 @@ export default function SettingsScreen() {
               }}
             >
               <Text style={[styles.guideBtnText, { color: 'white' }]}>📖 가이드 보기</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* ─── 로그아웃 섹션 ─── */}
+          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>계정</Text>
+            <TouchableOpacity
+              style={[styles.logoutBtn, { backgroundColor: colors.error + "18", borderColor: colors.error }]}
+              onPress={() => {
+                Alert.alert(
+                  "로그아웃",
+                  "정말 로그아웃하시겠습니까?",
+                  [
+                    { text: "취소", style: "cancel" },
+                    {
+                      text: "로그아웃",
+                      style: "destructive",
+                      onPress: () => {
+                        logout();
+                        router.replace("/(auth)/accesscode");
+                      },
+                    },
+                  ]
+                );
+              }}
+            >
+              <Text style={[styles.logoutBtnText, { color: colors.error }]}>🚪 로그아웃</Text>
             </TouchableOpacity>
           </View>
 
@@ -487,6 +516,18 @@ const styles = StyleSheet.create({
   versionBadgeText: {
     fontSize: 11,
     fontWeight: "700",
+  },
+  logoutBtn: {
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  logoutBtnText: {
+    fontSize: 16,
+    fontWeight: "600",
   },
   apkStatusText: {
     fontSize: 13,

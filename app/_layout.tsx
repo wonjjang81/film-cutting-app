@@ -19,7 +19,7 @@ import type { EdgeInsets, Metrics, Rect } from "react-native-safe-area-context";
 import { trpc, createTRPCClient } from "@/lib/trpc";
 import { initManusRuntime, subscribeSafeAreaInsets } from "@/lib/_core/manus-runtime";
 import { FilmProvider } from "@/lib/filmContext";
-import { AuthProvider } from "@/app/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/app/contexts/AuthContext";
 
 const DEFAULT_WEB_INSETS: EdgeInsets = { top: 0, right: 0, bottom: 0, left: 0 };
 const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
@@ -27,6 +27,43 @@ const DEFAULT_WEB_FRAME: Rect = { x: 0, y: 0, width: 0, height: 0 };
 export const unstable_settings = {
   anchor: "(tabs)",
 };
+
+// 인증 상태에 따른 라우팅 결정
+function RootLayoutContent() {
+  const { accessCodeValidated, guestSession, isGuestExpired } = useAuth();
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // 게스트 세션 만료 확인
+    if (guestSession && isGuestExpired()) {
+      // 만료된 세션은 로그인 화면으로
+      setIsReady(true);
+    } else {
+      setIsReady(true);
+    }
+  }, [guestSession, isGuestExpired]);
+
+  if (!isReady) {
+    return null;
+  }
+
+  // 인증되지 않은 경우 접속코드 입력 화면 표시
+  if (!accessCodeValidated && !guestSession) {
+    return (
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)" />
+      </Stack>
+    );
+  }
+
+  // 인증된 경우 앱 화면 표시
+  return (
+    <Stack screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="oauth/callback" />
+    </Stack>
+  );
+}
 
 export default function RootLayout() {
   const initialInsets = initialWindowMetrics?.insets ?? DEFAULT_WEB_INSETS;
@@ -86,10 +123,7 @@ export default function RootLayout() {
         <FilmProvider>
           <trpc.Provider client={trpcClient} queryClient={queryClient}>
             <QueryClientProvider client={queryClient}>
-              <Stack screenOptions={{ headerShown: false }}>
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="oauth/callback" />
-              </Stack>
+              <RootLayoutContent />
               <StatusBar style="auto" />
             </QueryClientProvider>
           </trpc.Provider>
