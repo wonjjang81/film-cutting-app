@@ -12,10 +12,12 @@ export interface GuestSession {
 interface AuthContextType {
   accessCodeValidated: boolean;
   guestSession: GuestSession | null;
+  isAdmin: boolean;
   isLoading: boolean;
   error: string | null;
   validateAccessCode: (code: string) => Promise<void>;
   loginAsGuest: (durationMinutes: number) => Promise<void>;
+  loginAsAdmin: (password: string) => boolean;
   logout: () => void;
   isGuestExpired: () => boolean;
 }
@@ -25,9 +27,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [accessCodeValidated, setAccessCodeValidated] = useState(false);
   const [guestSession, setGuestSession] = useState<GuestSession | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deviceId, setDeviceId] = useState<string>("");
+
+  const ADMIN_PASSWORD = "won81";
 
   // Initialize device ID on mount
   useEffect(() => {
@@ -38,6 +43,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const newDeviceId = uuidv4();
       localStorage.setItem("deviceId", newDeviceId);
       setDeviceId(newDeviceId);
+    }
+
+    // Load admin status
+    const storedAdmin = localStorage.getItem("isAdmin");
+    if (storedAdmin === "true") {
+      setIsAdmin(true);
     }
 
     // Load access code validation status
@@ -148,11 +159,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const loginAsAdmin = (password: string) => {
+    if (password === ADMIN_PASSWORD) {
+      setIsAdmin(true);
+      localStorage.setItem("isAdmin", "true");
+      return true;
+    }
+    return false;
+  };
+
   const logout = () => {
     setGuestSession(null);
     setAccessCodeValidated(false);
+    setIsAdmin(false);
     localStorage.removeItem("guestSession");
     localStorage.removeItem("accessCodeValidated");
+    localStorage.removeItem("isAdmin");
   };
 
   const isGuestExpired = () => {
@@ -165,10 +187,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       value={{
         accessCodeValidated,
         guestSession,
+        isAdmin,
         isLoading,
         error,
         validateAccessCode,
         loginAsGuest,
+        loginAsAdmin,
         logout,
         isGuestExpired,
       }}

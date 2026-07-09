@@ -23,9 +23,11 @@ export default function LoginScreen() {
   const {
     validateAccessCode,
     loginAsGuest,
+    loginAsAdmin,
     isLoading: guestLoading,
     error: guestError,
     guestSession,
+    isAdmin,
     accessCodeValidated,
   } = useGuestAuth();
 
@@ -35,9 +37,6 @@ export default function LoginScreen() {
   const [selectedDuration, setSelectedDuration] = useState<number>(1440);
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState<string | null>(null);
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-
-  const ADMIN_PASSWORD = "won81";
 
   const durationOptions = [
     { label: "1시간", value: 60 },
@@ -47,16 +46,10 @@ export default function LoginScreen() {
   ];
 
   useEffect(() => {
-    if (isAuthenticated && user) {
+    if ((isAuthenticated && user) || guestSession || isAdmin) {
       router.replace("/(tabs)/index");
     }
-  }, [isAuthenticated, user]);
-
-  useEffect(() => {
-    if (guestSession && !guestLoading) {
-      router.replace("/(tabs)/index");
-    }
-  }, [guestSession, guestLoading]);
+  }, [isAuthenticated, user, guestSession, isAdmin]);
 
   useEffect(() => {
     if (accessCodeValidated && !guestLoading) {
@@ -84,20 +77,14 @@ export default function LoginScreen() {
   };
 
   const handleAdminLogin = () => {
-    const trimmedPassword = adminPassword.trim();
-    if (trimmedPassword === ADMIN_PASSWORD) {
-      setIsAdminAuthenticated(true);
+    const success = loginAsAdmin(adminPassword.trim());
+    if (success) {
       setAdminPassword("");
       setAdminError(null);
     } else {
-      setAdminError(`비밀번호가 일치하지 않습니다. (입력: ${trimmedPassword.length}자)`);
+      setAdminError("비밀번호가 일치하지 않습니다.");
       setAdminPassword("");
     }
-  };
-
-  const handleAdminLogout = () => {
-    setIsAdminAuthenticated(false);
-    setLoginMode("admin");
   };
 
   const formatDuration = (minutes: number): string => {
@@ -140,11 +127,11 @@ export default function LoginScreen() {
                 styles.modeTab,
                 {
                   backgroundColor:
-                    loginMode === "accessCode"
+                    loginMode === "accessCode" || loginMode === "guestDuration"
                       ? colors.primary
                       : colors.background,
                   borderBottomColor:
-                    loginMode === "accessCode" ? colors.primary : colors.border,
+                    loginMode === "accessCode" || loginMode === "guestDuration" ? colors.primary : colors.border,
                 },
               ]}
               onPress={() => {
@@ -157,11 +144,11 @@ export default function LoginScreen() {
                   styles.modeTabText,
                   {
                     color:
-                      loginMode === "accessCode"
+                      loginMode === "accessCode" || loginMode === "guestDuration"
                         ? "#fff"
                         : colors.foreground,
                     fontWeight:
-                      loginMode === "accessCode" ? "600" : "500",
+                      loginMode === "accessCode" || loginMode === "guestDuration" ? "600" : "500",
                   },
                 ]}
               >
@@ -205,7 +192,7 @@ export default function LoginScreen() {
           </View>
 
           {/* Guest Login Mode */}
-          {loginMode === "accessCode" && (
+          {(loginMode === "accessCode" || loginMode === "guestDuration") && (
             <View>
               {!accessCodeValidated && (
                 <View
@@ -414,7 +401,7 @@ export default function LoginScreen() {
           )}
 
           {/* Admin Login Mode */}
-          {loginMode === "admin" && !isAdminAuthenticated && (
+          {loginMode === "admin" && (
             <View
               style={[
                 styles.section,
@@ -425,7 +412,7 @@ export default function LoginScreen() {
                 관리자 로그인
               </Text>
               <Text style={[styles.description, { color: colors.muted }]}>
-                관리자 비밀번호를 입력하여 접속코드를 관리하세요.
+                관리자 비밀번호를 입력하여 모든 기능을 활성화하세요.
               </Text>
 
               <TextInput
@@ -464,7 +451,7 @@ export default function LoginScreen() {
                 style={[styles.button, { backgroundColor: colors.primary }]}
                 onPress={handleAdminLogin}
               >
-                <Text style={styles.buttonText}>로그인</Text>
+                <Text style={styles.buttonText}>관리자로 로그인</Text>
               </TouchableOpacity>
 
               <View
@@ -477,72 +464,13 @@ export default function LoginScreen() {
                 ]}
               >
                 <Text style={[styles.infoTitle, { color: colors.warning }]}>
-                  🔐 관리자 기능
+                  🔐 관리자 권한
                 </Text>
                 <Text style={[styles.infoText, { color: colors.foreground }]}>
-                  • 새로운 접속코드 생성{"\n"}
-                  • 기존 코드 수정 및 삭제{"\n"}
-                  • 사용 현황 통계 조회{"\n"}
-                  • 코드 활성/비활성 관리
+                  • 모든 화면 탭 접근 가능{"\n"}
+                  • 접속코드 생성 및 관리 대시보드{"\n"}
+                  • 시스템 설정 및 데이터 통계 조회
                 </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Admin Dashboard Mode */}
-          {loginMode === "admin" && isAdminAuthenticated && (
-            <View>
-              <View
-                style={[
-                  styles.section,
-                  { backgroundColor: colors.surface, borderColor: colors.border },
-                ]}
-              >
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                  <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                    관리자 대시보드
-                  </Text>
-                  <TouchableOpacity
-                    style={{
-                      paddingHorizontal: 12,
-                      paddingVertical: 6,
-                      backgroundColor: colors.error,
-                      borderRadius: 6,
-                    }}
-                    onPress={handleAdminLogout}
-                  >
-                    <Text style={{ color: "#fff", fontSize: 12, fontWeight: "600" }}>
-                      로그아웃
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View
-                  style={[
-                    styles.infoContainer,
-                    {
-                      backgroundColor: colors.primary + "12",
-                      borderLeftColor: colors.primary,
-                    },
-                  ]}
-                >
-                  <Text style={[styles.infoTitle, { color: colors.primary }]}>
-                    👨‍💼 관리자 모드 활성화됨
-                  </Text>
-                  <Text style={[styles.infoText, { color: colors.foreground }]}>
-                    • 새로운 접속코드 생성{"\n"}
-                    • 기존 코드 수정 및 삭제{"\n"}
-                    • 사용 현황 통계 조회{"\n"}
-                    • 코드 활성/비활성 관리
-                  </Text>
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.button, { backgroundColor: colors.primary, marginTop: 16 }]}
-                  onPress={() => router.push("/(tabs)/admin")}
-                >
-                  <Text style={styles.buttonText}>관리자 대시보드 열기</Text>
-                </TouchableOpacity>
               </View>
             </View>
           )}

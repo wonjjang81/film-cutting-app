@@ -29,11 +29,11 @@ export default function TabLayout() {
   const tabBarHeight = 60 + bottomPadding;
 
   // 인증 상태 확인
-  const { guestSession } = useGuestAuth();
+  const { guestSession, isAdmin } = useGuestAuth();
   const { isAuthenticated, loading } = useAuth();
 
   // 로그인 여부 판단
-  const isLoggedIn = !!guestSession || !!isAuthenticated;
+  const isLoggedIn = !!guestSession || !!isAuthenticated || isAdmin;
 
   // 로딩 중일 때는 로딩 표시
   if (loading) {
@@ -58,7 +58,7 @@ export default function TabLayout() {
           backgroundColor: colors.background,
           borderTopColor: colors.border,
           borderTopWidth: 0.5,
-          display: isLoggedIn ? 'flex' : 'none', // 로그인 안되었을 때는 탭바 숨김 (로그인 화면만 노출)
+          display: isLoggedIn ? 'flex' : 'none', // 로그인 안되었을 때는 탭바 숨김
         },
         tabBarLabelStyle: {
           fontSize: 11,
@@ -124,6 +124,16 @@ export default function TabLayout() {
           title: "설정",
           tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
           href: isLoggedIn ? "/settings" : null,
+        }}
+      />
+
+      {/* 관리자 탭 - 관리자인 경우에만 노출 */}
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "관리자",
+          tabBarIcon: ({ focused }) => <TabIcon emoji="👨‍💼" focused={focused} />,
+          href: isAdmin ? "/admin" : null,
         }}
       />
 
