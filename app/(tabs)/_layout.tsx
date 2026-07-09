@@ -1,4 +1,4 @@
-import { Tabs, router } from "expo-router";
+import { Tabs, usePathname } from "expo-router";
 import React, { useState, useEffect } from "react";
 import { View, ActivityIndicator } from "react-native";
 
@@ -6,14 +6,17 @@ export default function TabLayout() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isReady, setIsReady] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     const checkAuth = () => {
       if (typeof localStorage !== 'undefined') {
         const adminStatus = localStorage.getItem("isAdmin") === "true";
-        const loggedInStatus = adminStatus || 
-                               localStorage.getItem("guestSession") !== null || 
-                               localStorage.getItem("accessCodeValidated") === "true";
+        const guestSession = localStorage.getItem("guestSession");
+        const accessCodeValidated = localStorage.getItem("accessCodeValidated") === "true";
+        
+        const loggedInStatus = adminStatus || guestSession !== null || accessCodeValidated;
+        
         setIsAdmin(adminStatus);
         setIsLoggedIn(loggedInStatus);
       }
@@ -21,25 +24,28 @@ export default function TabLayout() {
     };
     
     checkAuth();
-    // 로컬 스토리지 변경 감지 (로그인/로그아웃 대응)
-    window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
+    // 0.5초마다 상태 재확인 (스토리지 변경 대응 강화)
+    const interval = setInterval(checkAuth, 500);
+    return () => clearInterval(interval);
   }, []);
 
   if (!isReady) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
         <ActivityIndicator size="large" color="#007AFF" />
       </View>
     );
   }
+
+  // 현재 경로가 로그인 페이지이거나 로그인이 안 된 경우 탭바를 완전히 숨김
+  const shouldHideTabBar = pathname === "/login" || !isLoggedIn;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          display: isLoggedIn ? 'flex' : 'none',
+          display: shouldHideTabBar ? 'none' : 'flex',
         },
       }}
     >
@@ -47,7 +53,6 @@ export default function TabLayout() {
         name="login"
         options={{
           title: "로그인",
-          // 이미 로그인했다면 탭에서 숨김
           href: isLoggedIn ? null : "/login",
         }}
       />
@@ -55,7 +60,6 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "홈",
-          // 로그인 안 했으면 탭 버튼 클릭 불가
           href: isLoggedIn ? "/index" : null,
         }}
       />
