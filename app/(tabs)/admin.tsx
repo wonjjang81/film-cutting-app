@@ -1,352 +1,393 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
-  ScrollView,
+  FlatList,
+  ActivityIndicator,
   Alert,
+  TextInput,
+  Modal,
+  ScrollView,
+  RefreshControl,
 } from "react-native";
+import { router } from "expo-router";
+import { trpc } from "@/lib/trpc";
+import { useColors } from "@/hooks/use-colors";
+import { ScreenContainer } from "@/components/screen-container";
 
-export default function AdminScreen() {
-  const [adminPassword, setAdminPassword] = useState("");
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [generatedCode, setGeneratedCode] = useState("");
-  const [codeSettings, setCodeSettings] = useState({
-    usageLimit: "",
-    expirationDays: "7",
-    notes: "",
+interface AccessCode {
+  id: number;
+  code: string;
+  isActive: boolean;
+  usageLimit: number | null;
+  usageCount: number;
+  expiresAt: string | null;
+  notes: string | null;
+  createdAt: string | null;
+}
+
+export default function AdminDashboard() {
+  const colors = useColors();
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [editingCode, setEditingCode] = useState<AccessCode | null>(null);
+  
+  // Form state
+  const [code, setCode] = useState("");
+  const [usageLimit, setUsageLimit] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const utils = trpc.useUtils();
+  const { data: codes, isLoading, refetch, isRefetching } = trpc.admin.listAccessCodes.useQuery();
+  const { data: stats } = trpc.admin.getStatistics.useQuery();
+
+  const createMutation = trpc.admin.createAccessCode.useMutation({
+    onSuccess: () => {
+      utils.admin.listAccessCodes.invalidate();
+      utils.admin.getStatistics.invalidate();
+      closeModal();
+      Alert.alert("성공", "접속코드가 생성되었습니다.");
+    },
+    onError: (error) => {
+      Alert.alert("오류", error.message);
+    },
   });
 
-  const ADMIN_PASSWORD = "admin123"; // 실제 운영 시 환경변수로 관리
+  const updateMutation = trpc.admin.updateAccessCode.useMutation({
+    onSuccess: () => {
+      utils.admin.listAccessCodes.invalidate();
+      closeModal();
+      Alert.alert("성공", "접속코드가 업데이트되었습니다.");
+    },
+    onError: (error) => {
+      Alert.alert("오류", error.message);
+    },
+  });
 
-  const handleAdminLogin = () => {
-    if (adminPassword === ADMIN_PASSWORD) {
-      setIsAuthenticated(true);
-      setAdminPassword("");
+  const deleteMutation = trpc.admin.deleteAccessCode.useMutation({
+    onSuccess: () => {
+      utils.admin.listAccessCodes.invalidate();
+      utils.admin.getStatistics.invalidate();
+      Alert.alert("성공", "접속코드가 삭제되었습니다.");
+    },
+    onError: (error) => {
+      Alert.alert("오류", error.message);
+    },
+  });
+
+  const openModal = (item?: AccessCode) => {
+    if (item) {
+      setEditingCode(item);
+      setCode(item.code);
+      setUsageLimit(item.usageLimit?.toString() || "");
+      setNotes(item.notes || "");
     } else {
-      Alert.alert("오류", "관리자 비밀번호가 틀렸습니다.");
-      setAdminPassword("");
+      setEditingCode(null);
+      setCode("");
+      setUsageLimit("");
+      setNotes("");
     }
+    setIsModalVisible(true);
   };
 
-  const generateAccessCode = () => {
-    // 랜덤 코드 생성 (예: ABC123XYZ789)
-    const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-    let code = "";
-    for (let i = 0; i < 12; i++) {
-      code += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    setGeneratedCode(code);
+  const closeModal = () => {
+    setIsModalVisible(false);
+    setEditingCode(null);
   };
 
-  const handleSaveCode = async () => {
-    if (!generatedCode) {
-      Alert.alert("오류", "코드를 먼저 생성하세요.");
+  const handleSubmit = () => {
+    if (!code.trim() || code.trim().length < 6) {
+      Alert.alert("오류", "접속코드는 최소 6자 이상이어야 합니다.");
       return;
     }
 
-    try {
-      const expiresAt = codeSettings.expirationDays
-        ? new Date(Date.now() + parseInt(codeSettings.expirationDays) * 24 * 60 * 60 * 1000)
-        : null;
+    const limit = usageLimit ? parseInt(usageLimit, 10) : undefined;
 
-      const response = await fetch("/api/trpc/admin.createAccessCode", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          input: {
-            code: generatedCode,
-            usageLimit: codeSettings.usageLimit ? parseInt(codeSettings.usageLimit) : null,
-            expiresAt: expiresAt?.toISOString(),
-            notes: codeSettings.notes,
-          },
-        }),
+    if (editingCode) {
+      updateMutation.mutate({
+        codeId: editingCode.id,
+        usageLimit: limit,
+        notes: notes.trim() || undefined,
       });
-
-      if (response.ok) {
-        Alert.alert("성공", "접속코드가 저장되었습니다.");
-        setGeneratedCode("");
-        setCodeSettings({
-          usageLimit: "",
-          expirationDays: "7",
-          notes: "",
-        });
-      } else {
-        Alert.alert("오류", "접속코드 저장에 실패했습니다.");
-      }
-    } catch (error) {
-      Alert.alert("오류", "서버 오류가 발생했습니다.");
-      console.error("Error saving code:", error);
+    } else {
+      createMutation.mutate({
+        code: code.trim(),
+        usageLimit: limit,
+        notes: notes.trim() || undefined,
+      });
     }
   };
 
-  if (!isAuthenticated) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.loginContainer}>
-          <Text style={styles.title}>관리자 로그인</Text>
-          <TextInput
-            style={styles.passwordInput}
-            placeholder="관리자 비밀번호"
-            secureTextEntry
-            value={adminPassword}
-            onChangeText={setAdminPassword}
-            placeholderTextColor="#999"
-          />
-          <TouchableOpacity style={styles.loginButton} onPress={handleAdminLogin}>
-            <Text style={styles.loginButtonText}>로그인</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+  const handleDelete = (id: number) => {
+    Alert.alert(
+      "삭제 확인",
+      "이 접속코드를 정말 삭제하시겠습니까?",
+      [
+        { text: "취소", style: "cancel" },
+        { text: "삭제", style: "destructive", onPress: () => deleteMutation.mutate({ codeId: id }) },
+      ]
     );
-  }
+  };
+
+  const toggleStatus = (item: AccessCode) => {
+    updateMutation.mutate({
+      codeId: item.id,
+      isActive: !item.isActive,
+    });
+  };
+
+  const renderItem = ({ item }: { item: AccessCode }) => (
+    <View style={[styles.codeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.codeHeader}>
+        <Text style={[styles.codeText, { color: colors.foreground }]}>{item.code}</Text>
+        <TouchableOpacity
+          style={[
+            styles.statusBadge,
+            { backgroundColor: item.isActive ? colors.success + "20" : colors.error + "20" }
+          ]}
+          onPress={() => toggleStatus(item)}
+        >
+          <Text style={{ color: item.isActive ? colors.success : colors.error, fontSize: 12, fontWeight: "600" }}>
+            {item.isActive ? "활성" : "비활성"}
+          </Text>
+        </TouchableOpacity>
+      </View>
+      
+      <View style={styles.codeDetails}>
+        <Text style={[styles.detailText, { color: colors.muted }]}>
+          사용: {item.usageCount} / {item.usageLimit || "무제한"}
+        </Text>
+        {item.notes && (
+          <Text style={[styles.detailText, { color: colors.muted }]} numberOfLines={1}>
+            메모: {item.notes}
+          </Text>
+        )}
+      </View>
+
+      <View style={styles.cardActions}>
+        <TouchableOpacity style={styles.actionButton} onPress={() => openModal(item)}>
+          <Text style={{ color: colors.primary, fontWeight: "600" }}>수정</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item.id)}>
+          <Text style={{ color: colors.error, fontWeight: "600" }}>삭제</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>관리자 대시보드</Text>
-          <TouchableOpacity
-            onPress={() => {
-              setIsAuthenticated(false);
-              setAdminPassword("");
-            }}
-          >
-            <Text style={styles.logoutButton}>로그아웃</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>접속코드 생성</Text>
-
-          <View style={styles.codeGeneratorContainer}>
-            <View style={styles.generatedCodeBox}>
-              <Text style={styles.generatedCodeLabel}>생성된 코드:</Text>
-              <Text style={styles.generatedCode}>{generatedCode || "코드 생성 필요"}</Text>
-            </View>
-
-            <TouchableOpacity style={styles.generateButton} onPress={generateAccessCode}>
-              <Text style={styles.generateButtonText}>새 코드 생성</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.settingsContainer}>
-            <Text style={styles.settingLabel}>사용 횟수 제한 (선택사항)</Text>
-            <TextInput
-              style={styles.settingInput}
-              placeholder="예: 10 (비워두면 무제한)"
-              keyboardType="number-pad"
-              value={codeSettings.usageLimit}
-              onChangeText={(text) =>
-                setCodeSettings({ ...codeSettings, usageLimit: text })
-              }
-              placeholderTextColor="#999"
-            />
-
-            <Text style={styles.settingLabel}>만료 기간 (일)</Text>
-            <TextInput
-              style={styles.settingInput}
-              placeholder="예: 7"
-              keyboardType="number-pad"
-              value={codeSettings.expirationDays}
-              onChangeText={(text) =>
-                setCodeSettings({ ...codeSettings, expirationDays: text })
-              }
-              placeholderTextColor="#999"
-            />
-
-            <Text style={styles.settingLabel}>메모</Text>
-            <TextInput
-              style={[styles.settingInput, styles.notesInput]}
-              placeholder="코드에 대한 메모 (선택사항)"
-              multiline
-              numberOfLines={3}
-              value={codeSettings.notes}
-              onChangeText={(text) => setCodeSettings({ ...codeSettings, notes: text })}
-              placeholderTextColor="#999"
-            />
-          </View>
-
-          <TouchableOpacity style={styles.saveButton} onPress={handleSaveCode}>
-            <Text style={styles.saveButtonText}>코드 저장</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoTitle}>💡 접속코드 관리 안내</Text>
-          <Text style={styles.infoText}>
-            • 생성된 코드는 사용자가 앱 접속 시 입력합니다.{"\n"}
-            • 사용 횟수 제한을 설정하면 해당 횟수만큼만 사용 가능합니다.{"\n"}
-            • 만료 기간을 설정하면 해당 기간 후 코드가 자동 비활성화됩니다.{"\n"}
-            • 메모는 관리자용으로만 표시됩니다.
-          </Text>
-        </View>
+    <ScreenContainer containerClassName="bg-background">
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+          <Text style={{ color: colors.primary, fontSize: 16 }}>← 뒤로</Text>
+        </TouchableOpacity>
+        <Text style={[styles.title, { color: colors.foreground }]}>관리자 대시보드</Text>
+        <TouchableOpacity onPress={() => openModal()} style={styles.addButton}>
+          <Text style={{ color: "#fff", fontWeight: "600" }}>+ 추가</Text>
+        </TouchableOpacity>
       </View>
-    </ScrollView>
+
+      {stats && (
+        <View style={styles.statsContainer}>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.statLabel, { color: colors.muted }]}>총 코드</Text>
+            <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.totalAccessCodes}</Text>
+          </View>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.statLabel, { color: colors.muted }]}>활성 세션</Text>
+            <Text style={[styles.statValue, { color: colors.primary }]}>{stats.activeSessions}</Text>
+          </View>
+          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.statLabel, { color: colors.muted }]}>총 사용</Text>
+            <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.totalUsage}</Text>
+          </View>
+        </View>
+      )}
+
+      {isLoading ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={codes}
+          renderItem={renderItem}
+          keyExtractor={(item) => item.id.toString()}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
+          }
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <Text style={{ color: colors.muted }}>생성된 접속코드가 없습니다.</Text>
+            </View>
+          }
+        />
+      )}
+
+      <Modal visible={isModalVisible} animationType="slide" transparent>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
+              {editingCode ? "접속코드 수정" : "새 접속코드 생성"}
+            </Text>
+            
+            <ScrollView style={styles.modalForm}>
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.muted }]}>접속코드 (최소 6자)</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: colors.border, color: colors.foreground }]}
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="예: ABC123XYZ"
+                  placeholderTextColor={colors.muted}
+                  editable={!editingCode}
+                  autoCapitalize="characters"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.muted }]}>사용 횟수 제한 (선택)</Text>
+                <TextInput
+                  style={[styles.input, { borderColor: colors.border, color: colors.foreground }]}
+                  value={usageLimit}
+                  onChangeText={setUsageLimit}
+                  placeholder="무제한인 경우 비워두세요"
+                  placeholderTextColor={colors.muted}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={[styles.label, { color: colors.muted }]}>메모 (선택)</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea, { borderColor: colors.border, color: colors.foreground }]}
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="관리용 메모를 입력하세요"
+                  placeholderTextColor={colors.muted}
+                  multiline
+                  numberOfLines={3}
+                />
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={closeModal}>
+                <Text style={{ color: colors.muted, fontWeight: "600" }}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.modalButton, styles.submitButton, { backgroundColor: colors.primary }]} 
+                onPress={handleSubmit}
+                disabled={createMutation.isLoading || updateMutation.isLoading}
+              >
+                {createMutation.isLoading || updateMutation.isLoading ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={{ color: "#fff", fontWeight: "600" }}>저장</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  loginContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  content: {
-    padding: 20,
-    paddingBottom: 40,
-  },
   header: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 30,
-    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eee",
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#1a1a1a",
-  },
-  logoutButton: {
-    color: "#ef4444",
-    fontSize: 14,
-    fontWeight: "600",
-    padding: 8,
-  },
-  passwordInput: {
-    borderWidth: 1,
-    borderColor: "#ddd",
-    borderRadius: 8,
+  backButton: { padding: 4 },
+  title: { fontSize: 18, fontWeight: "bold" },
+  addButton: {
+    backgroundColor: "#007AFF",
     paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 16,
-    width: "100%",
-    maxWidth: 300,
+    paddingVertical: 6,
+    borderRadius: 6,
   },
-  loginButton: {
-    backgroundColor: "#2563eb",
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    width: "100%",
-    maxWidth: 300,
+  statsContainer: {
+    flexDirection: "row",
+    padding: 16,
+    gap: 12,
+  },
+  statBox: {
+    flex: 1,
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
     alignItems: "center",
   },
-  loginButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  section: {
-    backgroundColor: "#fff",
+  statLabel: { fontSize: 12, marginBottom: 4 },
+  statValue: { fontSize: 18, fontWeight: "bold" },
+  listContent: { padding: 16, gap: 12 },
+  codeCard: {
     padding: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "#e0e0e0",
-    marginBottom: 20,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 16,
-  },
-  codeGeneratorContainer: {
-    marginBottom: 16,
-  },
-  generatedCodeBox: {
-    backgroundColor: "#f0f9ff",
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2563eb",
-  },
-  generatedCodeLabel: {
-    fontSize: 12,
-    color: "#666",
-    marginBottom: 4,
-  },
-  generatedCode: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#2563eb",
-    fontFamily: "monospace",
-    letterSpacing: 2,
-  },
-  generateButton: {
-    backgroundColor: "#10b981",
-    paddingVertical: 12,
-    borderRadius: 8,
+  codeHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
+    marginBottom: 8,
   },
-  generateButtonText: {
-    color: "#fff",
-    fontSize: 14,
-    fontWeight: "600",
+  codeText: { fontSize: 18, fontWeight: "bold", letterSpacing: 1 },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
   },
-  settingsContainer: {
-    marginBottom: 16,
+  codeDetails: { marginBottom: 12 },
+  detailText: { fontSize: 13, marginBottom: 2 },
+  cardActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#f0f0f0",
+    paddingTop: 12,
   },
-  settingLabel: {
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#1a1a1a",
-    marginBottom: 6,
-    marginTop: 12,
+  actionButton: { padding: 4 },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyContainer: { flex: 1, alignItems: "center", marginTop: 100 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    padding: 20,
   },
-  settingInput: {
+  modalContent: {
+    borderRadius: 20,
+    padding: 24,
+    maxHeight: "80%",
+  },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20 },
+  modalForm: { marginBottom: 20 },
+  inputGroup: { marginBottom: 16 },
+  label: { fontSize: 14, marginBottom: 6 },
+  input: {
     borderWidth: 1,
-    borderColor: "#ddd",
     borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 8,
+    padding: 12,
+    fontSize: 16,
   },
-  notesInput: {
-    minHeight: 80,
-    paddingTop: 10,
-    textAlignVertical: "top",
-  },
-  saveButton: {
-    backgroundColor: "#2563eb",
+  textArea: { minHeight: 80, textAlignVertical: "top" },
+  modalActions: { flexDirection: "row", gap: 12 },
+  modalButton: {
+    flex: 1,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: "center",
   },
-  saveButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  infoContainer: {
-    backgroundColor: "#dbeafe",
-    padding: 16,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2563eb",
-  },
-  infoTitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#0c4a6e",
-    marginBottom: 8,
-  },
-  infoText: {
-    fontSize: 13,
-    color: "#0c4a6e",
-    lineHeight: 20,
-  },
+  cancelButton: { backgroundColor: "#f0f0f0" },
+  submitButton: {},
 });

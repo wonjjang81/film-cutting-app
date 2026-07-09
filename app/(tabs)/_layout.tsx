@@ -1,86 +1,93 @@
-import { Tabs } from "expo-router";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Platform, Text } from "react-native";
-import { useColors } from "@/hooks/use-colors";
-import { HapticTab } from "@/components/haptic-tab";
-
-// 탭 아이콘을 이모지로 간단하게 처리 (SF Symbols 매핑 없이도 동작)
-function TabIcon({ emoji, focused }: { emoji: string; focused: boolean }) {
-  return (
-    <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{emoji}</Text>
-  );
-}
+import { Tabs, usePathname, router } from "expo-router";
+import React, { useState, useEffect } from "react";
+import { View, ActivityIndicator, Platform } from "react-native";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 export default function TabLayout() {
-  const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const bottomPadding = Platform.OS === "web" ? 12 : Math.max(insets.bottom, 8);
-  const tabBarHeight = 60 + bottomPadding;
+  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
+  const [isReady, setIsReady] = useState(false);
+  const pathname = usePathname();
+
+  useEffect(() => {
+    setIsReady(true);
+  }, []);
+
+  if (!isReady) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff' }}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
+  const isLoggedIn = accessCodeValidated || guestSession !== null;
+  const isLoginPage = pathname === "/login";
+  const shouldHideTabBar = !isLoggedIn || isLoginPage;
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
         headerShown: false,
-        tabBarButton: HapticTab,
-        tabBarStyle: {
-          paddingTop: 6,
-          paddingBottom: bottomPadding,
-          height: tabBarHeight,
-          backgroundColor: colors.background,
-          borderTopColor: colors.border,
-          borderTopWidth: 0.5,
-        },
-        tabBarLabelStyle: {
-          fontSize: 11,
-          fontWeight: "600",
-          marginTop: 2,
-        },
+        tabBarStyle: shouldHideTabBar ? { display: 'none' } : { height: 60, paddingBottom: 8 },
       }}
     >
-
       <Tabs.Screen
         name="index"
         options={{
           title: "홈",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="🏠" focused={focused} />,
+          href: isLoggedIn ? "/" : null,
+          tabBarIcon: () => "🏠",
         }}
       />
+      
       <Tabs.Screen
         name="input"
         options={{
           title: "입력",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="✏️" focused={focused} />,
+          href: isLoggedIn ? "/input" : null,
+          tabBarIcon: () => "✏️",
         }}
       />
+      
       <Tabs.Screen
         name="cutting"
         options={{
           title: "재단",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="✂️" focused={focused} />,
+          href: isLoggedIn ? "/cutting" : null,
+          tabBarIcon: () => "✂️",
         }}
       />
+      
       <Tabs.Screen
         name="estimate"
         options={{
           title: "견적",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="💰" focused={focused} />,
+          href: isLoggedIn ? "/estimate" : null,
+          tabBarIcon: () => "💰",
         }}
       />
-      <Tabs.Screen
-        name="admin"
-        options={{
-          title: "관리자",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="👨‍💼" focused={focused} />,
-        }}
-      />
+      
       <Tabs.Screen
         name="settings"
         options={{
           title: "설정",
-          tabBarIcon: ({ focused }) => <TabIcon emoji="⚙️" focused={focused} />,
+          href: isLoggedIn ? "/settings" : null,
+          tabBarIcon: () => "⚙️",
         }}
       />
+      
+      <Tabs.Screen
+        name="admin"
+        options={{
+          title: "관리자",
+          href: isAdmin ? "/admin" : null,
+          tabBarIcon: () => "👑",
+        }}
+      />
+
+      <Tabs.Screen name="guide" options={{ href: null }} />
+      <Tabs.Screen name="login" options={{ href: null }} />
+      <Tabs.Screen name="accesscode" options={{ href: null }} />
     </Tabs>
   );
 }

@@ -28,34 +28,47 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Clear Metro cache
-        run: |
-          rm -rf node_modules/react-native-css-interop/.cache || true
-          rm -rf $TMPDIR/metro-* || true
-          rm -rf $TMPDIR/haste-* || true
+        run: pnpm install --no-frozen-lockfile
 
       - name: Build web
+        run: npx expo export --platform web --output-dir dist
+
+      - name: Prepare Deployment
         run: |
-          EXPO_NO_CACHE=1 node_modules/.bin/expo export \
-            --platform web \
-            --output-dir dist \
-            --clear
+          cd dist
+          touch .nojekyll
+          
+          # GitHub Pages SPA 404 리다이렉트 트릭
+          cat > 404.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Film Cutting App</title>
+              <script type="text/javascript">
+                var pathSegmentsToKeep = 1;
+                var l = window.location;
+                l.replace(
+                  l.protocol + '//' + l.hostname + (l.port ? ':' + l.port : '') +
+                  l.pathname.split('/').slice(0, 1 + pathSegmentsToKeep).join('/') + '/?/' +
+                  l.pathname.split('/').slice(1 + pathSegmentsToKeep).join('/').replace(/&/g, '~and~') +
+                  (l.search ? '&' + l.search.slice(1).replace(/&/g, '~and~') : '') +
+                  l.hash
+                );
+              </script>
+            </head>
+            <body></body>
+          </html>
+          EOF
 
       - name: Deploy to GitHub Pages
         run: |
           cd dist
-          git init && git checkout -b gh-pages
-          touch .nojekyll
-          cat > 404.html << 'EOF'
-          <!DOCTYPE html><html><head><meta charset="utf-8"><title>Film Cutting App</title>
-          <script>var l=window.location;l.replace(l.protocol+'//'+l.hostname+(l.port?':'+l.port:'')+l.pathname.split('/').slice(0,2).join('/')+'/?/'+l.pathname.slice(1).split('/').slice(1).join('/').replace(/&/g,'~and~')+(l.search?'&'+l.search.slice(1).replace(/&/g,'~and~'):'')+l.hash);</script>
-          </head></html>
-          EOF
+          git init
+          git checkout -b gh-pages
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git add -A
-          git commit -m "Deploy web: ${{ github.sha }}"
+          git commit -m "Deploy: ${{ github.sha }}"
           git remote add origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           git push -f origin gh-pages

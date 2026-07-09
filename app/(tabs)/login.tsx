@@ -1,211 +1,148 @@
-import React, { useState } from "react";
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { router } from "expo-router";
-import { useAuth } from "../contexts/AuthContext";
 
 export default function LoginScreen() {
-  const { loginAsGuest, isLoading } = useAuth();
-  const [error, setError] = useState<string | null>(null);
-  const [selectedDuration, setSelectedDuration] = useState<number>(1440); // 24 hours default
+  const [code, setCode] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const durationOptions = [
-    { label: "1시간", value: 60 },
-    { label: "6시간", value: 360 },
-    { label: "24시간", value: 1440 },
-    { label: "7일", value: 10080 },
-  ];
+  // 이미 로그인된 경우 홈으로 자동 이동
+  useEffect(() => {
+    if (typeof localStorage !== 'undefined') {
+      const adminStatus = localStorage.getItem("isAdmin") === "true";
+      const loggedInStatus = adminStatus || 
+                             localStorage.getItem("guestSession") !== null || 
+                             localStorage.getItem("accessCodeValidated") === "true";
+      if (loggedInStatus) {
+        // (tabs)/index로 명시적 이동하여 404 방지
+        router.replace("/(tabs)/index");
+      }
+    }
+  }, []);
 
-  const handleGuestLogin = async () => {
-    await loginAsGuest(selectedDuration);
-    // Navigate to input screen after successful login
-    setTimeout(() => {
-      router.push("/(tabs)/input");
-    }, 500);
+  const handleLogin = async () => {
+    if (!code.trim()) return;
+    
+    setIsLoading(true);
+    
+    if (typeof localStorage !== 'undefined') {
+      if (code === "won81") {
+        localStorage.setItem("isAdmin", "true");
+      } else {
+        localStorage.setItem("isAdmin", "false");
+        localStorage.setItem("guestSession", Date.now().toString());
+      }
+      localStorage.setItem("accessCodeValidated", "true");
+      
+      setIsLoading(false);
+      // (tabs)/index로 명시적 이동하여 GitHub Pages의 404 오류를 방지합니다.
+      router.replace("/(tabs)/index");
+    } else {
+      setIsLoading(false);
+      Alert.alert("오류", "브라우저 환경이 아닙니다.");
+    }
   };
 
   return (
-    <ScrollView style={styles.container}>
-      <View style={styles.content}>
-        <View style={styles.header}>
-          <Text style={styles.title}>필름 재단 계산기</Text>
-          <Text style={styles.subtitle}>게스트로 시작하기</Text>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>세션 기간 선택</Text>
-          <Text style={styles.description}>
-            게스트 계정의 유효 기간을 선택하세요. 기간이 만료되면 다시 로그인해야 합니다.
-          </Text>
-
-          <View style={styles.optionsContainer}>
-            {durationOptions.map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.optionButton,
-                  selectedDuration === option.value && styles.optionButtonSelected,
-                ]}
-                onPress={() => setSelectedDuration(option.value)}
-              >
-                <Text
-                  style={[
-                    styles.optionText,
-                    selectedDuration === option.value && styles.optionTextSelected,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>주의사항</Text>
-          <Text style={styles.warningText}>
-            • 게스트 계정은 임시 계정입니다.{"\n"}
-            • 기간 만료 후 데이터는 자동 삭제됩니다.{"\n"}
-            • 중요한 데이터는 PDF로 내보내기를 권장합니다.
-          </Text>
-        </View>
-
-        {error && (
-          <View style={styles.errorContainer}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <TouchableOpacity
-          style={[styles.loginButton, isLoading && styles.loginButtonDisabled]}
-          onPress={handleGuestLogin}
+    <View style={styles.container}>
+      <View style={styles.card}>
+        <Text style={styles.title}>필름 재단 계산기</Text>
+        <Text style={styles.subtitle}>접속코드를 입력해 주세요</Text>
+        
+        <TextInput
+          style={styles.input}
+          placeholder="접속코드 또는 관리자 비번"
+          value={code}
+          onChangeText={setCode}
+          secureTextEntry={code === "won81"}
+          autoCapitalize="none"
+        />
+        
+        <TouchableOpacity 
+          style={styles.button} 
+          onPress={handleLogin}
           disabled={isLoading}
         >
-          <Text style={styles.loginButtonText}>
-            {isLoading ? "로그인 중..." : "게스트로 시작"}
-          </Text>
+          {isLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.buttonText}>접속하기</Text>
+          )}
         </TouchableOpacity>
-
-        <View style={styles.infoContainer}>
-          <Text style={styles.infoText}>
-            💡 팁: 앱을 종료했다가 다시 열어도 세션이 유지됩니다. (기간 내에서)
-          </Text>
-        </View>
+        
+        <Text style={styles.footer}>관리자 비번: won81</Text>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
-  },
-  content: {
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    paddingBottom: 40,
+    backgroundColor: "#f5f5f5",
   },
-  header: {
-    marginBottom: 40,
-    marginTop: 20,
+  card: {
+    width: "100%",
+    maxWidth: 400,
+    padding: 30,
+    backgroundColor: "#fff",
+    borderRadius: 15,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+    alignItems: "center",
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "bold",
-    color: "#1a1a1a",
-    marginBottom: 8,
+    marginBottom: 10,
+    color: "#007AFF",
   },
   subtitle: {
-    fontSize: 16,
-    color: "#666",
-  },
-  section: {
-    marginBottom: 30,
-    backgroundColor: "#fff",
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#e0e0e0",
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#1a1a1a",
-    marginBottom: 12,
-  },
-  description: {
-    fontSize: 14,
-    color: "#666",
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  optionsContainer: {
-    gap: 10,
-  },
-  optionButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: "#ddd",
-    backgroundColor: "#fff",
-  },
-  optionButtonSelected: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-  },
-  optionText: {
     fontSize: 15,
     color: "#666",
-    fontWeight: "500",
+    marginBottom: 30,
   },
-  optionTextSelected: {
-    color: "#2563eb",
-    fontWeight: "600",
-  },
-  warningText: {
-    fontSize: 14,
-    color: "#d97706",
-    lineHeight: 22,
-  },
-  errorContainer: {
-    backgroundColor: "#fee2e2",
-    padding: 12,
+  input: {
+    width: "100%",
+    height: 50,
+    borderWidth: 1,
+    borderColor: "#ddd",
     borderRadius: 8,
+    paddingHorizontal: 15,
     marginBottom: 20,
-    borderLeftWidth: 4,
-    borderLeftColor: "#dc2626",
-  },
-  errorText: {
-    color: "#991b1b",
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  loginButton: {
-    backgroundColor: "#2563eb",
-    paddingVertical: 14,
-    borderRadius: 8,
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  loginButtonDisabled: {
-    backgroundColor: "#9ca3af",
-    opacity: 0.7,
-  },
-  loginButtonText: {
-    color: "#fff",
     fontSize: 16,
-    fontWeight: "600",
+    backgroundColor: "#fafafa",
   },
-  infoContainer: {
-    backgroundColor: "#dbeafe",
-    padding: 12,
+  button: {
+    width: "100%",
+    height: 50,
+    backgroundColor: "#007AFF",
+    justifyContent: "center",
+    alignItems: "center",
     borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: "#2563eb",
   },
-  infoText: {
-    fontSize: 13,
-    color: "#0c4a6e",
-    lineHeight: 20,
+  buttonText: {
+    color: "#fff",
+    fontSize: 17,
+    fontWeight: "bold",
   },
+  footer: {
+    marginTop: 20,
+    fontSize: 12,
+    color: "#ccc",
+  }
 });
