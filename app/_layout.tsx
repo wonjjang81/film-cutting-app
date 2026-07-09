@@ -23,7 +23,6 @@ export default function RootLayout() {
       const search = window.location.search;
       if (search && search.startsWith('?/')) {
         const path = search.slice(2).replace(/~and~/g, '&');
-        // 히스토리 상태를 깨끗하게 정리하고 해당 경로로 이동
         window.history.replaceState(null, '', window.location.pathname.slice(0, -1) + path + window.location.hash);
       }
     }
@@ -38,8 +37,8 @@ export default function RootLayout() {
               <trpc.Provider client={trpcClient} queryClient={queryClient}>
                 <QueryClientProvider client={queryClient}>
                   <Stack screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="(tabs)" />
-                    <Stack.Screen name="index" />
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    <Stack.Screen name="index" options={{ headerShown: false }} />
                   </Stack>
                   <StatusBar style="auto" />
                 </QueryClientProvider>

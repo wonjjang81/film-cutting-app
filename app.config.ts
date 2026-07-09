@@ -77,11 +77,13 @@ const config: ExpoConfig = {
       },
     ],
   ],
+  router: {
+    // GitHub Pages에서 가장 안정적인 해시 기반 라우팅 사용
+    origin: "https://wonjjang81.github.io/film-cutting-app/",
+  },
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
-    // GitHub Pages 배포 시 매우 중요한 설정
-    // baseUrl은 반드시 저장소 이름과 일치해야 하며, 라우팅 시 이 경로를 기준으로 동작합니다.
     baseUrl: "/film-cutting-app",
   },
   extra: {
