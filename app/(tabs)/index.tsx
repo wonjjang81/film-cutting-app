@@ -98,7 +98,8 @@ export default function HomeScreen() {
   // 미로그인 시 로그인 화면으로 리다이렉트
   React.useEffect(() => {
     if (!authLoading && !isLoggedIn) {
-      router.replace("/(tabs)/login");
+      // 웹 환경에서 GitHub Pages 서브 디렉토리 문제를 피하기 위해 상대 경로 사용 검토
+      router.replace("/login");
     }
   }, [isLoggedIn, authLoading]);
 
