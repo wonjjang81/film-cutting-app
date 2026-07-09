@@ -48,13 +48,13 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (isAuthenticated && user) {
-      router.push("/(tabs)/index");
+      router.replace("/(tabs)/index");
     }
   }, [isAuthenticated, user]);
 
   useEffect(() => {
     if (guestSession && !guestLoading) {
-      router.push("/(tabs)/input");
+      router.replace("/(tabs)/index");
     }
   }, [guestSession, guestLoading]);
 

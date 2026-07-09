@@ -21,6 +21,8 @@ import { useColors } from "@/hooks/use-colors";
 import { SavedProject, useFilm } from "@/lib/filmContext";
 import { formatNumber } from "@/lib/filmCutting";
 import { exportProjectAsFile, exportAllProjectsAsFile, importProjectFromFile, importMultipleProjectsFromFile, extractProjectInfo } from "@/lib/projectExport";
+import { useAuth as useGuestAuth } from "@/app/contexts/AuthContext";
+import { useAuth } from "@/hooks/use-auth";
 
 // ─── 날짜 포맷 ───────────────────────────────────────────────
 
@@ -87,6 +89,28 @@ export default function HomeScreen() {
   const [loadConfirmProject, setLoadConfirmProject] = useState<SavedProject | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
+
+  // 인증 상태 확인
+  const { guestSession } = useGuestAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const isLoggedIn = !!guestSession || !!isAuthenticated;
+
+  // 미로그인 시 로그인 화면으로 리다이렉트
+  React.useEffect(() => {
+    if (!authLoading && !isLoggedIn) {
+      router.replace("/(tabs)/login");
+    }
+  }, [isLoggedIn, authLoading]);
+
+  if (authLoading || !isLoggedIn) {
+    return (
+      <ScreenContainer>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ScreenContainer>
+    );
+  }
 
   // 프로젝트명 수정
   const handleNameConfirm = useCallback(() => {
