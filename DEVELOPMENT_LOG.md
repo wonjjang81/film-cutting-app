@@ -44,6 +44,7 @@
 - `app/+not-found.tsx`를 추가하여 잘못된 경로 접근 시 홈으로 리다이렉트 처리
 - `hooks/use-auth.ts`에 인증 요청 타임아웃(5초)을 추가하여 무한 로딩 방지
 - `app/(tabs)/_layout.tsx`에 로딩 화면 최대 대기 시간(3초)을 설정하여 안정성 확보
+- `app/contexts/AuthContext.tsx`에서 SSR 및 브라우저 환경 호환성 코드 개선 (localStorage 접근 최적화)
 - `app.config.ts`의 `baseUrl` 설정을 빈 문자열로 수정하여 루트 도메인 배포 대응
 - `AuthContext`를 확장하여 관리자 인증 상태(`isAdmin`) 전역 관리 추가
 - 관리자 로그인 성공 시 홈 화면으로 리다이렉트 및 모든 탭 노출 로직 적용
