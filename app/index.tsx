@@ -1,15 +1,32 @@
 import { useEffect } from "react";
 import { router } from "expo-router";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
 
 export default function RootIndex() {
   useEffect(() => {
-    // Redirect 컴포넌트 대신 useEffect 내에서 router.replace를 사용하여
-    // GitHub Pages 서브디렉토리 환경에서 더 안정적으로 이동하도록 합니다.
-    const timer = setTimeout(() => {
-      router.replace("/login");
-    }, 100);
-    return () => clearTimeout(timer);
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      // GitHub Pages 환경에서는 때때로 Expo Router의 내부 리다이렉트보다
+      // 브라우저 레벨의 강제 이동이 더 확실하게 작동합니다.
+      const baseUrl = "/film-cutting-app";
+      const targetPath = "/login";
+      
+      // 현재 경로가 이미 타겟 경로라면 중복 이동 방지
+      if (window.location.pathname.endsWith(targetPath)) return;
+
+      const timer = setTimeout(() => {
+        // 내부 라우터 이동 시도
+        router.replace(targetPath as any);
+        
+        // 1초 뒤에도 이동이 안 되었다면 강제 이동 (안전장치)
+        setTimeout(() => {
+          if (!window.location.pathname.endsWith(targetPath)) {
+            window.location.href = baseUrl + targetPath;
+          }
+        }, 1000);
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   return (
