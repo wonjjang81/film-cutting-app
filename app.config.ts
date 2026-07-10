@@ -60,6 +60,8 @@ const config: ExpoConfig = {
     bundler: "metro",
     output: "static",
     favicon: "./assets/images/favicon.png",
+    // ⚠️ 중요: GitHub Pages 하위 경로 설정을 위해 baseUrl 추가
+    baseUrl: "/film-cutting-app"
   },
   plugins: [
     "expo-router",
@@ -84,6 +86,7 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
+    // experiments 내부에도 baseUrl 유지 (일부 버전 대응)
     baseUrl: "/film-cutting-app",
   },
   extra: {
