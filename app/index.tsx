@@ -1,39 +1,27 @@
 import React, { useEffect, useState } from 'react';
 import { Redirect } from 'expo-router';
 import { View, ActivityIndicator } from 'react-native';
-// 만약 토큰 저장용으로 AsyncStorage를 쓰신다면 아래 주석을 활용하세요.
-// import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAuth } from './contexts/AuthContext';
 
 export default function Index() {
+  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    const checkLoginStatus = async () => {
-      try {
-        // 임시 저장된 인증 값이나 토큰이 있는지 검사
-        // const token = await AsyncStorage.getItem('userToken');
-        // const isGuest = await AsyncStorage.getItem('guestMode');
-        
-        const hasToken = false; // 테스트용 기본값 (로그인 안 됨)
-        
-        setIsAuthenticated(hasToken);
-      } catch (error) {
-        setIsAuthenticated(false);
-      }
-    };
+    // AuthContext의 상태를 기반으로 인증 여부 판단
+    const loggedIn = isAdmin || guestSession !== null || accessCodeValidated;
+    setIsAuthenticated(loggedIn);
+  }, [isAdmin, guestSession, accessCodeValidated]);
 
-    checkLoginStatus();
-  }, []);
-
-  // 로딩 중일 때는 빈 화면과 인디케이터 표시
+  // 로딩 상태 처리
   if (isAuthenticated === null) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'white' }}>
+      <View className="flex-1 justify-center items-center bg-white">
         <ActivityIndicator size="large" color="#2563eb" />
       </View>
     );
   }
 
-  // 인증 성공 시 메인 탭으로, 실패 시 로그인 화면으로 이동
+  // ✨ 로그인 기록이 있으면 메인 탭으로 프리패스, 없으면 로그인창 강제 진입
   return isAuthenticated ? <Redirect href="/(tabs)" /> : <Redirect href="/login" />;
 }

@@ -41,6 +41,7 @@ export default function LoginScreen() {
 
       // 임시 성공 처리
       Alert.alert('성공', '회원 로그인에 성공했습니다.');
+      // 🚀 [중요] 이전 로그인 기록 히스토리를 통째로 날리며 메인 탭으로 진입시킵니다.
       router.replace('/(tabs)'); 
     } catch (error: any) {
       Alert.alert('실패', error.message || '로그인 중 오류가 발생했습니다.');
