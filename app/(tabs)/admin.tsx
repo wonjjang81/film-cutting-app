@@ -54,16 +54,26 @@ export default function AdminDashboard() {
       const fileData = await getFileResponse.json();
       const currentSha = fileData.sha;
       
-      // 2. 새로운 코드 목록 (문자열 배열) 준비
-      const codeStrings = allCodes.map(item => item.code);
-      if (!codeStrings.includes(newCode)) {
-        codeStrings.unshift(newCode);
-      }
+      // 2. 기존 코드를 읽어와 배열로 해독하고 신규 코드를 추가합니다.
+      const decodedContent = decodeURIComponent(atob(fileData.content).split('').map(function(c) {
+          return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+      }).join(''));
       
-      const content = JSON.stringify(codeStrings, null, 2);
+      let currentCodes: string[] = [];
+      try {
+        currentCodes = JSON.parse(decodedContent);
+        if (!Array.isArray(currentCodes)) currentCodes = [];
+      } catch (e) {
+        currentCodes = [];
+      }
+
+      const updatedCodes = Array.from(new Set([newCode, ...currentCodes]));
+      const content = JSON.stringify(updatedCodes, null, 2);
       
       // 3. Base64 인코딩 (UTF-8 대응)
-      const b64Content = btoa(unescape(encodeURIComponent(content)));
+      const b64Content = btoa(encodeURIComponent(content).replace(/%([0-9A-F]{2})/g, function(match, p1) {
+          return String.fromCharCode(parseInt(p1, 16));
+      }));
 
       // 4. GitHub에 업데이트 요청
       const updateResponse = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PATH}`, {

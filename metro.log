@@ -1,0 +1,90 @@
+nohup: ignoring input
+
+> app-template@1.0.0 dev:metro /home/ubuntu/film-cutting-app
+> cross-env EXPO_USE_METRO_WORKSPACE_ROOT=1 npx expo start --web --port ${EXPO_PORT:-8081}
+
+env: load .env
+env: export EXPO_PUBLIC_GITHUB_TOKEN
+Starting project at /home/ubuntu/film-cutting-app
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+React Compiler enabled
+Starting Metro Bundler
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+
+TypeScript: A tsconfig.json has been auto-generated
+
+TypeScript: The tsconfig.json#include property has been updated
+The following packages should be updated for best compatibility with the installed expo version:
+  expo-clipboard@57.0.0 - expected version: ~8.0.8
+  expo-document-picker@55.0.14 - expected version: ~14.0.8
+  expo-file-system@55.0.23 - expected version: ~19.0.23
+  expo-print@55.0.16 - expected version: ~15.0.8
+  expo-sharing@55.0.21 - expected version: ~14.0.8
+Your project may not work correctly until you install the expected versions of the packages.
+Waiting on http://localhost:8081
+Logs for your project will appear below.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+Web node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/entry.js ▓▓▓▓▓▓▓░░░░░░░░░ 49.0% ( 34/125)
+λ node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/node/render.js ▓▓▓▓▓▓▓▓░░░░░░░░ 56.1% (358/478)
+Web node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/entry.js ▓▓▓▓▓▓▓▓▓▓▓░░░░░ 75.0% (536/619)
+λ node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/node/render.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 94.9% (703/731)
+Web Bundling failed 7041ms node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/entry.js (765 modules)
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+
+Metro error: Unable to resolve module ../contexts/AuthContext from /home/ubuntu/film-cutting-app/app/(auth)/login.tsx: 
+
+None of these files exist:
+  * app/contexts/AuthContext(.web.ts|.ts|.web.tsx|.tsx|.web.mjs|.mjs|.web.js|.js|.web.jsx|.jsx|.web.json|.json|.web.cjs|.cjs|.web.scss|.scss|.web.sass|.sass|.web.css|.css)
+  * app/contexts/AuthContext
+[0m [90m 2 |[39m [36mimport[39m { [33mView[39m[33m,[39m [33mText[39m[33m,[39m [33mTextInput[39m[33m,[39m [33mTouchableOpacity[39m[33m,[39m [33mAlert[39m[33m,[39m [33mKeyboardAvoidingView[39m[33m,[39m [33mPlatform[39m[33m,[39m [33mScrollView[39m[33m,[39m [33mActivityIndicator[39m } [36mfrom[39m [32m'react-native'[39m[33m;[39m
+ [90m 3 |[39m [36mimport[39m { useRouter } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 4 |[39m [36mimport[39m { useAuth } [36mfrom[39m [32m'../contexts/AuthContext'[39m[33m;[39m
+ [90m   |[39m                          [31m[1m^[22m[39m
+ [90m 5 |[39m [36mimport[39m [33mAsyncStorage[39m [36mfrom[39m [32m'@react-native-async-storage/async-storage'[39m[33m;[39m
+ [90m 6 |[39m
+ [90m 7 |[39m [36mexport[39m [36mdefault[39m [36mfunction[39m [33mLoginScreen[39m() {[0m
+
+Import stack:
+
+ app/(auth)/login.tsx
+ | import "../contexts/AuthContext"
+
+ app (require.context)
+
+
+Call Stack
+  <unknown> (app/(auth)/login.tsx:0)
+λ Bundling failed 7061ms node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/node/render.js (774 modules)
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+Web Bundling failed 1035ms node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/entry.js (751 modules)
+EXPO_USE_METRO_WORKSPACE_ROOT is enabled by default, use EXPO_NO_METRO_WORKSPACE_ROOT instead to disable.
+
+Metro error: Unable to resolve module ../contexts/AuthContext from /home/ubuntu/film-cutting-app/app/(auth)/login.tsx: 
+
+None of these files exist:
+  * app/contexts/AuthContext(.web.ts|.ts|.web.tsx|.tsx|.web.mjs|.mjs|.web.js|.js|.web.jsx|.jsx|.web.json|.json|.web.cjs|.cjs|.web.scss|.scss|.web.sass|.sass|.web.css|.css)
+  * app/contexts/AuthContext
+[0m [90m 2 |[39m [36mimport[39m { [33mView[39m[33m,[39m [33mText[39m[33m,[39m [33mTextInput[39m[33m,[39m [33mTouchableOpacity[39m[33m,[39m [33mAlert[39m[33m,[39m [33mKeyboardAvoidingView[39m[33m,[39m [33mPlatform[39m[33m,[39m [33mScrollView[39m[33m,[39m [33mActivityIndicator[39m } [36mfrom[39m [32m'react-native'[39m[33m;[39m
+ [90m 3 |[39m [36mimport[39m { useRouter } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 4 |[39m [36mimport[39m { useAuth } [36mfrom[39m [32m'../contexts/AuthContext'[39m[33m;[39m
+ [90m   |[39m                          [31m[1m^[22m[39m
+ [90m 5 |[39m [36mimport[39m [33mAsyncStorage[39m [36mfrom[39m [32m'@react-native-async-storage/async-storage'[39m[33m;[39m
+ [90m 6 |[39m
+ [90m 7 |[39m [36mexport[39m [36mdefault[39m [36mfunction[39m [33mLoginScreen[39m() {[0m
+
+Import stack:
+
+ app/(auth)/login.tsx
+ | import "../contexts/AuthContext"
+
+ app (require.context)
+
+
+Call Stack
+  <unknown> (app/(auth)/login.tsx:0)
+λ Bundling failed 1043ms node_modules/.pnpm/expo-router@6.0.24_@expo+metro-runtime@6.1.2_@types+react@19.1.17_expo-constants@18.0.1_68fcd37ecb84c074be66d1848e68a3e8/node_modules/expo-router/node/render.js (709 modules)
