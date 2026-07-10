@@ -1,20 +1,21 @@
-import React, { useEffect, useState } from 'react';
-import { Redirect } from 'expo-router';
+import React, { useState, useEffect } from 'react';
 import { View, ActivityIndicator } from 'react-native';
 import { useAuth } from './contexts/AuthContext';
+import LoginScreen from './(auth)/login';
+import TabLayout from './(tabs)/_layout';
 
 export default function Index() {
   const { isAdmin, guestSession, accessCodeValidated } = useAuth();
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    // AuthContext의 상태를 기반으로 인증 여부 판단
-    const loggedIn = isAdmin || guestSession !== null || accessCodeValidated;
-    setIsAuthenticated(loggedIn);
-  }, [isAdmin, guestSession, accessCodeValidated]);
+    setIsClient(true);
+  }, []);
 
-  // 로딩 상태 처리
-  if (isAuthenticated === null) {
+  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
+
+  // 클라이언트 사이드 렌더링 대기
+  if (!isClient) {
     return (
       <View className="flex-1 justify-center items-center bg-white">
         <ActivityIndicator size="large" color="#2563eb" />
@@ -22,6 +23,7 @@ export default function Index() {
     );
   }
 
-  // ✨ 로그인 기록이 있으면 메인 탭으로 프리패스, 없으면 로그인창 강제 진입
-  return isAuthenticated ? <Redirect href="/(tabs)" /> : <Redirect href="/login" />;
+  // ✨ 핵심 분기: 주소창은 그대로 유지한 채 화면 내용만 스위칭합니다.
+  // 로그인이 안 되어 있으면 주소창 이동 없이 로그인 입력창을 첫 화면으로 띄웁니다.
+  return isLoggedIn ? <TabLayout /> : <LoginScreen />;
 }
