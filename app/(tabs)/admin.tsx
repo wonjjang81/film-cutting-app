@@ -4,14 +4,6 @@ import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 인터페이스 정의
-interface PendingUser {
-  id: string;
-  email: string;
-  name: string;
-  requestedAt: string;
-}
-
 interface GuestCodeInfo {
   code: string;
   createdAt: string;
@@ -20,50 +12,17 @@ interface GuestCodeInfo {
 
 export default function AdminDashboard() {
   const router = useRouter();
-  
-  // 🗂️ 관리자 대시보드 탭 상태 ('users' = 가입승인, 'guest' = 게스트코드)
   const [activeTab, setActiveTab] = useState<'users' | 'guest'>('users');
-
-  // --- [1] 가입 승인 대기 명단 관련 상태 및 로직 ---
-  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([
-    { id: '1', email: 'user1@naver.com', name: '홍길동', requestedAt: '07/10 11:30' },
-    { id: '2', email: 'worker2@daum.net', name: '김철수', requestedAt: '07/10 13:15' },
-    { id: '3', email: 'film_master@gmail.com', name: '이영희', requestedAt: '07/10 14:40' },
-  ]);
-
-  const handleApproveUser = (id: string, name: string) => {
-    Alert.alert('가입 승인', `${name} 회원의 가입을 승인하시겠습니까?`, [
-      { text: '취소', style: 'cancel' },
-      { 
-        text: '승인', 
-        onPress: () => {
-          setPendingUsers(pendingUsers.filter(user => user.id !== id));
-          Alert.alert('승인 완료', `${name} 회원이 정상 승인되었습니다.`);
-        } 
-      }
-    ]);
-  };
-
-  const handleRejectUser = (id: string, name: string) => {
-    Alert.alert('가입 거절', `${name} 회원의 가입을 거절하시겠습니까?\n거절 시 해당 유저는 로그인할 수 없습니다.`, [
-      { text: '취소', style: 'cancel' },
-      { 
-        text: '거절', 
-        style: 'destructive',
-        onPress: () => {
-          setPendingUsers(pendingUsers.filter(user => user.id !== id));
-          Alert.alert('거절 완료', `${name} 회원의 요청을 거절했습니다.`);
-        } 
-      }
-    ]);
-  };
-
-
-  // --- [2] 게스트 승인코드 관련 상태 및 로직 ---
   const [generatedCodes, setGeneratedCodes] = useState<GuestCodeInfo[]>([]);
   const [expiryHours, setExpiryHours] = useState('24');
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // 컴포넌트 마운트 시 저장된 코드 불러오기
+  // GitHub API 설정
+  const GITHUB_OWNER = "wonjjang81";
+  const GITHUB_REPO = "film-cutting-app";
+  const GITHUB_PATH = "guest_codes.json";
+  const GITHUB_TOKEN = process.env.EXPO_PUBLIC_GITHUB_TOKEN || ""; // 보안을 위해 환경변수 사용 권장
+
   useEffect(() => {
     const loadSavedCodes = async () => {
       try {
@@ -77,6 +36,62 @@ export default function AdminDashboard() {
     };
     loadSavedCodes();
   }, []);
+
+  const saveCodeToGitHubDB = async (newCode: string, allCodes: GuestCodeInfo[]) => {
+    setIsSyncing(true);
+    try {
+      // 1. 기존 파일의 sha 조회
+      const getFileResponse = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PATH}`, {
+        headers: { 
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Accept': 'application/vnd.github.v3+json'
+        }
+      });
+      
+      if (!getFileResponse.ok) throw new Error('GitHub 파일 조회 실패');
+      
+      const fileData = await getFileResponse.json();
+      const currentSha = fileData.sha;
+      
+      // 2. 새로운 코드 목록 (문자열 배열) 준비
+      const codeStrings = allCodes.map(item => item.code);
+      if (!codeStrings.includes(newCode)) {
+        codeStrings.unshift(newCode);
+      }
+      
+      const content = JSON.stringify(codeStrings, null, 2);
+      
+      // 3. Base64 인코딩 (UTF-8 대응)
+      const b64Content = btoa(unescape(encodeURIComponent(content)));
+
+      // 4. GitHub에 업데이트 요청
+      const updateResponse = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${GITHUB_PATH}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${GITHUB_TOKEN}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json'
+        },
+        body: JSON.stringify({
+          message: `chore: 관리자 게스트 코드 발급 (${newCode})`,
+          content: b64Content,
+          sha: currentSha
+        })
+      });
+
+      if (updateResponse.ok) {
+        Alert.alert('클라우드 동기화 성공', `GitHub DB에 코드가 저장되었습니다.`);
+      } else {
+        const errorData = await updateResponse.json();
+        throw new Error(errorData.message || 'GitHub 업데이트 실패');
+      }
+    } catch (error: any) {
+      console.error(error);
+      Alert.alert('동기화 실패', error.message || '네트워크 오류가 발생했습니다.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const generateRandomGuestCode = async () => {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -97,15 +112,16 @@ export default function AdminDashboard() {
     setGeneratedCodes(updatedCodes);
 
     try {
-      // 🚀 [핵심 추가] 생성된 코드 목록을 로컬 저장소에 동기화
+      // 로컬 저장소 업데이트
+      await AsyncStorage.setItem('active_guest_codes_full', JSON.stringify(updatedCodes));
       const codeStrings = updatedCodes.map(item => item.code);
       await AsyncStorage.setItem('active_guest_codes', JSON.stringify(codeStrings));
-      await AsyncStorage.setItem('active_guest_codes_full', JSON.stringify(updatedCodes));
+      
+      // GitHub 클라우드 DB 업데이트
+      await saveCodeToGitHubDB(randomCode, updatedCodes);
     } catch (e) {
-      console.error("코드 동기화 실패", e);
+      console.error("코드 저장 실패", e);
     }
-
-    Alert.alert('생성 완료', `게스트 코드가 발급되었습니다: ${randomCode}`);
   };
 
   const copyToClipboard = async (code: string) => {
@@ -127,91 +143,38 @@ export default function AdminDashboard() {
 
   return (
     <View className="flex-1 bg-gray-50">
-      {/* 고정 헤더 */}
       <View className="bg-slate-900 pt-14 pb-4 px-6 rounded-b-2xl shadow-md">
         <View className="flex-row justify-between items-center mb-4">
           <View>
             <Text className="text-xl font-bold text-white">최고관리자 모드 🛡️</Text>
-            <Text className="text-xs text-slate-400 mt-0.5">필름 재단 계산기 시스템 제어</Text>
+            <Text className="text-xs text-slate-400 mt-0.5">GitHub 클라우드 DB 연동 중</Text>
           </View>
-          <TouchableOpacity 
-            className="bg-slate-700 px-3 py-1.5 rounded-lg"
-            onPress={handleLogout}
-          >
+          <TouchableOpacity className="bg-slate-700 px-3 py-1.5 rounded-lg" onPress={handleLogout}>
             <Text className="text-white text-xs font-semibold">로그아웃</Text>
           </TouchableOpacity>
         </View>
 
-        {/* 탭 상단 메뉴 선택 바 */}
         <View className="flex-row bg-slate-800 p-1 rounded-xl">
           <TouchableOpacity 
             className={`flex-1 py-2.5 rounded-lg items-center ${activeTab === 'users' ? 'bg-blue-600' : ''}`}
             onPress={() => setActiveTab('users')}
           >
-            <Text className={`text-sm font-bold ${activeTab === 'users' ? 'text-white' : 'text-slate-400'}`}>
-              가입 승인 관리 ({pendingUsers.length})
-            </Text>
+            <Text className={`text-sm font-bold ${activeTab === 'users' ? 'text-white' : 'text-slate-400'}`}>가입 승인</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             className={`flex-1 py-2.5 rounded-lg items-center ${activeTab === 'guest' ? 'bg-blue-600' : ''}`}
             onPress={() => setActiveTab('guest')}
           >
-            <Text className={`text-sm font-bold ${activeTab === 'guest' ? 'text-white' : 'text-slate-400'}`}>
-              게스트 코드 발급
-            </Text>
+            <Text className={`text-sm font-bold ${activeTab === 'guest' ? 'text-white' : 'text-slate-400'}`}>게스트 코드</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* 가변 본문 영역 */}
       <ScrollView className="flex-1 px-4 py-4">
-        
-        {/* TAB 1: 회원가입 승인 대기 명단 목록 */}
-        {activeTab === 'users' && (
-          <View>
-            <Text className="text-base font-bold text-gray-800 mb-3 px-1">승인 대기 중인 회원 명단</Text>
-            
-            {pendingUsers.length === 0 ? (
-              <View className="bg-white py-16 rounded-xl justify-center items-center border border-gray-200 shadow-sm">
-                <Text className="text-gray-400 text-sm">현재 가입을 신청한 회원이 없습니다.</Text>
-              </View>
-            ) : (
-              pendingUsers.map((user) => (
-                <View key={user.id} className="bg-white p-4 rounded-xl shadow-sm mb-3 border border-gray-200">
-                  <View className="flex-row justify-between items-start mb-3">
-                    <View>
-                      <Text className="text-base font-bold text-gray-800">{user.name}</Text>
-                      <Text className="text-sm text-gray-500 mt-0.5">{user.email}</Text>
-                    </View>
-                    <Text className="text-xs text-gray-400">{user.requestedAt} 신청</Text>
-                  </View>
-                  
-                  {/* 처리 버튼 박스 */}
-                  <View className="flex-row gap-2 border-t border-gray-100 pt-3">
-                    <TouchableOpacity 
-                      className="flex-1 h-10 bg-rose-50 border border-rose-200 rounded-lg justify-center items-center"
-                      onPress={() => handleRejectUser(user.id, user.name)}
-                    >
-                      <Text className="text-rose-600 text-sm font-semibold">가입 거절</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity 
-                      className="flex-1 h-10 bg-blue-600 rounded-lg justify-center items-center"
-                      onPress={() => handleApproveUser(user.id, user.name)}
-                    >
-                      <Text className="text-white text-sm font-bold">최종 승인</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {/* TAB 2: 임시 게스트 코드 관리 */}
         {activeTab === 'guest' && (
           <View>
             <View className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-4">
-              <Text className="text-sm font-bold text-gray-800 mb-2">🎁 신규 임시 코드 자동 발급</Text>
+              <Text className="text-sm font-bold text-gray-800 mb-2">🎁 신규 임시 코드 발급 (GitHub DB 동기화)</Text>
               <View className="flex-row items-center mb-4">
                 <Text className="text-xs text-gray-500 mr-2">유효 제한시간:</Text>
                 <TextInput
@@ -221,39 +184,36 @@ export default function AdminDashboard() {
                   onChangeText={setExpiryHours}
                   maxLength={3}
                 />
-                <Text className="text-xs text-gray-500 ml-1.5">시간 설정</Text>
+                <Text className="text-xs text-gray-500 ml-1.5">시간</Text>
               </View>
-              <TouchableOpacity className="w-full h-11 bg-blue-600 rounded-lg justify-center items-center" onPress={generateRandomGuestCode}>
-                <Text className="text-white text-sm font-bold">임시 승인코드 즉시 생성</Text>
+              <TouchableOpacity 
+                className={`w-full h-11 rounded-lg justify-center items-center ${isSyncing ? 'bg-blue-300' : 'bg-blue-600'}`} 
+                onPress={generateRandomGuestCode}
+                disabled={isSyncing}
+              >
+                <Text className="text-white text-sm font-bold">{isSyncing ? '동기화 중...' : '임시 승인코드 즉시 생성'}</Text>
               </TouchableOpacity>
             </View>
 
-            <Text className="text-base font-bold text-gray-800 mb-3 px-1">발급 완료 내역</Text>
-            {generatedCodes.length === 0 ? (
-              <View className="bg-white py-12 rounded-xl justify-center items-center border border-dashed border-gray-300">
-                <Text className="text-gray-400 text-xs">생성된 내역이 없습니다.</Text>
-              </View>
-            ) : (
-              generatedCodes.map((item, index) => (
-                <View key={index} className="bg-white p-3 rounded-xl shadow-sm mb-2 border border-gray-200">
-                  <View className="flex-row justify-between items-center mb-1">
-                    <Text className="text-base font-mono font-bold text-slate-800">{item.code}</Text>
-                    <View className="flex-row gap-1.5">
-                      <TouchableOpacity className="bg-gray-100 px-2 py-1 rounded" onPress={() => copyToClipboard(item.code)}>
-                        <Text className="text-gray-700 text-xs">복사</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity className="bg-slate-800 px-2 py-1 rounded" onPress={() => shareCode(item.code)}>
-                        <Text className="text-white text-xs">공유</Text>
-                      </TouchableOpacity>
-                    </View>
+            <Text className="text-base font-bold text-gray-800 mb-3 px-1">발급 내역</Text>
+            {generatedCodes.map((item, index) => (
+              <View key={index} className="bg-white p-3 rounded-xl shadow-sm mb-2 border border-gray-200">
+                <View className="flex-row justify-between items-center mb-1">
+                  <Text className="text-base font-mono font-bold text-slate-800">{item.code}</Text>
+                  <View className="flex-row gap-1.5">
+                    <TouchableOpacity className="bg-gray-100 px-2 py-1 rounded" onPress={() => copyToClipboard(item.code)}>
+                      <Text className="text-gray-700 text-xs">복사</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity className="bg-slate-800 px-2 py-1 rounded" onPress={() => shareCode(item.code)}>
+                      <Text className="text-white text-xs">공유</Text>
+                    </TouchableOpacity>
                   </View>
-                  <Text className="text-[11px] text-gray-400">발급일: {item.createdAt} / 유효: {item.expiresIn}</Text>
                 </View>
-              ))
-            )}
+                <Text className="text-[11px] text-gray-400">발급일: {item.createdAt} / 유효: {item.expiresIn}</Text>
+              </View>
+            ))}
           </View>
         )}
-
       </ScrollView>
     </View>
   );
