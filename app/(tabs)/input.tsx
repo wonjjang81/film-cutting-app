@@ -21,6 +21,8 @@ import { ScreenContainer } from "@/components/screen-container";
 import { ClearableTextInput } from "@/components/clearable-text-input";
 import { useColors } from "@/hooks/use-colors";
 import { useFilm } from "@/lib/filmContext";
+import { useAuth } from "@/app/contexts/AuthContext";
+import LoginScreen from "./login";
 
 // 웹과 네이티브 환경 모두에서 동작하는 확인 알림
 function confirmAlert(title: string, message: string, onConfirm: () => void, confirmText = "확인") {
@@ -50,11 +52,12 @@ import {
 
 // ─── 브랜드 선택 ─────────────────────────────────────────────
 
-function BrandSelector({ selected, onSelect, colors, groupIndex }: {
+function BrandSelector({ selected, onSelect, colors, groupIndex, disabled }: {
   selected: FilmBrand;
   onSelect: (b: FilmBrand) => void;
   colors: ReturnType<typeof useColors>;
   groupIndex: number;
+  disabled?: boolean;
 }) {
   const bc = GROUP_BORDER_COLORS[groupIndex % GROUP_BORDER_COLORS.length];
   return (
@@ -64,8 +67,9 @@ function BrandSelector({ selected, onSelect, colors, groupIndex }: {
         return (
           <TouchableOpacity
             key={brand}
-            style={[styles.brandBtn, { backgroundColor: isSelected ? bc : colors.background, borderColor: isSelected ? bc : colors.border }]}
-            onPress={() => onSelect(brand)}
+            style={[styles.brandBtn, { backgroundColor: isSelected ? bc : colors.background, borderColor: isSelected ? bc : colors.border, opacity: disabled ? 0.5 : 1 }]}
+            onPress={() => !disabled && onSelect(brand)}
+            disabled={disabled}
           >
             <Text style={[styles.brandBtnText, { color: isSelected ? "white" : colors.muted }]}>{brand}</Text>
           </TouchableOpacity>
@@ -77,7 +81,6 @@ function BrandSelector({ selected, onSelect, colors, groupIndex }: {
 
 // ─── 조각 행 ─────────────────────────────────────────────────
 
-/** 반응형 컬럼 크기 */
 interface ColSizes {
   idW: number;
   qtyW: number;
@@ -93,20 +96,18 @@ interface PieceRowProps {
   onRenameId: (newId: string) => void;
   colors: ReturnType<typeof useColors>;
   focusBorderColor: string;
-  /** 이 조각의 수량 필드에서 다음 조각(또는 다음 그룹)으로 포커스를 이동하는 콜백 */
   onQuantitySubmit?: () => void;
   colSizes: ColSizes;
+  disabled?: boolean;
 }
 
-// forwardRef를 사용하여 부모(GroupCard)에서 첫 번째 조각의 가로 입력 필드에 직접 포커스를 부여할 수 있도록 합니다.
-const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece, onUpdate, onDelete, onRenameId, colors, focusBorderColor, onQuantitySubmit, colSizes }, forwardedRef) => {
+const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece, onUpdate, onDelete, onRenameId, colors, focusBorderColor, onQuantitySubmit, colSizes, disabled }, forwardedRef) => {
   const [wText, setWText] = useState(piece.width > 0 ? String(piece.width) : "");
   const [hText, setHText] = useState(piece.height > 0 ? String(piece.height) : "");
   const [qText, setQText] = useState(String(piece.quantity));
   const [idText, setIdText] = useState(piece.id);
   const [editingId, setEditingId] = useState(false);
 
-  // forwardedRef가 있으면 widthRef를 외부에 노출 (그룹 간 포커스 이동에 사용)
   const internalWidthRef = useRef<TextInput>(null);
   const widthRef = (forwardedRef as React.RefObject<TextInput> | null) ?? internalWidthRef;
   const heightRef = useRef<TextInput>(null);
@@ -126,7 +127,6 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
     if (field === "width") heightRef.current?.focus();
     else if (field === "height") quantityRef.current?.focus();
     else if (field === "quantity") {
-      // 수량 필드에서 엔터 → 다음 조각 또는 다음 그룹의 첫 번째 필드로 이동
       onQuantitySubmit?.();
     }
   }, [onQuantitySubmit]);
@@ -136,7 +136,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
   return (
     <View style={[styles.pieceRow, { borderBottomColor: colors.border }]}>
       <View style={[styles.cellId, { width: colSizes.idW }]}>
-        {editingId ? (
+        {editingId && !disabled ? (
           <TextInput
             style={[styles.idInput, { color: colors.foreground, borderColor: focusBorderColor, backgroundColor: colors.background, width: colSizes.idW - 4, fontSize: colSizes.fontSize }]}
             value={idText}
@@ -159,9 +159,9 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
             }}
           />
         ) : (
-          <TouchableOpacity onPress={() => { setIdText(piece.id); setEditingId(true); }} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}>
-            <Text style={[styles.idText, { color: colors.primary, fontSize: colSizes.fontSize }]} numberOfLines={1}>{piece.id}</Text>
-            <Text style={[styles.idEditHint, { color: colors.muted }]}>✏</Text>
+          <TouchableOpacity onPress={() => !disabled && (setIdText(piece.id), setEditingId(true))} hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }} disabled={disabled}>
+            <Text style={[styles.idText, { color: disabled ? colors.muted : colors.primary, fontSize: colSizes.fontSize }]} numberOfLines={1}>{piece.id}</Text>
+            {!disabled && <Text style={[styles.idEditHint, { color: colors.muted }]}>✏</Text>}
           </TouchableOpacity>
         )}
       </View>
@@ -173,7 +173,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
           <View key={field} style={styles.cellInput}>
             <ClearableTextInput
               ref={ref}
-              style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+              style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background, opacity: disabled ? 0.6 : 1 }]}
               value={val}
               onChangeText={setter}
               onBlur={() => handleBlur(field, val)}
@@ -182,9 +182,10 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
                 focusNext(field);
               }}
               keyboardType="numeric" placeholder="0" placeholderTextColor={colors.muted} returnKeyType="next"
-              showClearButton={true}
+              showClearButton={!disabled}
               clearButtonColor={colors.muted}
               focusBorderColor={focusBorderColor}
+              editable={!disabled}
             />
           </View>
         );
@@ -192,7 +193,7 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
       <View style={[styles.cellQty, { width: colSizes.qtyW }]}>
         <ClearableTextInput
           ref={quantityRef}
-          style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
+          style={[styles.input, dynInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background, opacity: disabled ? 0.6 : 1 }]}
           value={qText}
           onChangeText={setQText}
           onBlur={() => handleBlur("quantity", qText)}
@@ -201,13 +202,14 @@ const PieceRow = React.memo(React.forwardRef<TextInput, PieceRowProps>(({ piece,
             focusNext("quantity");
           }}
           keyboardType="numeric" placeholder="1" placeholderTextColor={colors.muted} returnKeyType="next"
-          showClearButton={true}
+          showClearButton={!disabled}
           clearButtonColor={colors.muted}
           focusBorderColor={focusBorderColor}
+          editable={!disabled}
         />
       </View>
-      <TouchableOpacity style={[styles.cellDelete, { width: colSizes.delW }]} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-        <Text style={{ color: colors.error, fontSize: Math.max(12, colSizes.fontSize) }}>✕</Text>
+      <TouchableOpacity style={[styles.cellDelete, { width: colSizes.delW }]} onPress={onDelete} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} disabled={disabled}>
+        <Text style={{ color: disabled ? colors.muted : colors.error, fontSize: Math.max(12, colSizes.fontSize) }}>✕</Text>
       </TouchableOpacity>
     </View>
   );
@@ -232,20 +234,18 @@ interface GroupCardProps {
   onMaterialCostChange: (cost: number | undefined) => void;
   onPatternFixedChange: (patternFixed: boolean) => void;
   onMergeGroupIdChange: (mergeGroupId: string | undefined) => void;
-  /** 이 그룹의 마지막 조각 수량 입력 완료 시 다음 그룹 첫 번째 필드로 포커스 이동하는 콜백 */
   onLastPieceQuantitySubmit?: () => void;
-  /** 이 그룹의 첫 번째 조각 가로 입력 필드에 포커스를 부여하는 ref 등록 콜백 */
   registerFirstFieldRef?: (ref: TextInput | null) => void;
   colSizes: ColSizes;
+  disabled?: boolean;
 }
 
-// 합치기 그룹 ID 옵션 (1~5번 버튼)
 const MERGE_OPTIONS = ['1', '2', '3', '4', '5'] as const;
 
 function GroupCard({
   group, groupIndex, colors, onRenamePress, onDeleteGroup, onAddPiece,
   onUpdatePiece, onDeletePiece, onRenamePiece, onBrandChange, onFilmNameChange,
-  onMaterialCostChange, onPatternFixedChange, onMergeGroupIdChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes,
+  onMaterialCostChange, onPatternFixedChange, onMergeGroupIdChange, onLastPieceQuantitySubmit, registerFirstFieldRef, colSizes, disabled
 }: GroupCardProps) {
   const [filmNameText, setFilmNameText] = useState(group.filmName);
   const [costText, setCostText] = useState(group.materialCostPerM ? String(group.materialCostPerM) : "");
@@ -254,26 +254,23 @@ function GroupCard({
   const borderColor = GROUP_BORDER_COLORS[groupIndex % GROUP_BORDER_COLORS.length];
   const hasMerge = !!group.mergeGroupId;
 
-  // 각 조각의 첫 번째 필드(가로) ref를 보관하는 배열
   const pieceFirstFieldRefs = useRef<(TextInput | null)[]>([]);
 
-  // 조각 수량 필드 submit 핸들러: 다음 조각의 가로 필드로 이동, 마지막이면 그룹 간 이동
   const handlePieceQuantitySubmit = useCallback((pieceIndex: number) => {
     const nextRef = pieceFirstFieldRefs.current[pieceIndex + 1];
     if (nextRef) {
       nextRef.focus();
     } else {
-      // 이 그룹의 마지막 조각 → 다음 그룹으로 이동
       onLastPieceQuantitySubmit?.();
     }
   }, [onLastPieceQuantitySubmit]);
 
   return (
-    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: hasMerge ? borderColor : colors.border, borderWidth: hasMerge ? 2 : 1.5 }]}>
+    <View style={[styles.groupCard, { backgroundColor: colors.surface, borderColor: hasMerge ? borderColor : colors.border, borderWidth: hasMerge ? 2 : 1.5, opacity: disabled ? 0.8 : 1 }]}>
       <View style={[styles.groupHeader, { backgroundColor: hasMerge ? bgColor : colors.surface, borderBottomColor: borderColor + "60" }]}>
-        <TouchableOpacity onPress={onRenamePress} style={styles.groupNameBtn}>
+        <TouchableOpacity onPress={onRenamePress} style={styles.groupNameBtn} disabled={disabled}>
           <Text style={[styles.groupName, { color: hasMerge ? borderColor : colors.foreground }]}>{group.groupName}</Text>
-          <Text style={[styles.groupNameHint, { color: (hasMerge ? borderColor : colors.muted) + "80" }]}> ✏</Text>
+          {!disabled && <Text style={[styles.groupNameHint, { color: (hasMerge ? borderColor : colors.muted) + "80" }]}> ✏</Text>}
         </TouchableOpacity>
         {hasMerge && (
           <View style={[styles.mergeGroupBadge, { backgroundColor: borderColor }]}>
@@ -281,15 +278,15 @@ function GroupCard({
           </View>
         )}
         <Text style={[styles.groupPieceCount, { color: colors.muted }]}>{group.pieces.length}개</Text>
-        <TouchableOpacity onPress={onDeleteGroup} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={{ color: colors.error, fontSize: 14, fontWeight: "600" }}>삭제</Text>
+        <TouchableOpacity onPress={onDeleteGroup} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }} disabled={disabled}>
+          <Text style={{ color: disabled ? colors.muted : colors.error, fontSize: 14, fontWeight: "600" }}>삭제</Text>
         </TouchableOpacity>
       </View>
 
       <View style={[styles.materialSection, { borderBottomColor: colors.border }]}>
         <View style={styles.materialRow}>
           <Text style={[styles.materialLabel, { color: colors.muted }]}>브랜드</Text>
-          <BrandSelector selected={group.brand} onSelect={onBrandChange} colors={colors} groupIndex={groupIndex} />
+          <BrandSelector selected={group.brand} onSelect={onBrandChange} colors={colors} groupIndex={groupIndex} disabled={disabled} />
         </View>
         <View style={styles.materialRow}>
           <Text style={[styles.materialLabel, { color: colors.muted }]}>필름명</Text>
@@ -299,17 +296,19 @@ function GroupCard({
             onChangeText={setFilmNameText}
             onBlur={() => onFilmNameChange(filmNameText)}
             placeholder="예: 우드 오크, 화이트 무광..." placeholderTextColor={colors.muted} returnKeyType="done"
-            showClearButton={true}
+            showClearButton={!disabled}
             clearButtonColor={colors.muted}
             focusBorderColor={borderColor}
+            editable={!disabled}
           />
         </View>
         <View style={styles.materialRow}>
           <Text style={[styles.materialLabel, { color: colors.muted }]}>단가</Text>
           <View style={styles.costRow}>
             <TouchableOpacity
-              style={[styles.costToggle, { backgroundColor: useCustomCost ? borderColor : colors.background, borderColor: useCustomCost ? borderColor : colors.border }]}
+              style={[styles.costToggle, { backgroundColor: useCustomCost ? borderColor : colors.background, borderColor: useCustomCost ? borderColor : colors.border, opacity: disabled ? 0.5 : 1 }]}
               onPress={() => {
+                if (disabled) return;
                 const next = !useCustomCost;
                 setUseCustomCost(next);
                 if (!next) {
@@ -317,6 +316,7 @@ function GroupCard({
                   onMaterialCostChange(undefined);
                 }
               }}
+              disabled={disabled}
             >
               <Text style={[styles.costToggleText, { color: useCustomCost ? "white" : colors.muted }]}>
                 {useCustomCost ? "개별" : "기본"}
@@ -338,167 +338,131 @@ function GroupCard({
                       onMaterialCostChange(undefined);
                     }
                   }}
-                  keyboardType="numeric"
-                  placeholder={String(DEFAULT_MATERIAL_COST_PER_M)}
-                  placeholderTextColor={colors.muted}
-                  returnKeyType="done"
-                  showClearButton={true}
+                  keyboardType="numeric" placeholder="원/m" placeholderTextColor={colors.muted} returnKeyType="done"
+                  showClearButton={!disabled}
                   clearButtonColor={colors.muted}
                   focusBorderColor={borderColor}
+                  editable={!disabled}
                 />
                 <Text style={[styles.costUnit, { color: colors.muted }]}>원/m</Text>
               </View>
             ) : (
-              <Text style={[styles.costDefaultText, { color: colors.muted }]}>
-                {formatNumber(DEFAULT_MATERIAL_COST_PER_M)}원/m (전역 기본값)
-              </Text>
+              <Text style={[styles.costDefaultText, { color: colors.muted }]}>{formatNumber(DEFAULT_MATERIAL_COST_PER_M)}원/m (설정값 적용)</Text>
             )}
           </View>
         </View>
 
-        {/* 무늬 고정 체크버튼 */}
-        <TouchableOpacity
-          style={styles.patternFixedRow}
-          onPress={() => onPatternFixedChange(!group.patternFixed)}
-          activeOpacity={0.7}
-        >
-          <View style={[
-            styles.patternFixedCheckbox,
-            {
-              backgroundColor: group.patternFixed ? borderColor : colors.background,
-              borderColor: group.patternFixed ? borderColor : colors.border,
-            }
-          ]}>
-            {group.patternFixed && (
-              <Text style={styles.patternFixedCheckmark}>✓</Text>
-            )}
-          </View>
-          <Text style={[styles.patternFixedLabel, { color: group.patternFixed ? borderColor : colors.muted }]}>
-            무늬 고정 (방향 고정 배치)
-          </Text>
-          <Text style={[styles.patternFixedDesc, { color: colors.muted }]}>
-            {group.patternFixed ? '• 회전 금지' : '• 회전 허용'}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.patternFixedRow}>
+          <TouchableOpacity
+            style={[styles.patternFixedCheckbox, { borderColor: group.patternFixed ? borderColor : colors.border, backgroundColor: group.patternFixed ? borderColor : "transparent" }]}
+            onPress={() => !disabled && onPatternFixedChange(!group.patternFixed)}
+            disabled={disabled}
+          >
+            {group.patternFixed && <Text style={styles.patternFixedCheckmark}>✓</Text>}
+          </TouchableOpacity>
+          <Text style={[styles.patternFixedLabel, { color: colors.foreground }]}>무늬 고정</Text>
+          <Text style={[styles.patternFixedDesc, { color: colors.muted }]}>가로/세로 회전 방지</Text>
+        </View>
 
-        {/* 합치기 그룹 설정 */}
         <View style={styles.mergeGroupRow}>
           <Text style={[styles.materialLabel, { color: colors.muted }]}>합치기</Text>
           <View style={styles.mergeGroupBtns}>
             {MERGE_OPTIONS.map((opt) => {
-              const isActive = group.mergeGroupId === opt;
+              const isSelected = group.mergeGroupId === opt;
               return (
                 <TouchableOpacity
                   key={opt}
-                  style={[styles.mergeGroupBtn, { backgroundColor: isActive ? borderColor : colors.background, borderColor: isActive ? borderColor : colors.border }]}
-                  onPress={() => onMergeGroupIdChange(isActive ? undefined : opt)}
+                  style={[styles.mergeGroupBtn, { backgroundColor: isSelected ? borderColor : colors.background, borderColor: isSelected ? borderColor : colors.border, opacity: disabled ? 0.5 : 1 }]}
+                  onPress={() => !disabled && onMergeGroupIdChange(isSelected ? undefined : opt)}
+                  disabled={disabled}
                 >
-                  <Text style={[styles.mergeGroupBtnText, { color: isActive ? 'white' : colors.muted }]}>{opt}</Text>
+                  <Text style={[styles.mergeGroupBtnText, { color: isSelected ? "white" : colors.muted }]}>{opt}</Text>
                 </TouchableOpacity>
               );
             })}
-            {group.mergeGroupId && (
-              <TouchableOpacity
-                style={[styles.mergeGroupBtn, { backgroundColor: colors.background, borderColor: colors.error }]}
-                onPress={() => onMergeGroupIdChange(undefined)}
-              >
-                <Text style={[styles.mergeGroupBtnText, { color: colors.error }]}>해제</Text>
-              </TouchableOpacity>
-            )}
           </View>
-          <Text style={[styles.mergeGroupHint, { color: colors.muted }]}>
-            {group.mergeGroupId ? `그룹 ${group.mergeGroupId}과 합쳐서 배치` : '없음'}
-          </Text>
+          <Text style={[styles.mergeGroupHint, { color: colors.muted }]}>같은 번호끼리 한 롤에 배치</Text>
         </View>
       </View>
 
-      <View style={[styles.tableHeader, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.thId, { color: colors.muted, width: colSizes.idW }]} numberOfLines={1}>ID</Text>
-        <Text style={[styles.thInput, { color: colors.muted, fontSize: colSizes.fontSize }]} numberOfLines={1}>{colSizes.fontSize < 12 ? '가로' : '가로(mm)'}</Text>
-        <Text style={[styles.thInput, { color: colors.muted, fontSize: colSizes.fontSize }]} numberOfLines={1}>{colSizes.fontSize < 12 ? '세로' : '세로(mm)'}</Text>
-        <Text style={[styles.thQty, { color: colors.muted, width: colSizes.qtyW, fontSize: colSizes.fontSize }]} numberOfLines={1}>수량</Text>
-        <View style={[styles.cellDelete, { width: colSizes.delW }]} />
+      <View style={[styles.tableHeader, { borderBottomColor: colors.border, backgroundColor: colors.background + "50" }]}>
+        <Text style={[styles.thId, { width: colSizes.idW, color: colors.muted }]}>ID</Text>
+        <Text style={[styles.thInput, { color: colors.muted }]}>가로(mm)</Text>
+        <Text style={[styles.thInput, { color: colors.muted }]}>세로(mm)</Text>
+        <Text style={[styles.thQty, { width: colSizes.qtyW, color: colors.muted }]}>수량</Text>
+        <View style={{ width: colSizes.delW }} />
       </View>
 
-      {group.pieces.map((piece, pieceIndex) => (
+      {group.pieces.map((p, i) => (
         <PieceRow
-          key={piece.id}
-          ref={(r) => {
-            // 첫 번째 조각의 widthRef를 pieceFirstFieldRefs에 등록
-            // 또한 pieceIndex === 0이면 그룹의 첫 번째 필드로서 registerFirstFieldRef에도 등록
-            pieceFirstFieldRefs.current[pieceIndex] = r;
-            if (pieceIndex === 0) registerFirstFieldRef?.(r);
-          }}
-          piece={piece}
+          key={p.pieceId}
+          ref={(ref) => { pieceFirstFieldRefs.current[i] = ref; if (i === 0) registerFirstFieldRef?.(ref); }}
+          piece={p}
+          onUpdate={(f, v) => onUpdatePiece(p.pieceId, f, v)}
+          onDelete={() => onDeletePiece(p.pieceId)}
+          onRenameId={(nid) => onRenamePiece(p.pieceId, nid)}
           colors={colors}
           focusBorderColor={borderColor}
-          onUpdate={(field, value) => onUpdatePiece(piece.id, field, value)}
-          onDelete={() => onDeletePiece(piece.id)}
-          onRenameId={(newId) => onRenamePiece(piece.id, newId)}
-          onQuantitySubmit={() => handlePieceQuantitySubmit(pieceIndex)}
+          onQuantitySubmit={() => handlePieceQuantitySubmit(i)}
           colSizes={colSizes}
+          disabled={disabled}
         />
       ))}
 
-      <TouchableOpacity style={[styles.addPieceBtn, { borderColor: borderColor + "60" }]} onPress={onAddPiece}>
+      <TouchableOpacity
+        style={[styles.addPieceBtn, { borderColor: borderColor, opacity: disabled ? 0.5 : 1 }]}
+        onPress={onAddPiece}
+        disabled={disabled}
+      >
         <Text style={[styles.addPieceBtnText, { color: borderColor }]}>+ 조각 추가</Text>
       </TouchableOpacity>
     </View>
   );
 }
 
-// ─── 입력 탭 화면 ─────────────────────────────────────────────
-
-/** 화면 폭에 따른 반응형 컬럼 크기 계산
- * 테이블 구조: [ID | 가로 | 세로 | 수량 | 삭제]
- * - ID, 수량, 삭제는 고정 최소 폭 보장
- * - 가로/세로는 남은 공간을 flex:1로 균등 분배
- */
-function calcColSizes(screenW: number): ColSizes {
-  // 카드 패딩(12*2) + 테이블 패딩(6*2) = 36
-  const usable = Math.max(screenW - 36, 200);
-
-  // 화면 폭 기준 비례 계수 (320px 기준 1.0, 최대 1.3)
-  const scale = Math.min(Math.max(usable / 360, 0.72), 1.3);
-
-  const idW   = Math.round(Math.max(36, 48 * scale));
-  const qtyW  = Math.round(Math.max(44, 60 * scale));
-  const delW  = Math.round(Math.max(22, 28 * scale));
-  const inputH = Math.round(Math.max(32, 40 * scale));
-  const fontSize = Math.round(Math.max(10, 13 * scale));
-
-  return { idW, qtyW, delW, inputH, fontSize };
-}
+// ─── 입력 탭 메인 ─────────────────────────────────────────────
 
 export default function InputScreen() {
+  const { width } = useWindowDimensions();
   const colors = useColors();
   const { state, dispatch } = useFilm();
-  const [renameModalVisible, setRenameModalVisible] = useState(false);
-  const [renameTarget, setRenameTarget] = useState<{ groupId: string; groupName: string } | null>(null);
-  const [renameText, setRenameText] = useState("");
+  const { isAdmin, guestSession, accessCodeValidated, isLoading: authLoading } = useAuth();
+  
   const [isCalculating, setIsCalculating] = useState(false);
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [renameText, setRenameText] = useState("");
+  const [renameTarget, setRenameTarget] = useState<{ groupId: string; groupName: string } | null>(null);
+  const [loginModalVisible, setLoginModalVisible] = useState(false);
 
-  // 화면 폭 감지 → 반응형 컬럼 크기 계산
-  const { width: screenW } = useWindowDimensions();
-  const colSizes = calcColSizes(screenW);
+  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
 
-  // 각 그룹의 첫 번째 조각 가로 필드 ref를 보관 (그룹 간 포커스 이동에 사용)
   const groupFirstFieldRefs = useRef<(TextInput | null)[]>([]);
 
-  const handleAddGroup = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    dispatch({ type: "ADD_GROUP" });
-  }, [dispatch]);
+  useEffect(() => {
+    if (isLoggedIn && loginModalVisible) {
+      setLoginModalVisible(false);
+    }
+  }, [isLoggedIn]);
 
-  const handleReset = useCallback(() => {
-    if (state.groups.length === 0) {
-      if (Platform.OS === "web") {
-        if (typeof window !== "undefined") window.alert("초기화할 데이터가 없습니다.");
-      } else {
-        Alert.alert("알림", "초기화할 데이터가 없습니다.");
-      }
+  const colSizes: ColSizes = {
+    idW: width < 360 ? 40 : 50,
+    qtyW: width < 360 ? 50 : 65,
+    delW: 32,
+    inputH: width < 360 ? 36 : 42,
+    fontSize: width < 360 ? 12 : 14,
+  };
+
+  const handleAddGroup = useCallback(() => {
+    if (!isLoggedIn) {
+      setLoginModalVisible(true);
       return;
     }
+    dispatch({ type: "ADD_GROUP" });
+  }, [dispatch, isLoggedIn]);
+
+  const handleReset = useCallback(() => {
+    if (!isLoggedIn) return;
+    if (state.groups.length === 0) return;
     confirmAlert(
       "입력 초기화",
       "모든 그룹과 조각 데이터가 삭제됩니다. 계속하시겠습니까?",
@@ -510,16 +474,17 @@ export default function InputScreen() {
       },
       "초기화",
     );
-  }, [state.groups, dispatch]);
+  }, [state.groups, dispatch, isLoggedIn]);
 
   const handleDeleteGroup = useCallback((groupId: string) => {
+    if (!isLoggedIn) return;
     confirmAlert(
       "그룹 삭제",
       "이 그룹의 모든 조각이 삭제됩니다. 계속하시겠습니까?",
       () => dispatch({ type: "DELETE_GROUP", payload: groupId }),
       "삭제",
     );
-  }, [dispatch]);
+  }, [dispatch, isLoggedIn]);
 
   const handleRenameConfirm = useCallback(() => {
     if (!renameTarget || !renameText.trim()) return;
@@ -528,6 +493,10 @@ export default function InputScreen() {
   }, [dispatch, renameTarget, renameText]);
 
   const handleCalculate = useCallback(async () => {
+    if (!isLoggedIn) {
+      setLoginModalVisible(true);
+      return;
+    }
     const hasValid = state.groups.some((g) =>
       g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
     );
@@ -557,7 +526,7 @@ export default function InputScreen() {
     } finally {
       setIsCalculating(false);
     }
-  }, [state, dispatch]);
+  }, [state, dispatch, isLoggedIn]);
 
   const hasValidPieces = state.groups.some((g) =>
     g.pieces.some((p) => p.width > 0 && p.height > 0 && p.quantity > 0)
@@ -570,25 +539,46 @@ export default function InputScreen() {
           <View style={styles.headerLeft}>
             <Text style={styles.headerTitle}>조각 입력</Text>
             <Text style={[styles.headerSub, { color: "rgba(255,255,255,0.75)" }]}>
-              {state.projectName}  ·  필름 너비 {FILM_WIDTH}mm
+              {state.projectName}  ·  너비 {FILM_WIDTH}mm
             </Text>
           </View>
-          <TouchableOpacity
-            style={styles.resetBtn}
-            onPress={handleReset}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Text style={styles.resetBtnIcon}>🗑</Text>
-            <Text style={styles.resetBtnText}>초기화</Text>
-          </TouchableOpacity>
+          
+          <View style={styles.headerRight}>
+            {!isLoggedIn ? (
+              <TouchableOpacity
+                style={styles.loginHeaderBtn}
+                onPress={() => setLoginModalVisible(true)}
+              >
+                <Text style={styles.loginHeaderBtnText}>로그인</Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={styles.resetBtn}
+                onPress={handleReset}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.resetBtnIcon}>🗑</Text>
+                <Text style={styles.resetBtnText}>초기화</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
+
+        {!isLoggedIn && (
+          <View style={styles.loginRequiredBanner}>
+            <Text style={styles.loginRequiredText}>로그인 후 데이터를 입력하고 계산할 수 있습니다.</Text>
+          </View>
+        )}
 
         {state.groups.length === 0 ? (
           <View style={styles.emptyContainer}>
             <Text style={styles.emptyIcon}>✏️</Text>
             <Text style={[styles.emptyTitle, { color: colors.foreground }]}>그룹을 추가해 주세요</Text>
             <Text style={[styles.emptyDesc, { color: colors.muted }]}>그룹별로 브랜드, 필름명, 조각 치수를 입력합니다</Text>
-            <TouchableOpacity style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]} onPress={handleAddGroup}>
+            <TouchableOpacity 
+              style={[styles.emptyAddBtn, { backgroundColor: colors.primary }]} 
+              onPress={handleAddGroup}
+            >
               <Text style={styles.emptyAddBtnText}>+ 첫 번째 그룹 추가하기</Text>
             </TouchableOpacity>
           </View>
@@ -600,7 +590,7 @@ export default function InputScreen() {
             renderItem={({ item: group, index }) => (
               <GroupCard
                 group={group} groupIndex={index} colors={colors}
-                onRenamePress={() => { setRenameTarget({ groupId: group.groupId, groupName: group.groupName }); setRenameText(group.groupName); setRenameModalVisible(true); }}
+                onRenamePress={() => { if(!isLoggedIn) return; setRenameTarget({ groupId: group.groupId, groupName: group.groupName }); setRenameText(group.groupName); setRenameModalVisible(true); }}
                 onDeleteGroup={() => handleDeleteGroup(group.groupId)}
                 onAddPiece={() => dispatch({ type: "ADD_PIECE", payload: { groupId: group.groupId } })}
                 onUpdatePiece={(pieceId, field, value) => dispatch({ type: "UPDATE_PIECE", payload: { groupId: group.groupId, pieceId, field, value } })}
@@ -612,20 +602,19 @@ export default function InputScreen() {
                 onPatternFixedChange={(patternFixed) => dispatch({ type: "UPDATE_GROUP_PATTERN_FIXED", payload: { groupId: group.groupId, patternFixed } })}
                 onMergeGroupIdChange={(mergeGroupId) => dispatch({ type: "UPDATE_GROUP_MERGE_ID", payload: { groupId: group.groupId, mergeGroupId } })}
                 onLastPieceQuantitySubmit={() => {
-                  // 다음 그룹의 첫 번째 필드로 포커스 이동
                   const nextRef = groupFirstFieldRefs.current[index + 1];
-                  if (nextRef) {
-                    nextRef.focus();
-                  }
+                  if (nextRef) nextRef.focus();
                 }}
-                registerFirstFieldRef={(ref) => {
-                  groupFirstFieldRefs.current[index] = ref;
-                }}
+                registerFirstFieldRef={(ref) => { groupFirstFieldRefs.current[index] = ref; }}
                 colSizes={colSizes}
+                disabled={!isLoggedIn}
               />
             )}
             ListFooterComponent={
-              <TouchableOpacity style={[styles.addGroupBtn, { borderColor: colors.primary }]} onPress={handleAddGroup}>
+              <TouchableOpacity 
+                style={[styles.addGroupBtn, { borderColor: colors.primary, opacity: !isLoggedIn ? 0.5 : 1 }]} 
+                onPress={handleAddGroup}
+              >
                 <Text style={[styles.addGroupBtnText, { color: colors.primary }]}>+ 새 그룹 추가</Text>
               </TouchableOpacity>
             }
@@ -635,17 +624,18 @@ export default function InputScreen() {
         {state.groups.length > 0 && (
           <View style={[styles.bottomBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
             <TouchableOpacity
-              style={[styles.calcBtn, { backgroundColor: hasValidPieces ? colors.primary : colors.muted }]}
-              onPress={handleCalculate} disabled={!hasValidPieces || isCalculating}
+              style={[styles.calcBtn, { backgroundColor: (hasValidPieces && isLoggedIn) ? colors.primary : colors.muted }]}
+              onPress={handleCalculate} disabled={(!hasValidPieces && isLoggedIn) || isCalculating}
             >
               {isCalculating ? <ActivityIndicator color="white" /> : (
-                <Text style={styles.calcBtnText}>✂️  배치 계산하기</Text>
+                <Text style={styles.calcBtnText}>{isLoggedIn ? "✂️  배치 계산하기" : "로그인 후 계산 가능"}</Text>
               )}
             </TouchableOpacity>
           </View>
         )}
       </KeyboardAvoidingView>
 
+      {/* 그룹명 수정 모달 */}
       <Modal visible={renameModalVisible} transparent animationType="fade" onRequestClose={() => setRenameModalVisible(false)}>
         <Pressable style={styles.modalOverlay} onPress={() => setRenameModalVisible(false)}>
           <Pressable style={[styles.modalBox, { backgroundColor: colors.background }]}>
@@ -666,6 +656,28 @@ export default function InputScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* 로그인 모달 */}
+      <Modal 
+        visible={loginModalVisible} 
+        transparent 
+        animationType="slide" 
+        onRequestClose={() => setLoginModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.loginModalContent}>
+            <View style={styles.loginModalHeader}>
+              <TouchableOpacity 
+                onPress={() => setLoginModalVisible(false)}
+                style={styles.closeModalBtn}
+              >
+                <Text style={styles.closeModalBtnText}>✕</Text>
+              </TouchableOpacity>
+            </View>
+            <LoginScreen />
+          </View>
+        </View>
+      </Modal>
     </ScreenContainer>
   );
 }
@@ -673,11 +685,16 @@ export default function InputScreen() {
 const styles = StyleSheet.create({
   header: { paddingHorizontal: 16, paddingVertical: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerLeft: { flex: 1 },
+  headerRight: { flexDirection: "row", alignItems: "center" },
   headerTitle: { fontSize: 18, fontWeight: "700", color: "white" },
   headerSub: { fontSize: 12, marginTop: 2 },
+  loginHeaderBtn: { backgroundColor: "white", paddingHorizontal: 15, paddingVertical: 7, borderRadius: 15 },
+  loginHeaderBtnText: { color: "#007AFF", fontSize: 13, fontWeight: "700" },
   resetBtn: { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 13, paddingVertical: 8, borderRadius: 20, marginLeft: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.35)" },
   resetBtnIcon: { fontSize: 14 },
   resetBtnText: { color: "rgba(255,255,255,0.95)", fontSize: 13, fontWeight: "600" },
+  loginRequiredBanner: { backgroundColor: "#FFF9C4", paddingVertical: 8, alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#FBC02D" },
+  loginRequiredText: { fontSize: 12, color: "#F57F17", fontWeight: "600" },
   emptyContainer: { flex: 1, justifyContent: "center", alignItems: "center", paddingHorizontal: 32 },
   emptyIcon: { fontSize: 48, marginBottom: 14 },
   emptyTitle: { fontSize: 17, fontWeight: "600", marginBottom: 8, textAlign: "center" },
@@ -739,7 +756,6 @@ const styles = StyleSheet.create({
   patternFixedCheckmark: { color: "white", fontSize: 13, fontWeight: "700", lineHeight: 16 },
   patternFixedLabel: { fontSize: 13, fontWeight: "600" },
   patternFixedDesc: { fontSize: 11, marginLeft: 4 },
-  // 합치기 그룹 UI
   mergeGroupRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 12, paddingVertical: 8 },
   mergeGroupBtns: { flexDirection: "row", gap: 5 },
   mergeGroupBtn: { width: 36, height: 30, borderRadius: 6, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
@@ -747,4 +763,9 @@ const styles = StyleSheet.create({
   mergeGroupHint: { fontSize: 11, flex: 1 },
   mergeGroupBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, marginRight: 4 },
   mergeGroupBadgeText: { color: "white", fontSize: 10, fontWeight: "700" },
+  // 로그인 모달 관련
+  loginModalContent: { width: "100%", height: "90%", backgroundColor: "#f5f5f5", borderTopLeftRadius: 25, borderTopRightRadius: 25, overflow: "hidden" },
+  loginModalHeader: { padding: 15, alignItems: "flex-end", backgroundColor: "#f5f5f5" },
+  closeModalBtn: { width: 30, height: 30, borderRadius: 15, backgroundColor: "#ddd", justifyContent: "center", alignItems: "center" },
+  closeModalBtnText: { fontSize: 16, fontWeight: "bold", color: "#666" },
 });

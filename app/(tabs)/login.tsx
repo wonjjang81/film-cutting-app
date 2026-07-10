@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,21 +9,11 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { router } from "expo-router";
 
 export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { loginAsAdmin, validateAccessCode, isAdmin, guestSession, accessCodeValidated, error } = useAuth();
-
-  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
-
-  // 이미 로그인된 상태라면 입력 탭으로 이동
-  useEffect(() => {
-    if (isLoggedIn) {
-      router.replace("/(tabs)/input");
-    }
-  }, [isLoggedIn]);
+  const { loginAsAdmin, validateAccessCode, error } = useAuth();
 
   const handleLogin = async () => {
     const trimmedCode = code.trim();
@@ -34,13 +24,12 @@ export default function LoginScreen() {
     try {
       if (trimmedCode === "won81") {
         loginAsAdmin(trimmedCode);
-        // useEffect가 이동을 처리함
+        // 부모 컴포넌트(input.tsx)에서 isLoggedIn 상태 변화를 감지해 모달을 닫음
       } else {
         const success = await validateAccessCode(trimmedCode);
         if (!success) {
           Alert.alert("인증 실패", error || "접속코드가 올바르지 않습니다.");
         }
-        // 성공 시 useEffect가 이동을 처리함
       }
     } catch (err) {
       Alert.alert("오류", "로그인 중 문제가 발생했습니다.");
