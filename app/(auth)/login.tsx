@@ -59,6 +59,8 @@ export default function LoginScreen() {
       if (!response.ok) throw new Error('데이터베이스 연결 실패');
       
       const activeCodes: string[] = await response.json();
+      console.log('Active Guest Codes:', activeCodes);
+      console.log('Input Code:', inputCode);
 
       if (activeCodes.includes(inputCode) || inputCode === "GUEST1220") {
         await AsyncStorage.setItem('user_authenticated', 'true');
@@ -66,16 +68,17 @@ export default function LoginScreen() {
         Alert.alert('인증 성공', '게스트 모드로 진입합니다.');
         router.replace('/(tabs)/input');
       } else {
-        Alert.alert('인증 실패', '올바르지 않거나 만료된 승인코드입니다.');
+        Alert.alert('인증 실패', `올바르지 않거나 만료된 승인코드입니다. (입력: ${inputCode})`);
       }
     } catch (error) {
+      console.error('Guest Login Error:', error);
       // 오프라인/에러 대비 마스터 코드 예외 처리
       if (inputCode === "GUEST1220") {
         await AsyncStorage.setItem('user_authenticated', 'true');
         await AsyncStorage.setItem('user_role', 'GUEST');
         router.replace('/(tabs)/input');
       } else {
-        Alert.alert('네트워크 오류', '임시 DB에서 코드를 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        Alert.alert('인증 오류', '데이터베이스 연결에 실패했습니다. 마스터 코드를 사용하거나 잠시 후 다시 시도해 주세요.');
       }
     } finally {
       setIsLoading(false);
