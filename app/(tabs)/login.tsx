@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -9,38 +9,35 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { useAuth } from "@/app/contexts/AuthContext";
-import { router } from "expo-router";
 
 export default function LoginScreen() {
-  const [code, setCode] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const { loginAsAdmin, validateAccessCode, isAdmin, guestSession, accessCodeValidated, error } = useAuth();
-
-  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
-
-  // 이미 로그인된 상태라면 입력 탭으로 이동
-  useEffect(() => {
-    if (isLoggedIn) {
-      router.replace("/(tabs)/input");
-    }
-  }, [isLoggedIn]);
+  const { loginAsAdmin, validateAccessCode, error } = useAuth();
 
   const handleLogin = async () => {
-    const trimmedCode = code.trim();
-    if (!trimmedCode) return;
-    
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      Alert.alert("오류", "이메일과 비밀번호를 모두 입력해주세요.");
+      return;
+    }
+
+    // 🛡️ [관리자 로그인 프리패스 체크]
+    if (trimmedEmail === "wizhou" && password === "203302") {
+      Alert.alert("관리자 인증 성공", "관리자 모드로 접속합니다.");
+      loginAsAdmin("won81"); // 기존 관리자 권한 부여 로직 활용
+      return;
+    }
+
     setIsLoading(true);
-    
     try {
-      if (trimmedCode === "won81") {
-        loginAsAdmin(trimmedCode);
-        // useEffect가 이동을 처리함
+      // 일반 로그인 로직 (접속코드로 처리하거나 기존 로직 유지)
+      const success = await validateAccessCode(trimmedEmail);
+      if (success) {
+        Alert.alert("성공", "로그인에 성공했습니다.");
       } else {
-        const success = await validateAccessCode(trimmedCode);
-        if (!success) {
-          Alert.alert("인증 실패", error || "접속코드가 올바르지 않습니다.");
-        }
-        // 성공 시 useEffect가 이동을 처리함
+        Alert.alert("실패", error || "인증 정보가 올바르지 않습니다.");
       }
     } catch (err) {
       Alert.alert("오류", "로그인 중 문제가 발생했습니다.");
@@ -53,30 +50,47 @@ export default function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.card}>
         <Text style={styles.title}>필름 재단 계산기</Text>
-        <Text style={styles.subtitle}>접속코드를 입력해 주세요</Text>
-        
-        <TextInput
-          style={styles.input}
-          placeholder="접속코드 또는 관리자 비번"
-          value={code}
-          onChangeText={setCode}
-          secureTextEntry={code === "won81"}
-          autoCapitalize="none"
-        />
-        
-        <TouchableOpacity 
-          style={styles.button} 
+        <Text style={styles.subtitle}>서비스 이용을 위해 인증해주세요.</Text>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>이메일</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="example@email.com"
+            value={email}
+            onChangeText={setEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+          />
+        </View>
+
+        <View style={styles.inputContainer}>
+          <Text style={styles.label}>비밀번호</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="비밀번호를 입력하세요"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+          />
+        </View>
+
+        <TouchableOpacity
+          style={[styles.button, isLoading && styles.buttonDisabled]}
           onPress={handleLogin}
           disabled={isLoading}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.buttonText}>접속하기</Text>
+            <Text style={styles.buttonText}>로그인</Text>
           )}
         </TouchableOpacity>
-        
-        <Text style={styles.footer}>관리자 비번: won81</Text>
+
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>관리자 계정으로 테스트 가능합니다.</Text>
+        </View>
       </View>
     </View>
   );
@@ -101,27 +115,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 5,
-    alignItems: "center",
   },
   title: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: "bold",
     marginBottom: 10,
     color: "#007AFF",
+    textAlign: "center",
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: "#666",
     marginBottom: 30,
+    textAlign: "center",
+  },
+  inputContainer: {
+    width: "100%",
+    marginBottom: 15,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#333",
+    marginBottom: 5,
   },
   input: {
     width: "100%",
-    height: 50,
+    height: 48,
     borderWidth: 1,
     borderColor: "#ddd",
     borderRadius: 8,
     paddingHorizontal: 15,
-    marginBottom: 20,
     fontSize: 16,
     backgroundColor: "#fafafa",
   },
@@ -132,6 +156,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     borderRadius: 8,
+    marginTop: 10,
+  },
+  buttonDisabled: {
+    backgroundColor: "#A0CFFF",
   },
   buttonText: {
     color: "#fff",
@@ -140,7 +168,10 @@ const styles = StyleSheet.create({
   },
   footer: {
     marginTop: 20,
+    alignItems: "center",
+  },
+  footerText: {
     fontSize: 12,
     color: "#ccc",
-  }
+  },
 });
