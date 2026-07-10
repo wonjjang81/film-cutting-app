@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "@/app/contexts/AuthContext";
 
 export default function TabLayout() {
-  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
+  const { isAdmin, guestSession, accessCodeValidated, isLoading } = useAuth();
   const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
@@ -12,7 +12,7 @@ export default function TabLayout() {
 
   const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
 
-  // 클라이언트 사이드 렌더링 대기 (하이드레이션 오류 방지)
+  // 클라이언트 사이드 렌더링 대기
   if (!isClient) return null;
 
   return (
@@ -24,18 +24,24 @@ export default function TabLayout() {
         },
       }}
     >
+      {/* 
+        비로그인 시 404를 방지하기 위해 href를 null로 만들지 않고, 
+        각 화면 내부에서 리다이렉트를 처리하거나 
+        탭 바에서만 숨기는 방식으로 접근합니다.
+      */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "홈",
+          // 비로그인 시에도 index 경로는 살아있어야 리다이렉트 로직이 작동함
+          href: isLoggedIn ? "/index" : "/",
+        }}
+      />
       <Tabs.Screen
         name="login"
         options={{
           title: "로그인",
           href: isLoggedIn ? null : "/login",
-        }}
-      />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: "홈",
-          href: isLoggedIn ? "/index" : null,
         }}
       />
       <Tabs.Screen 
