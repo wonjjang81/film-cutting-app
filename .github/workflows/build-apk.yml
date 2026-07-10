@@ -20,18 +20,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1. ✨ [순서 변경] Node.js 환경 선제 구성
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-
-      # 2. 🚀 [수정] version 속성 제거 (package.json 준수)
+      # 1. 🚀 [순서 핵심] pnpm 환경 선제 구성
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
-      # 3. pnpm 캐시 적용을 위한 Node.js 재설정
-      - name: Setup Node.js with pnpm cache
+      # 2. 🎯 Node.js 환경 구성 및 pnpm 캐시 적용
+      - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: '22'
