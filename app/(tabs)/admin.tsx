@@ -1,393 +1,225 @@
-import React, { useState, useEffect, useCallback } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  FlatList,
-  ActivityIndicator,
-  Alert,
-  TextInput,
-  Modal,
-  ScrollView,
-  RefreshControl,
-} from "react-native";
-import { router } from "expo-router";
-import { trpc } from "@/lib/trpc";
-import { useColors } from "@/hooks/use-colors";
-import { ScreenContainer } from "@/components/screen-container";
+import React, { useState } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, Alert, Share, TextInput } from 'react-native';
+import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 
-interface AccessCode {
-  id: number;
+// 인터페이스 정의
+interface PendingUser {
+  id: string;
+  email: string;
+  name: string;
+  requestedAt: string;
+}
+
+interface GuestCodeInfo {
   code: string;
-  isActive: boolean;
-  usageLimit: number | null;
-  usageCount: number;
-  expiresAt: string | null;
-  notes: string | null;
-  createdAt: string | null;
+  createdAt: string;
+  expiresIn: string;
 }
 
 export default function AdminDashboard() {
-  const colors = useColors();
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [editingCode, setEditingCode] = useState<AccessCode | null>(null);
+  const router = useRouter();
   
-  // Form state
-  const [code, setCode] = useState("");
-  const [usageLimit, setUsageLimit] = useState("");
-  const [notes, setNotes] = useState("");
+  // 🗂️ 관리자 대시보드 탭 상태 ('users' = 가입승인, 'guest' = 게스트코드)
+  const [activeTab, setActiveTab] = useState<'users' | 'guest'>('users');
 
-  const utils = trpc.useUtils();
-  const { data: codes, isLoading, refetch, isRefetching } = trpc.admin.listAccessCodes.useQuery();
-  const { data: stats } = trpc.admin.getStatistics.useQuery();
+  // --- [1] 가입 승인 대기 명단 관련 상태 및 로직 ---
+  const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([
+    { id: '1', email: 'user1@naver.com', name: '홍길동', requestedAt: '07/10 11:30' },
+    { id: '2', email: 'worker2@daum.net', name: '김철수', requestedAt: '07/10 13:15' },
+    { id: '3', email: 'film_master@gmail.com', name: '이영희', requestedAt: '07/10 14:40' },
+  ]);
 
-  const createMutation = trpc.admin.createAccessCode.useMutation({
-    onSuccess: () => {
-      utils.admin.listAccessCodes.invalidate();
-      utils.admin.getStatistics.invalidate();
-      closeModal();
-      Alert.alert("성공", "접속코드가 생성되었습니다.");
-    },
-    onError: (error) => {
-      Alert.alert("오류", error.message);
-    },
-  });
+  const handleApproveUser = (id: string, name: string) => {
+    Alert.alert('가입 승인', `${name} 회원의 가입을 승인하시겠습니까?`, [
+      { text: '취소', style: 'cancel' },
+      { 
+        text: '승인', 
+        onPress: () => {
+          setPendingUsers(pendingUsers.filter(user => user.id !== id));
+          Alert.alert('승인 완료', `${name} 회원이 정상 승인되었습니다.`);
+        } 
+      }
+    ]);
+  };
 
-  const updateMutation = trpc.admin.updateAccessCode.useMutation({
-    onSuccess: () => {
-      utils.admin.listAccessCodes.invalidate();
-      closeModal();
-      Alert.alert("성공", "접속코드가 업데이트되었습니다.");
-    },
-    onError: (error) => {
-      Alert.alert("오류", error.message);
-    },
-  });
+  const handleRejectUser = (id: string, name: string) => {
+    Alert.alert('가입 거절', `${name} 회원의 가입을 거절하시겠습니까?\n거절 시 해당 유저는 로그인할 수 없습니다.`, [
+      { text: '취소', style: 'cancel' },
+      { 
+        text: '거절', 
+        style: 'destructive',
+        onPress: () => {
+          setPendingUsers(pendingUsers.filter(user => user.id !== id));
+          Alert.alert('거절 완료', `${name} 회원의 요청을 거절했습니다.`);
+        } 
+      }
+    ]);
+  };
 
-  const deleteMutation = trpc.admin.deleteAccessCode.useMutation({
-    onSuccess: () => {
-      utils.admin.listAccessCodes.invalidate();
-      utils.admin.getStatistics.invalidate();
-      Alert.alert("성공", "접속코드가 삭제되었습니다.");
-    },
-    onError: (error) => {
-      Alert.alert("오류", error.message);
-    },
-  });
 
-  const openModal = (item?: AccessCode) => {
-    if (item) {
-      setEditingCode(item);
-      setCode(item.code);
-      setUsageLimit(item.usageLimit?.toString() || "");
-      setNotes(item.notes || "");
-    } else {
-      setEditingCode(null);
-      setCode("");
-      setUsageLimit("");
-      setNotes("");
+  // --- [2] 게스트 승인코드 관련 상태 및 로직 ---
+  const [generatedCodes, setGeneratedCodes] = useState<GuestCodeInfo[]>([]);
+  const [expiryHours, setExpiryHours] = useState('24');
+
+  const generateRandomGuestCode = () => {
+    const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let randomCode = 'GUEST-';
+    for (let i = 0; i < 6; i++) {
+      randomCode += characters[Math.floor(Math.random() * characters.length)];
     }
-    setIsModalVisible(true);
+    const now = new Date();
+    const formattedDate = `${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
+
+    setGeneratedCodes([{
+      code: randomCode,
+      createdAt: formattedDate,
+      expiresIn: `${expiryHours}시간`
+    }, ...generatedCodes]);
+    Alert.alert('생성 완료', `게스트 코드가 발급되었습니다: ${randomCode}`);
   };
 
-  const closeModal = () => {
-    setIsModalVisible(false);
-    setEditingCode(null);
+  const copyToClipboard = async (code: string) => {
+    await Clipboard.setStringAsync(code);
+    Alert.alert('복사 완료', '코드가 클립보드에 복사되었습니다.');
   };
 
-  const handleSubmit = () => {
-    if (!code.trim() || code.trim().length < 6) {
-      Alert.alert("오류", "접속코드는 최소 6자 이상이어야 합니다.");
-      return;
-    }
-
-    const limit = usageLimit ? parseInt(usageLimit, 10) : undefined;
-
-    if (editingCode) {
-      updateMutation.mutate({
-        codeId: editingCode.id,
-        usageLimit: limit,
-        notes: notes.trim() || undefined,
-      });
-    } else {
-      createMutation.mutate({
-        code: code.trim(),
-        usageLimit: limit,
-        notes: notes.trim() || undefined,
-      });
-    }
+  const shareCode = async (code: string) => {
+    try {
+      await Share.share({ message: `[필름 재단 앱] 게스트 승인코드입니다.\n코드: ${code}` });
+    } catch (e) { console.log(e); }
   };
-
-  const handleDelete = (id: number) => {
-    Alert.alert(
-      "삭제 확인",
-      "이 접속코드를 정말 삭제하시겠습니까?",
-      [
-        { text: "취소", style: "cancel" },
-        { text: "삭제", style: "destructive", onPress: () => deleteMutation.mutate({ codeId: id }) },
-      ]
-    );
-  };
-
-  const toggleStatus = (item: AccessCode) => {
-    updateMutation.mutate({
-      codeId: item.id,
-      isActive: !item.isActive,
-    });
-  };
-
-  const renderItem = ({ item }: { item: AccessCode }) => (
-    <View style={[styles.codeCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      <View style={styles.codeHeader}>
-        <Text style={[styles.codeText, { color: colors.foreground }]}>{item.code}</Text>
-        <TouchableOpacity
-          style={[
-            styles.statusBadge,
-            { backgroundColor: item.isActive ? colors.success + "20" : colors.error + "20" }
-          ]}
-          onPress={() => toggleStatus(item)}
-        >
-          <Text style={{ color: item.isActive ? colors.success : colors.error, fontSize: 12, fontWeight: "600" }}>
-            {item.isActive ? "활성" : "비활성"}
-          </Text>
-        </TouchableOpacity>
-      </View>
-      
-      <View style={styles.codeDetails}>
-        <Text style={[styles.detailText, { color: colors.muted }]}>
-          사용: {item.usageCount} / {item.usageLimit || "무제한"}
-        </Text>
-        {item.notes && (
-          <Text style={[styles.detailText, { color: colors.muted }]} numberOfLines={1}>
-            메모: {item.notes}
-          </Text>
-        )}
-      </View>
-
-      <View style={styles.cardActions}>
-        <TouchableOpacity style={styles.actionButton} onPress={() => openModal(item)}>
-          <Text style={{ color: colors.primary, fontWeight: "600" }}>수정</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton} onPress={() => handleDelete(item.id)}>
-          <Text style={{ color: colors.error, fontWeight: "600" }}>삭제</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
   return (
-    <ScreenContainer containerClassName="bg-background">
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Text style={{ color: colors.primary, fontSize: 16 }}>← 뒤로</Text>
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.foreground }]}>관리자 대시보드</Text>
-        <TouchableOpacity onPress={() => openModal()} style={styles.addButton}>
-          <Text style={{ color: "#fff", fontWeight: "600" }}>+ 추가</Text>
-        </TouchableOpacity>
+    <View className="flex-1 bg-gray-50">
+      {/* 고정 헤더 */}
+      <View className="bg-slate-900 pt-14 pb-4 px-6 rounded-b-2xl shadow-md">
+        <View className="flex-row justify-between items-center mb-4">
+          <View>
+            <Text className="text-xl font-bold text-white">최고관리자 모드 🛡️</Text>
+            <Text className="text-xs text-slate-400 mt-0.5">필름 재단 계산기 시스템 제어</Text>
+          </View>
+          <TouchableOpacity 
+            className="bg-slate-700 px-3 py-1.5 rounded-lg"
+            onPress={() => router.replace('/login')}
+          >
+            <Text className="text-white text-xs font-semibold">로그아웃</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* 탭 상단 메뉴 선택 바 */}
+        <View className="flex-row bg-slate-800 p-1 rounded-xl">
+          <TouchableOpacity 
+            className={`flex-1 py-2.5 rounded-lg items-center ${activeTab === 'users' ? 'bg-blue-600' : ''}`}
+            onPress={() => setActiveTab('users')}
+          >
+            <Text className={`text-sm font-bold ${activeTab === 'users' ? 'text-white' : 'text-slate-400'}`}>
+              가입 승인 관리 ({pendingUsers.length})
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            className={`flex-1 py-2.5 rounded-lg items-center ${activeTab === 'guest' ? 'bg-blue-600' : ''}`}
+            onPress={() => setActiveTab('guest')}
+          >
+            <Text className={`text-sm font-bold ${activeTab === 'guest' ? 'text-white' : 'text-slate-400'}`}>
+              게스트 코드 발급
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {stats && (
-        <View style={styles.statsContainer}>
-          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>총 코드</Text>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.totalAccessCodes}</Text>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>활성 세션</Text>
-            <Text style={[styles.statValue, { color: colors.primary }]}>{stats.activeSessions}</Text>
-          </View>
-          <View style={[styles.statBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.statLabel, { color: colors.muted }]}>총 사용</Text>
-            <Text style={[styles.statValue, { color: colors.foreground }]}>{stats.totalUsage}</Text>
-          </View>
-        </View>
-      )}
-
-      {isLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
-      ) : (
-        <FlatList
-          data={codes}
-          renderItem={renderItem}
-          keyExtractor={(item) => item.id.toString()}
-          contentContainerStyle={styles.listContent}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <Text style={{ color: colors.muted }}>생성된 접속코드가 없습니다.</Text>
-            </View>
-          }
-        />
-      )}
-
-      <Modal visible={isModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              {editingCode ? "접속코드 수정" : "새 접속코드 생성"}
-            </Text>
+      {/* 가변 본문 영역 */}
+      <ScrollView className="flex-1 px-4 py-4">
+        
+        {/* TAB 1: 회원가입 승인 대기 명단 목록 */}
+        {activeTab === 'users' && (
+          <View>
+            <Text className="text-base font-bold text-gray-800 mb-3 px-1">승인 대기 중인 회원 명단</Text>
             
-            <ScrollView style={styles.modalForm}>
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.muted }]}>접속코드 (최소 6자)</Text>
-                <TextInput
-                  style={[styles.input, { borderColor: colors.border, color: colors.foreground }]}
-                  value={code}
-                  onChangeText={setCode}
-                  placeholder="예: ABC123XYZ"
-                  placeholderTextColor={colors.muted}
-                  editable={!editingCode}
-                  autoCapitalize="characters"
-                />
+            {pendingUsers.length === 0 ? (
+              <View className="bg-white py-16 rounded-xl justify-center items-center border border-gray-200 shadow-sm">
+                <Text className="text-gray-400 text-sm">현재 가입을 신청한 회원이 없습니다.</Text>
               </View>
+            ) : (
+              pendingUsers.map((user) => (
+                <View key={user.id} className="bg-white p-4 rounded-xl shadow-sm mb-3 border border-gray-200">
+                  <View className="flex-row justify-between items-start mb-3">
+                    <View>
+                      <Text className="text-base font-bold text-gray-800">{user.name}</Text>
+                      <Text className="text-sm text-gray-500 mt-0.5">{user.email}</Text>
+                    </View>
+                    <Text className="text-xs text-gray-400">{user.requestedAt} 신청</Text>
+                  </View>
+                  
+                  {/* 처리 버튼 박스 */}
+                  <View className="flex-row gap-2 border-t border-gray-100 pt-3">
+                    <TouchableOpacity 
+                      className="flex-1 h-10 bg-rose-50 border border-rose-200 rounded-lg justify-center items-center"
+                      onPress={() => handleRejectUser(user.id, user.name)}
+                    >
+                      <Text className="text-rose-600 text-sm font-semibold">가입 거절</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity 
+                      className="flex-1 h-10 bg-blue-600 rounded-lg justify-center items-center"
+                      onPress={() => handleApproveUser(user.id, user.name)}
+                    >
+                      <Text className="text-white text-sm font-bold">최종 승인</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+        )}
 
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.muted }]}>사용 횟수 제한 (선택)</Text>
+        {/* TAB 2: 임시 게스트 코드 관리 */}
+        {activeTab === 'guest' && (
+          <View>
+            <View className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm mb-4">
+              <Text className="text-sm font-bold text-gray-800 mb-2">🎁 신규 임시 코드 자동 발급</Text>
+              <View className="flex-row items-center mb-4">
+                <Text className="text-xs text-gray-500 mr-2">유효 제한시간:</Text>
                 <TextInput
-                  style={[styles.input, { borderColor: colors.border, color: colors.foreground }]}
-                  value={usageLimit}
-                  onChangeText={setUsageLimit}
-                  placeholder="무제한인 경우 비워두세요"
-                  placeholderTextColor={colors.muted}
+                  className="w-14 h-8 border border-gray-300 rounded text-center bg-gray-50 text-xs font-bold"
                   keyboardType="numeric"
+                  value={expiryHours}
+                  onChangeText={setExpiryHours}
+                  maxLength={3}
                 />
+                <Text className="text-xs text-gray-500 ml-1.5">시간 설정</Text>
               </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: colors.muted }]}>메모 (선택)</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea, { borderColor: colors.border, color: colors.foreground }]}
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="관리용 메모를 입력하세요"
-                  placeholderTextColor={colors.muted}
-                  multiline
-                  numberOfLines={3}
-                />
-              </View>
-            </ScrollView>
-
-            <View style={styles.modalActions}>
-              <TouchableOpacity style={[styles.modalButton, styles.cancelButton]} onPress={closeModal}>
-                <Text style={{ color: colors.muted, fontWeight: "600" }}>취소</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, styles.submitButton, { backgroundColor: colors.primary }]} 
-                onPress={handleSubmit}
-                disabled={createMutation.isLoading || updateMutation.isLoading}
-              >
-                {createMutation.isLoading || updateMutation.isLoading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={{ color: "#fff", fontWeight: "600" }}>저장</Text>
-                )}
+              <TouchableOpacity className="w-full h-11 bg-blue-600 rounded-lg justify-center items-center" onPress={generateRandomGuestCode}>
+                <Text className="text-white text-sm font-bold">임시 승인코드 즉시 생성</Text>
               </TouchableOpacity>
             </View>
+
+            <Text className="text-base font-bold text-gray-800 mb-3 px-1">발급 완료 내역</Text>
+            {generatedCodes.length === 0 ? (
+              <View className="bg-white py-12 rounded-xl justify-center items-center border border-dashed border-gray-300">
+                <Text className="text-gray-400 text-xs">생성된 내역이 없습니다.</Text>
+              </View>
+            ) : (
+              generatedCodes.map((item, index) => (
+                <View key={index} className="bg-white p-3 rounded-xl shadow-sm mb-2 border border-gray-200">
+                  <View className="flex-row justify-between items-center mb-1">
+                    <Text className="text-base font-mono font-bold text-slate-800">{item.code}</Text>
+                    <View className="flex-row gap-1.5">
+                      <TouchableOpacity className="bg-gray-100 px-2 py-1 rounded" onPress={() => copyToClipboard(item.code)}>
+                        <Text className="text-gray-700 text-xs">복사</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity className="bg-slate-800 px-2 py-1 rounded" onPress={() => shareCode(item.code)}>
+                        <Text className="text-white text-xs">공유</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                  <Text className="text-[11px] text-gray-400">발급일: {item.createdAt} / 유효: {item.expiresIn}</Text>
+                </View>
+              ))
+            )}
           </View>
-        </View>
-      </Modal>
-    </ScreenContainer>
+        )}
+
+      </ScrollView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
-  },
-  backButton: { padding: 4 },
-  title: { fontSize: 18, fontWeight: "bold" },
-  addButton: {
-    backgroundColor: "#007AFF",
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 6,
-  },
-  statsContainer: {
-    flexDirection: "row",
-    padding: 16,
-    gap: 12,
-  },
-  statBox: {
-    flex: 1,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignItems: "center",
-  },
-  statLabel: { fontSize: 12, marginBottom: 4 },
-  statValue: { fontSize: 18, fontWeight: "bold" },
-  listContent: { padding: 16, gap: 12 },
-  codeCard: {
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  codeHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  codeText: { fontSize: 18, fontWeight: "bold", letterSpacing: 1 },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  codeDetails: { marginBottom: 12 },
-  detailText: { fontSize: 13, marginBottom: 2 },
-  cardActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#f0f0f0",
-    paddingTop: 12,
-  },
-  actionButton: { padding: 4 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  emptyContainer: { flex: 1, alignItems: "center", marginTop: 100 },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    padding: 20,
-  },
-  modalContent: {
-    borderRadius: 20,
-    padding: 24,
-    maxHeight: "80%",
-  },
-  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20 },
-  modalForm: { marginBottom: 20 },
-  inputGroup: { marginBottom: 16 },
-  label: { fontSize: 14, marginBottom: 6 },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  textArea: { minHeight: 80, textAlignVertical: "top" },
-  modalActions: { flexDirection: "row", gap: 12 },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  cancelButton: { backgroundColor: "#f0f0f0" },
-  submitButton: {},
-});

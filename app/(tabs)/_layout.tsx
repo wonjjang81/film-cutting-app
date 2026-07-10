@@ -1,6 +1,7 @@
 import { Tabs } from "expo-router";
 import React, { useState, useEffect } from "react";
 import { useAuth } from "@/app/contexts/AuthContext";
+import { Home, Calculator, Scissors, Receipt, Settings, ShieldCheck } from 'lucide-react-native';
 
 export default function TabLayout() {
   const { isAdmin, guestSession, accessCodeValidated } = useAuth();
@@ -23,14 +24,15 @@ export default function TabLayout() {
           display: isLoggedIn ? 'flex' : 'none',
         },
         tabBarActiveTintColor: '#2563eb',
+        tabBarInactiveTintColor: '#64748b',
       }}
     >
-      {/* 1. 로그인 탭 (로그인 안된 경우에만 탭 바에 표시될 수도 있지만, 보통은 숨김) */}
+      {/* 1. 로그인 탭 (숨김) */}
       <Tabs.Screen
         name="login"
         options={{
           title: "로그인",
-          href: null, // 로그인 화면은 탭 바에 노출하지 않음
+          href: null,
         }}
       />
 
@@ -39,7 +41,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: "관리",
-          href: isLoggedIn ? "/index" : null,
+          tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
+          href: isLoggedIn ? "/(tabs)" : null,
         }}
       />
 
@@ -48,7 +51,8 @@ export default function TabLayout() {
         name="input" 
         options={{ 
           title: "입력", 
-          href: isLoggedIn ? "/input" : null 
+          tabBarIcon: ({ color, size }) => <Calculator color={color} size={size} />,
+          href: isLoggedIn ? "/(tabs)/input" : null 
         }} 
       />
 
@@ -57,7 +61,8 @@ export default function TabLayout() {
         name="cutting" 
         options={{ 
           title: "재단", 
-          href: isLoggedIn ? "/cutting" : null 
+          tabBarIcon: ({ color, size }) => <Scissors color={color} size={size} />,
+          href: isLoggedIn ? "/(tabs)/cutting" : null 
         }} 
       />
 
@@ -66,7 +71,8 @@ export default function TabLayout() {
         name="estimate" 
         options={{ 
           title: "견적", 
-          href: isLoggedIn ? "/estimate" : null 
+          tabBarIcon: ({ color, size }) => <Receipt color={color} size={size} />,
+          href: isLoggedIn ? "/(tabs)/estimate" : null 
         }} 
       />
 
@@ -75,18 +81,18 @@ export default function TabLayout() {
         name="settings" 
         options={{ 
           title: "설정", 
-          href: isLoggedIn ? "/settings" : null 
+          tabBarIcon: ({ color, size }) => <Settings color={color} size={size} />,
+          href: isLoggedIn ? "/(tabs)/settings" : null 
         }} 
       />
 
-      {/* 7. 🛡️ 최고관리자 전용 탭 (조건부 숨김 처리 핵심) */}
+      {/* 7. 🛡️ 최고관리자 전용 탭 */}
       <Tabs.Screen 
         name="admin" 
         options={{ 
           title: "관리자", 
-          // ✨ 핵심 설정: isAdmin이 true일 때만 하단 탭 바에 나타납니다.
-          href: isAdmin ? "/admin" : null,
-          // 보안을 위해 관리자가 아니면 헤더 접근 자체를 비활성화할 수도 있습니다.
+          tabBarIcon: ({ color, size }) => <ShieldCheck color={color} size={size} />,
+          href: isAdmin ? "/(tabs)/admin" : null,
           headerShown: isAdmin,
         }} 
       />
