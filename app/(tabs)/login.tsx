@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -8,43 +8,26 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { router } from "expo-router";
 
 export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-
-  // 이미 로그인된 경우 홈으로 자동 이동
-  useEffect(() => {
-    if (typeof localStorage !== 'undefined') {
-      const adminStatus = localStorage.getItem("isAdmin") === "true";
-      const loggedInStatus = adminStatus || 
-                             localStorage.getItem("guestSession") !== null || 
-                             localStorage.getItem("accessCodeValidated") === "true";
-      if (loggedInStatus) {
-        // (tabs)/index로 명시적 이동하여 404 방지
-        router.replace("/(tabs)/index");
-      }
-    }
-  }, []);
 
   const handleLogin = async () => {
     if (!code.trim()) return;
     
     setIsLoading(true);
     
+    // 로컬 스토리지에 상태 저장 및 페이지 강제 이동
     if (typeof localStorage !== 'undefined') {
       if (code === "won81") {
         localStorage.setItem("isAdmin", "true");
-      } else {
-        localStorage.setItem("isAdmin", "false");
-        localStorage.setItem("guestSession", Date.now().toString());
       }
       localStorage.setItem("accessCodeValidated", "true");
       
       setIsLoading(false);
-      // (tabs)/index로 명시적 이동하여 GitHub Pages의 404 오류를 방지합니다.
-      router.replace("/(tabs)/index");
+      // GitHub Pages 서브 디렉토리 경로 고려
+      window.location.href = "/film-cutting-app/index";
     } else {
       setIsLoading(false);
       Alert.alert("오류", "브라우저 환경이 아닙니다.");
