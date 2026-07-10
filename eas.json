@@ -13,14 +13,18 @@
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       },
-      "distribution": "internal"
+      "distribution": "internal",
+      "pnpm": "9.12.0",
+      "node": "22.13.0"
     },
     "production": {
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       },
-      "distribution": "internal"
+      "distribution": "internal",
+      "pnpm": "9.12.0",
+      "node": "22.13.0"
     }
   },
   "submit": {
