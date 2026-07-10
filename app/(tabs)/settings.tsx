@@ -155,7 +155,7 @@ export default function SettingsScreen() {
   const { version, apkUrl, loading: apkLoading, error: apkError, refetch } = useLatestRelease();
 
   // 인증 관련
-  const { logout: guestLogout } = useGuestAuth();
+  const { logout: guestLogout, isAdmin } = useGuestAuth();
   const { logout: authLogout } = useAuth();
 
   // 앱 시작 시 저장된 정보 불러오기
@@ -180,31 +180,6 @@ export default function SettingsScreen() {
       return next;
     });
   }, [autoSave]);
-
-  const handleSaveNow = useCallback(async () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    await saveCompanyInfo(info);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
-  }, [info]);
-
-  const handleReset = useCallback(() => {
-    const doReset = async () => {
-      const blank = DEFAULT_COMPANY_INFO;
-      setInfo(blank);
-      await saveCompanyInfo(blank);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    };
-    if (Platform.OS === "web") {
-      if (window.confirm("업체 정보를 모두 초기화하시겠습니까?")) doReset();
-    } else {
-      Alert.alert("초기화", "업체 정보를 모두 초기화하시겠습니까?", [
-        { text: "취소", style: "cancel" },
-        { text: "초기화", style: "destructive", onPress: doReset },
-      ]);
-    }
-  }, [info]);
 
   const handleLogout = useCallback(() => {
     const doLogout = async () => {
@@ -250,73 +225,13 @@ export default function SettingsScreen() {
               입력한 정보는 견적서 공유 시 자동으로 포함됩니다.
             </Text>
 
-            <Field
-              label="업체명"
-              value={info.companyName}
-              onChangeText={(v) => update("companyName", v)}
-              placeholder="예) 홍길동 필름 시공"
-              colors={colors}
-            />
-            <Field
-              label="담당자 이름"
-              value={info.managerName}
-              onChangeText={(v) => update("managerName", v)}
-              placeholder="예) 홍길동"
-              colors={colors}
-            />
-            <Field
-              label="연락처"
-              value={info.phone}
-              onChangeText={(v) => update("phone", v)}
-              placeholder="예) 010-1234-5678"
-              keyboardType="phone-pad"
-              colors={colors}
-            />
-            <Field
-              label="이메일"
-              value={info.email}
-              onChangeText={(v) => update("email", v)}
-              placeholder="예) example@email.com"
-              keyboardType="email-address"
-              colors={colors}
-            />
-            <Field
-              label="주소"
-              value={info.address}
-              onChangeText={(v) => update("address", v)}
-              placeholder="예) 서울시 강남구 ..."
-              colors={colors}
-            />
-            <Field
-              label="비고 (견적서 하단 메모)"
-              value={info.note}
-              onChangeText={(v) => update("note", v)}
-              placeholder="예) VAT 별도 / 출장비 협의 가능"
-              multiline
-              colors={colors}
-            />
+            <Field label="업체명" value={info.companyName} onChangeText={(v) => update("companyName", v)} placeholder="예) 홍길동 필름 시공" colors={colors} />
+            <Field label="담당자 이름" value={info.managerName} onChangeText={(v) => update("managerName", v)} placeholder="예) 홍길동" colors={colors} />
+            <Field label="연락처" value={info.phone} onChangeText={(v) => update("phone", v)} placeholder="예) 010-1234-5678" keyboardType="phone-pad" colors={colors} />
+            <Field label="이메일" value={info.email} onChangeText={(v) => update("email", v)} placeholder="예) example@email.com" keyboardType="email-address" colors={colors} />
+            <Field label="주소" value={info.address} onChangeText={(v) => update("address", v)} placeholder="예) 서울시 강남구 ..." colors={colors} />
+            <Field label="비고 (견적서 하단 메모)" value={info.note} onChangeText={(v) => update("note", v)} placeholder="예) VAT 별도 / 출장비 협의 가능" multiline colors={colors} />
           </View>
-
-          {/* 미리보기 */}
-          {isAnyFilled && (
-            <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>견적서 미리보기</Text>
-              <View style={[styles.previewBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
-                <Text style={[styles.previewLine, { color: colors.muted }]}>─────────────────</Text>
-                {info.companyName ? <Text style={[styles.previewText, { color: colors.foreground }]}>🏢 {info.companyName}</Text> : null}
-                {info.managerName ? <Text style={[styles.previewText, { color: colors.foreground }]}>👤 담당자: {info.managerName}</Text> : null}
-                {info.phone ? <Text style={[styles.previewText, { color: colors.foreground }]}>📞 {info.phone}</Text> : null}
-                {info.email ? <Text style={[styles.previewText, { color: colors.foreground }]}>✉️ {info.email}</Text> : null}
-                {info.address ? <Text style={[styles.previewText, { color: colors.foreground }]}>📍 {info.address}</Text> : null}
-                {info.note ? (
-                  <>
-                    <Text style={[styles.previewLine, { color: colors.muted }]}>─────────────────</Text>
-                    <Text style={[styles.previewNote, { color: colors.muted }]}>{info.note}</Text>
-                  </>
-                ) : null}
-              </View>
-            </View>
-          )}
 
           {/* 사용 가이드 섹션 */}
           <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -335,242 +250,90 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* APK 다운로드 섹션 */}
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <View style={styles.sectionTitleRow}>
-              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>📱 앱 업데이트</Text>
-              {version && (
-                <View style={[styles.versionBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
-                  <Text style={[styles.versionBadgeText, { color: colors.primary }]}>{version}</Text>
-                </View>
-              )}
+          {/* APK 다운로드 섹션 (관리자만 노출) */}
+          {isAdmin && (
+            <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.sectionTitleRow}>
+                <Text style={[styles.sectionTitle, { color: colors.foreground }]}>📱 앱 배포 (관리자 전용)</Text>
+                {version && (
+                  <View style={[styles.versionBadge, { backgroundColor: colors.primary + '20', borderColor: colors.primary + '40' }]}>
+                    <Text style={[styles.versionBadgeText, { color: colors.primary }]}>{version}</Text>
+                  </View>
+                )}
+              </View>
+              <Text style={[styles.sectionHint, { color: colors.muted }]}>
+                최신 APK를 다운로드하여 Android 기기에 설치할 수 있습니다.
+              </Text>
+
+              {apkLoading && <Text style={[styles.apkStatusText, { color: colors.muted }]}>🔄 최신 버전 확인 중...</Text>}
+              {apkError && <Text style={[styles.apkStatusText, { color: colors.error }]}>⚠️ 버전 정보를 불러올 수 없습니다.</Text>}
+
+              <View style={styles.apkBtnRow}>
+                <TouchableOpacity
+                  style={[styles.apkBtn, { backgroundColor: apkUrl ? colors.primary : colors.muted + '40' }]}
+                  onPress={() => {
+                    const url = apkUrl ?? RELEASES_PAGE;
+                    Linking.openURL(url);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  }}
+                  disabled={apkLoading}
+                >
+                  <Text style={[styles.apkBtnText, { color: apkUrl ? 'white' : colors.muted }]}>
+                    {apkUrl ? '⬇️  APK 다운로드' : '🔗 릴리즈 페이지 이동'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.apkBtn, { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 }]}
+                  onPress={() => {
+                    refetch();
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                >
+                  <Text style={[styles.apkBtnText, { color: colors.foreground }]}>새로고침</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-            <Text style={[styles.sectionHint, { color: colors.muted }]}>
-              최신 APK를 다운로드하여 Android 기기에 설치할 수 있습니다.
-            </Text>
+          )}
 
-            {apkLoading && (
-              <Text style={[styles.apkStatusText, { color: colors.muted }]}>🔄 최신 버전 확인 중...</Text>
-            )}
-            {apkError && (
-              <Text style={[styles.apkStatusText, { color: colors.error }]}>⚠️ 버전 정보를 불러올 수 없습니다.</Text>
-            )}
+          {/* 로그아웃 버튼 */}
+          <TouchableOpacity style={[styles.logoutButton, { borderColor: colors.error }]} onPress={handleLogout}>
+            <Text style={[styles.logoutButtonText, { color: colors.error }]}>로그아웃</Text>
+          </TouchableOpacity>
 
-            <View style={styles.apkBtnRow}>
-              <TouchableOpacity
-                style={[styles.apkBtn, { backgroundColor: apkUrl ? colors.primary : colors.muted + '40' }]}
-                onPress={() => {
-                  const url = apkUrl ?? RELEASES_PAGE;
-                  Linking.openURL(url);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                }}
-                disabled={apkLoading}
-              >
-                <Text style={[styles.apkBtnText, { color: apkUrl ? 'white' : colors.muted }]}>
-                  {apkUrl ? '⬇️  APK 다운로드' : '🔗 릴리즈 페이지'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.apkRefreshBtn, { borderColor: colors.border }]}
-                onPress={refetch}
-                disabled={apkLoading}
-              >
-                <Text style={{ fontSize: 16 }}>🔄</Text>
-              </TouchableOpacity>
-            </View>
-
-            <Text style={[styles.apkInstallHint, { color: colors.muted }]}>
-              설치 전 기기 설정 → 보안 → "알 수 없는 앱 설치" 허용 필요
-            </Text>
+          <View style={styles.footer}>
+            <Text style={[styles.footerText, { color: colors.muted }]}>필름 재단 계산기 v1.0.0</Text>
           </View>
 
-          {/* 계정 관리 섹션 */}
-          <View style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>🔐 계정 관리</Text>
-            <TouchableOpacity
-              style={[styles.logoutBtn, { borderColor: colors.error + "60" }]}
-              onPress={handleLogout}
-            >
-              <Text style={[styles.logoutBtnText, { color: colors.error }]}>로그아웃</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* 버튼 영역 */}
-          <View style={styles.btnRow}>
-            <TouchableOpacity
-              style={[styles.saveBtn, { backgroundColor: colors.primary }]}
-              onPress={handleSaveNow}
-            >
-              <Text style={styles.saveBtnText}>설정 저장</Text>
-            </TouchableOpacity>
-            {isAnyFilled && (
-              <TouchableOpacity
-                style={[styles.resetBtn, { borderColor: colors.error + "60" }]}
-                onPress={handleReset}
-              >
-                <Text style={[styles.resetBtnText, { color: colors.error }]}>초기화</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={{ height: 32 }} />
         </ScrollView>
       </KeyboardAvoidingView>
     </ScreenContainer>
   );
 }
 
-// ─── 스타일 ──────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  header: {
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  headerTitle: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  scrollContent: {
-    padding: 16,
-    gap: 14,
-  },
-  section: {
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    gap: 14,
-  },
-  sectionTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    flex: 1,
-  },
-  sectionHint: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: -6,
-  },
-  savedBadge: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  savedBadgeText: {
-    fontSize: 11,
-    fontWeight: "600",
-  },
-  previewBox: {
-    borderRadius: 10,
-    borderWidth: 1,
-    padding: 14,
-    gap: 5,
-  },
-  previewLine: {
-    fontSize: 11,
-  },
-  previewText: {
-    fontSize: 13,
-    lineHeight: 20,
-  },
-  previewNote: {
-    fontSize: 12,
-    lineHeight: 18,
-    fontStyle: "italic",
-  },
-  btnRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  saveBtn: {
-    flex: 1,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  saveBtnText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  resetBtn: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  resetBtnText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  versionBadge: {
-    borderRadius: 8,
-    borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  versionBadgeText: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  apkStatusText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  apkBtnRow: {
-    flexDirection: "row",
-    gap: 8,
-  },
-  apkBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  apkBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  apkRefreshBtn: {
-    width: 46,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  apkInstallHint: {
-    fontSize: 11,
-    lineHeight: 16,
-    fontStyle: "italic",
-  },
-  guideBtn: {
-    paddingVertical: 13,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  guideBtnText: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  logoutBtn: {
-    paddingVertical: 12,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  logoutBtnText: {
-    fontSize: 15,
-    fontWeight: "600",
-  },
+  header: { paddingHorizontal: 20, paddingTop: 20, paddingBottom: 20 },
+  headerTitle: { fontSize: 24, fontWeight: "bold", color: "white" },
+  scrollContent: { padding: 16, gap: 16, paddingBottom: 40 },
+  section: { padding: 20, borderRadius: 16, borderWidth: 1, gap: 16 },
+  sectionTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  sectionTitle: { fontSize: 17, fontWeight: "bold" },
+  sectionHint: { fontSize: 13, lineHeight: 18 },
+  savedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  savedBadgeText: { fontSize: 11, fontWeight: "bold" },
+  previewBox: { padding: 16, borderRadius: 12, borderWidth: 1, gap: 6 },
+  previewLine: { fontSize: 12, opacity: 0.3, letterSpacing: -1 },
+  previewText: { fontSize: 14 },
+  previewNote: { fontSize: 13, fontStyle: "italic" },
+  guideBtn: { height: 48, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  guideBtnText: { fontSize: 15, fontWeight: "bold" },
+  versionBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, borderWidth: 1 },
+  versionBadgeText: { fontSize: 11, fontWeight: "bold" },
+  apkStatusText: { fontSize: 13, textAlign: "center" },
+  apkBtnRow: { flexDirection: "row", gap: 10 },
+  apkBtn: { flex: 1, height: 48, borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  apkBtnText: { fontSize: 14, fontWeight: "bold" },
+  logoutButton: { height: 52, borderRadius: 12, borderWidth: 1.5, justifyContent: "center", alignItems: "center", marginTop: 8 },
+  logoutButtonText: { fontSize: 16, fontWeight: "bold" },
+  footer: { alignItems: "center", marginTop: 10 },
+  footerText: { fontSize: 12 },
 });
