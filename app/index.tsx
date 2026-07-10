@@ -1,19 +1,11 @@
-import React, { useEffect } from 'react';
-import { useRouter } from 'expo-router';
-import { View, ActivityIndicator } from 'react-native';
+import React from 'react';
+import { Redirect } from 'expo-router';
+import { useAuth } from './contexts/AuthContext';
 
 export default function Index() {
-  const router = useRouter();
+  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
+  const isAuthenticated = isAdmin || guestSession !== null || accessCodeValidated;
 
-  useEffect(() => {
-    // 🚀 앱이 켜지는 순간 히스토리를 청소하며 주소창을 /login 으로 밀어버립니다.
-    router.replace('/login');
-  }, []);
-
-  // 이동하기 아주 짧은 찰나의 순간에 보여줄 로딩 가림막
-  return (
-    <View className="flex-1 justify-center items-center bg-white">
-      <ActivityIndicator size="large" color="#2563eb" />
-    </View>
-  );
+  // 인증 상태에 따라 메인 탭 또는 로그인 화면으로 리다이렉트
+  return isAuthenticated ? <Redirect href="/(tabs)" /> : <Redirect href="/login" />;
 }
