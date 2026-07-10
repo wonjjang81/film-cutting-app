@@ -54,9 +54,19 @@ export default function LoginScreen() {
 
     try {
       // 🚀 [GitHub DB 조회]: 정적 JSON 파일을 가져와서 실시간 검증
-      const response = await fetch(`${GITHUB_DB_URL}?t=${Date.now()}`);
+      // 캐시 우회를 위해 타임스탬프와 Cache-Control 헤더 병행
+      const response = await fetch(`${GITHUB_DB_URL}?t=${Date.now()}`, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
       
-      if (!response.ok) throw new Error('데이터베이스 연결 실패');
+      if (response.status === 404) {
+        throw new Error('데이터베이스 파일을 찾을 수 없습니다. 관리자에게 문의하세요.');
+      }
+
+      if (!response.ok) throw new Error(`데이터베이스 연결 실패 (상태코드: ${response.status})`);
       
       const activeCodes: string[] = await response.json();
       console.log('Active Guest Codes:', activeCodes);
@@ -70,7 +80,7 @@ export default function LoginScreen() {
       } else {
         Alert.alert('인증 실패', `올바르지 않거나 만료된 승인코드입니다. (입력: ${inputCode})`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Guest Login Error:', error);
       // 오프라인/에러 대비 마스터 코드 예외 처리
       if (inputCode === "GUEST1220") {
@@ -78,7 +88,7 @@ export default function LoginScreen() {
         await AsyncStorage.setItem('user_role', 'GUEST');
         router.replace('/(tabs)/input');
       } else {
-        Alert.alert('인증 오류', '데이터베이스 연결에 실패했습니다. 마스터 코드를 사용하거나 잠시 후 다시 시도해 주세요.');
+        Alert.alert('인증 오류', error.message || '데이터베이스 연결에 실패했습니다. 마스터 코드를 사용하거나 잠시 후 다시 시도해 주세요.');
       }
     } finally {
       setIsLoading(false);

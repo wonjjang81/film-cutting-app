@@ -45,7 +45,8 @@ export default function AdminDashboard() {
         headers: { 
           'Authorization': `Bearer ${GITHUB_TOKEN}`,
           'Accept': 'application/vnd.github.v3+json',
-          'Cache-Control': 'no-cache'
+          'Cache-Control': 'no-cache',
+          'User-Agent': 'Expo-App-Client'
         }
       });
       
@@ -81,7 +82,8 @@ export default function AdminDashboard() {
         headers: {
           'Authorization': `Bearer ${GITHUB_TOKEN}`,
           'Content-Type': 'application/json',
-          'Accept': 'application/vnd.github.v3+json'
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'Expo-App-Client'
         },
         body: JSON.stringify({
           message: `chore: 관리자 게스트 코드 발급 (${newCode})`,
