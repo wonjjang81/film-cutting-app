@@ -21,6 +21,7 @@ import { useColors } from "@/hooks/use-colors";
 import { SavedProject, useFilm } from "@/lib/filmContext";
 import { formatNumber } from "@/lib/filmCutting";
 import { exportProjectAsFile, exportAllProjectsAsFile, importProjectFromFile, importMultipleProjectsFromFile, extractProjectInfo } from "@/lib/projectExport";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 // ─── 날짜 포맷 ───────────────────────────────────────────────
 
@@ -81,35 +82,23 @@ function ProjectCard({ project, colors, onLoad, onDelete }: ProjectCardProps) {
 export default function HomeScreen() {
   const colors = useColors();
   const { state, dispatch, saveCurrentProject, loadProject, deleteProject, startNewProject } = useFilm();
+  const { isAdmin, guestSession, accessCodeValidated, isLoading: authLoading } = useAuth();
+  
   const [isSaving, setIsSaving] = useState(false);
   const [nameModalVisible, setNameModalVisible] = useState(false);
   const [nameText, setNameText] = useState(state.projectName);
   const [loadConfirmProject, setLoadConfirmProject] = useState<SavedProject | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
-
-  // 인증 상태 확인
-  useEffect(() => {
-    const checkAuth = () => {
-      if (typeof localStorage !== 'undefined') {
-        const adminStatus = localStorage.getItem("isAdmin") === "true";
-        const guestSession = localStorage.getItem("guestSession");
-        const accessCodeValidated = localStorage.getItem("accessCodeValidated") === "true";
-        setIsLoggedIn(adminStatus || guestSession !== null || accessCodeValidated);
-      } else {
-        setIsLoggedIn(false);
-      }
-    };
-    checkAuth();
-  }, []);
+  
+  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
 
   // 로그인이 안 되어 있다면 로그인 페이지로 리다이렉트
-  if (isLoggedIn === false) {
-    return <Redirect href="/login" />;
+  if (!authLoading && !isLoggedIn) {
+    return <Redirect href="/(tabs)/login" />;
   }
 
-  if (isLoggedIn === null || state.isLoading) {
+  if (authLoading || state.isLoading) {
     return (
       <ScreenContainer>
         <View style={styles.center}>
@@ -359,59 +348,49 @@ export default function HomeScreen() {
               <Text style={[styles.emptyText, { color: colors.muted }]}>저장된 프로젝트가 없습니다.</Text>
             </View>
           ) : (
-            state.savedProjects
-              .sort((a, b) => b.savedAt - a.savedAt)
-              .map((p) => (
-                <ProjectCard
-                  key={p.id}
-                  project={p}
-                  colors={colors}
-                  onLoad={() => handleLoadConfirm(p)}
-                  onDelete={() => handleDelete(p)}
-                />
-              ))
+            <View style={styles.projectList}>
+              {state.savedProjects
+                .sort((a, b) => b.savedAt - a.savedAt)
+                .map((p) => (
+                  <ProjectCard
+                    key={p.id}
+                    project={p}
+                    colors={colors}
+                    onLoad={() => handleLoadConfirm(p)}
+                    onDelete={() => handleDelete(p)}
+                  />
+                ))}
+            </View>
           )}
         </View>
 
-        {/* 전체 내보내기 버튼 */}
-        {state.savedProjects.length > 0 && (
-          <TouchableOpacity
-            style={[styles.exportAllBtn, { borderColor: colors.primary }]}
-            onPress={async () => {
-              try {
-                await exportAllProjectsAsFile(state.savedProjects);
-                if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              } catch (error) {
-                Alert.alert("내보내기 실패", "전체 데이터를 내보낼 수 없습니다.");
-              }
-            }}
-          >
-            <Text style={[styles.exportAllBtnText, { color: colors.primary }]}>📦  전체 데이터 백업 (JSON)</Text>
-          </TouchableOpacity>
-        )}
+        {/* ── 푸터 ── */}
+        <View style={styles.footer}>
+          <Text style={[styles.footerText, { color: colors.muted }]}>
+            © 2026 Film Cutting App
+          </Text>
+        </View>
 
-        <View style={{ height: 40 }} />
       </ScrollView>
 
       {/* 프로젝트명 수정 모달 */}
       <Modal visible={nameModalVisible} transparent animationType="fade">
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: colors.surface }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>프로젝트 이름 변경</Text>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>프로젝트명 수정</Text>
             <TextInput
               style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
               value={nameText}
               onChangeText={setNameText}
-              placeholder="프로젝트 이름을 입력하세요"
-              placeholderTextColor={colors.muted}
               autoFocus
+              selectTextOnFocus
             />
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalBtn} onPress={() => setNameModalVisible(false)}>
-                <Text style={{ color: colors.muted }}>취소</Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.background }]} onPress={() => setNameModalVisible(false)}>
+                <Text style={{ color: colors.foreground }}>취소</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnPrimary, { backgroundColor: colors.primary }]} onPress={handleNameConfirm}>
-                <Text style={{ color: "white", fontWeight: "bold" }}>변경</Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.primary }]} onPress={handleNameConfirm}>
+                <Text style={{ color: "white", fontWeight: "bold" }}>확인</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -425,14 +404,14 @@ export default function HomeScreen() {
             <Text style={[styles.modalTitle, { color: colors.foreground }]}>프로젝트 불러오기</Text>
             <Text style={[styles.modalDesc, { color: colors.muted }]}>
               "{loadConfirmProject?.name}"을(를) 불러오시겠습니까?{"\n"}
-              현재 작업 중인 내용은 사라집니다.
+              현재 작업 중인 내용은 초기화됩니다.
             </Text>
             <View style={styles.modalButtons}>
-              <TouchableOpacity style={styles.modalBtn} onPress={() => setLoadConfirmProject(null)}>
-                <Text style={{ color: colors.muted }}>취소</Text>
+              <TouchableOpacity style={[styles.modalBtn, { backgroundColor: colors.background }]} onPress={() => setLoadConfirmProject(null)}>
+                <Text style={{ color: colors.foreground }}>취소</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.modalBtn, styles.modalBtnPrimary, { backgroundColor: colors.primary }]}
+                style={[styles.modalBtn, { backgroundColor: colors.primary }]}
                 onPress={() => {
                   if (loadConfirmProject) {
                     loadProject(loadConfirmProject);
@@ -447,55 +426,56 @@ export default function HomeScreen() {
           </View>
         </View>
       </Modal>
+
     </ScreenContainer>
   );
 }
 
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: { paddingTop: 60, paddingBottom: 25, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
-  headerTitle: { fontSize: 24, fontWeight: "bold", color: "white", marginBottom: 4 },
+  header: { paddingTop: 60, paddingBottom: 24, paddingHorizontal: 20, borderBottomLeftRadius: 24, borderBottomRightRadius: 24 },
+  headerTitle: { fontSize: 24, fontWeight: "800", color: "white", marginBottom: 4 },
   headerSub: { fontSize: 13, fontWeight: "500" },
-  scrollContent: { padding: 20 },
-  section: { borderRadius: 20, padding: 18, marginBottom: 20, borderWidth: 1 },
-  sectionLabel: { fontSize: 12, fontWeight: "bold", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 },
-  projectNameRowContainer: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
-  projectNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 14, paddingVertical: 12, borderRadius: 12, borderWidth: 1 },
-  projectNameText: { fontSize: 17, fontWeight: "bold" },
+  scrollContent: { padding: 16, paddingBottom: 40 },
+  section: { borderRadius: 20, padding: 16, marginBottom: 16, borderWidth: 1, ...Platform.select({ ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 }, android: { elevation: 2 } }) },
+  sectionLabel: { fontSize: 12, fontWeight: "700", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.5 },
+  projectNameRowContainer: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  projectNameRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, borderWidth: 1 },
+  projectNameText: { fontSize: 17, fontWeight: "700" },
   projectNameEdit: { fontSize: 12, fontWeight: "600" },
   newProjectBtnCompact: { width: 44, height: 44, borderRadius: 12, justifyContent: "center", alignItems: "center" },
-  newProjectBtnCompactText: { color: "white", fontSize: 22, fontWeight: "bold" },
-  summaryRow: { flexDirection: "row", marginBottom: 18, flexWrap: "wrap", gap: 8 },
-  summaryChip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20 },
-  summaryChipText: { fontSize: 12, fontWeight: "bold" },
-  actionRow: { marginBottom: 12 },
-  actionBtn: { height: 50, borderRadius: 12, justifyContent: "center", alignItems: "center", shadowOpacity: 0.2, shadowRadius: 4, elevation: 3 },
-  actionBtnText: { color: "white", fontSize: 16, fontWeight: "bold" },
+  newProjectBtnCompactText: { color: "white", fontSize: 22, fontWeight: "300" },
+  summaryRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 },
+  summaryChip: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8 },
+  summaryChipText: { fontSize: 12, fontWeight: "600" },
+  actionRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  actionBtn: { flex: 1, height: 48, borderRadius: 12, justifyContent: "center", alignItems: "center", flexDirection: "row" },
+  actionBtnText: { color: "white", fontSize: 15, fontWeight: "700" },
   exportImportRow: { flexDirection: "row", gap: 10 },
-  exportImportBtn: { flex: 1, height: 44, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
-  exportImportBtnText: { fontSize: 13, fontWeight: "bold" },
+  exportImportBtn: { flex: 1, height: 40, borderRadius: 10, justifyContent: "center", alignItems: "center", borderWidth: 1 },
+  exportImportBtnText: { fontSize: 13, fontWeight: "600" },
   quickNav: { gap: 10 },
-  quickNavBtn: { padding: 15, borderRadius: 14, borderWidth: 1 },
-  quickNavLabel: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
+  quickNavBtn: { padding: 14, borderRadius: 14, borderWidth: 1, flexDirection: "column", gap: 4 },
+  quickNavLabel: { fontSize: 15, fontWeight: "700" },
   quickNavDesc: { fontSize: 12 },
-  projectCard: { flexDirection: "row", borderRadius: 14, marginBottom: 10, borderWidth: 1, overflow: "hidden" },
+  projectList: { gap: 10 },
+  projectCard: { borderRadius: 14, borderWidth: 1, flexDirection: "row", overflow: "hidden" },
   projectCardMain: { flex: 1, padding: 14 },
   projectCardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 },
-  projectCardName: { fontSize: 15, fontWeight: "bold", flex: 1, marginRight: 10 },
+  projectCardName: { fontSize: 15, fontWeight: "700", flex: 1, marginRight: 8 },
   projectCardDate: { fontSize: 11 },
   projectCardMeta: { gap: 2 },
   projectCardMetaText: { fontSize: 12 },
-  projectDeleteBtn: { width: 50, justifyContent: "center", alignItems: "center", borderLeftWidth: 1 },
+  projectDeleteBtn: { width: 48, justifyContent: "center", alignItems: "center", borderLeftWidth: 1 },
   emptyContainer: { paddingVertical: 30, alignItems: "center" },
   emptyText: { fontSize: 14 },
-  exportAllBtn: { marginTop: 10, padding: 15, borderRadius: 14, borderStyle: "dashed", borderWidth: 1, alignItems: "center" },
-  exportAllBtnText: { fontSize: 14, fontWeight: "600" },
+  footer: { marginTop: 20, alignItems: "center", paddingBottom: 20 },
+  footerText: { fontSize: 12 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 20 },
-  modalContent: { width: "100%", maxWidth: 340, borderRadius: 20, padding: 24 },
-  modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 16, textAlign: "center" },
-  modalDesc: { fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 },
-  modalInput: { height: 50, borderWidth: 1, borderRadius: 10, paddingHorizontal: 15, marginBottom: 20, fontSize: 16 },
+  modalContent: { width: "100%", maxWidth: 340, borderRadius: 20, padding: 20 },
+  modalTitle: { fontSize: 18, fontWeight: "700", marginBottom: 16 },
+  modalDesc: { fontSize: 14, lineHeight: 20, marginBottom: 20 },
+  modalInput: { borderWidth: 1, borderRadius: 10, padding: 12, fontSize: 16, marginBottom: 20 },
   modalButtons: { flexDirection: "row", gap: 10 },
-  modalBtn: { flex: 1, height: 46, borderRadius: 10, justifyContent: "center", alignItems: "center" },
-  modalBtnPrimary: { shadowOpacity: 0.1, shadowRadius: 4, elevation: 2 },
+  modalBtn: { flex: 1, height: 44, borderRadius: 10, justifyContent: "center", alignItems: "center" },
 });

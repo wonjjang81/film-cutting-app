@@ -15,7 +15,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   error: string | null;
-  validateAccessCode: (code: string) => Promise<void>;
+  validateAccessCode: (code: string) => Promise<boolean>;
   loginAsGuest: (durationMinutes: number) => Promise<void>;
   loginAsAdmin: (password: string) => boolean;
   logout: () => void;
@@ -78,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const validateAccessCode = async (code: string) => {
+  const validateAccessCode = async (code: string): Promise<boolean> => {
     setIsLoading(true);
     setError(null);
 
@@ -104,13 +104,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.result.data.valid) {
         setAccessCodeValidated(true);
         if (typeof localStorage !== 'undefined') localStorage.setItem("accessCodeValidated", "true");
+        return true;
       } else {
         setError(data.result.data.message || "접속코드 검증 실패");
+        return false;
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Unknown error";
       setError(errorMessage);
       console.error("Access code validation error:", err);
+      return false;
     } finally {
       setIsLoading(false);
     }

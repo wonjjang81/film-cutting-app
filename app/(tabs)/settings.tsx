@@ -211,7 +211,7 @@ export default function SettingsScreen() {
       guestLogout();
       await authLogout();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      router.replace("/(tabs)/login");
+      router.replace("/(tabs)/index");
     };
 
     if (Platform.OS === "web") {

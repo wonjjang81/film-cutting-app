@@ -1,21 +1,19 @@
 import { Tabs } from "expo-router";
 import React, { useState, useEffect } from "react";
+import { useAuth } from "@/app/contexts/AuthContext";
 
 export default function TabLayout() {
-  // 초기 상태를 즉시 계산 (SSR 및 초기 렌더링 지연 방지)
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
+  const [isClient, setIsClient] = useState(false);
 
   useEffect(() => {
-    if (typeof localStorage !== 'undefined') {
-      const adminStatus = localStorage.getItem("isAdmin") === "true";
-      const loggedInStatus = adminStatus || 
-                             localStorage.getItem("guestSession") !== null || 
-                             localStorage.getItem("accessCodeValidated") === "true";
-      setIsAdmin(adminStatus);
-      setIsLoggedIn(loggedInStatus);
-    }
+    setIsClient(true);
   }, []);
+
+  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
+
+  // 클라이언트 사이드 렌더링 대기 (하이드레이션 오류 방지)
+  if (!isClient) return null;
 
   return (
     <Tabs
@@ -40,11 +38,41 @@ export default function TabLayout() {
           href: isLoggedIn ? "/index" : null,
         }}
       />
-      <Tabs.Screen name="input" options={{ title: "입력", href: isLoggedIn ? "/input" : null }} />
-      <Tabs.Screen name="cutting" options={{ title: "재단", href: isLoggedIn ? "/cutting" : null }} />
-      <Tabs.Screen name="estimate" options={{ title: "견적", href: isLoggedIn ? "/estimate" : null }} />
-      <Tabs.Screen name="settings" options={{ title: "설정", href: isLoggedIn ? "/settings" : null }} />
-      <Tabs.Screen name="admin" options={{ title: "관리자", href: isAdmin ? "/admin" : null }} />
+      <Tabs.Screen 
+        name="input" 
+        options={{ 
+          title: "입력", 
+          href: isLoggedIn ? "/input" : null 
+        }} 
+      />
+      <Tabs.Screen 
+        name="cutting" 
+        options={{ 
+          title: "재단", 
+          href: isLoggedIn ? "/cutting" : null 
+        }} 
+      />
+      <Tabs.Screen 
+        name="estimate" 
+        options={{ 
+          title: "견적", 
+          href: isLoggedIn ? "/estimate" : null 
+        }} 
+      />
+      <Tabs.Screen 
+        name="settings" 
+        options={{ 
+          title: "설정", 
+          href: isLoggedIn ? "/settings" : null 
+        }} 
+      />
+      <Tabs.Screen 
+        name="admin" 
+        options={{ 
+          title: "관리자", 
+          href: isAdmin ? "/admin" : null 
+        }} 
+      />
       <Tabs.Screen name="guide" options={{ href: null }} />
     </Tabs>
   );

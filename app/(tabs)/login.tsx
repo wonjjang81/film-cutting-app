@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,29 +8,44 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
+import { useAuth } from "@/app/contexts/AuthContext";
+import { router } from "expo-router";
 
 export default function LoginScreen() {
   const [code, setCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const { loginAsAdmin, validateAccessCode, isAdmin, guestSession, accessCodeValidated, error } = useAuth();
+
+  const isLoggedIn = isAdmin || guestSession !== null || accessCodeValidated;
+
+  // 이미 로그인된 상태라면 입력 탭으로 이동
+  useEffect(() => {
+    if (isLoggedIn) {
+      router.replace("/(tabs)/input");
+    }
+  }, [isLoggedIn]);
 
   const handleLogin = async () => {
-    if (!code.trim()) return;
+    const trimmedCode = code.trim();
+    if (!trimmedCode) return;
     
     setIsLoading(true);
     
-    // 로컬 스토리지에 상태 저장 및 페이지 강제 이동
-    if (typeof localStorage !== 'undefined') {
-      if (code === "won81") {
-        localStorage.setItem("isAdmin", "true");
+    try {
+      if (trimmedCode === "won81") {
+        loginAsAdmin(trimmedCode);
+        // useEffect가 이동을 처리함
+      } else {
+        const success = await validateAccessCode(trimmedCode);
+        if (!success) {
+          Alert.alert("인증 실패", error || "접속코드가 올바르지 않습니다.");
+        }
+        // 성공 시 useEffect가 이동을 처리함
       }
-      localStorage.setItem("accessCodeValidated", "true");
-      
+    } catch (err) {
+      Alert.alert("오류", "로그인 중 문제가 발생했습니다.");
+    } finally {
       setIsLoading(false);
-      // GitHub Pages 서브 디렉토리 경로 고려
-      window.location.href = "/film-cutting-app/index";
-    } else {
-      setIsLoading(false);
-      Alert.alert("오류", "브라우저 환경이 아닙니다.");
     }
   };
 
