@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Alert, Share, TextInput } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // 인터페이스 정의
 interface PendingUser {
@@ -62,7 +63,22 @@ export default function AdminDashboard() {
   const [generatedCodes, setGeneratedCodes] = useState<GuestCodeInfo[]>([]);
   const [expiryHours, setExpiryHours] = useState('24');
 
-  const generateRandomGuestCode = () => {
+  // 컴포넌트 마운트 시 저장된 코드 불러오기
+  useEffect(() => {
+    const loadSavedCodes = async () => {
+      try {
+        const savedCodesJson = await AsyncStorage.getItem('active_guest_codes_full');
+        if (savedCodesJson) {
+          setGeneratedCodes(JSON.parse(savedCodesJson));
+        }
+      } catch (e) {
+        console.error("코드 불러오기 실패", e);
+      }
+    };
+    loadSavedCodes();
+  }, []);
+
+  const generateRandomGuestCode = async () => {
     const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
     let randomCode = 'GUEST-';
     for (let i = 0; i < 6; i++) {
@@ -71,11 +87,24 @@ export default function AdminDashboard() {
     const now = new Date();
     const formattedDate = `${now.getMonth() + 1}/${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`;
 
-    setGeneratedCodes([{
+    const newCodeInfo = {
       code: randomCode,
       createdAt: formattedDate,
       expiresIn: `${expiryHours}시간`
-    }, ...generatedCodes]);
+    };
+
+    const updatedCodes = [newCodeInfo, ...generatedCodes];
+    setGeneratedCodes(updatedCodes);
+
+    try {
+      // 🚀 [핵심 추가] 생성된 코드 목록을 로컬 저장소에 동기화
+      const codeStrings = updatedCodes.map(item => item.code);
+      await AsyncStorage.setItem('active_guest_codes', JSON.stringify(codeStrings));
+      await AsyncStorage.setItem('active_guest_codes_full', JSON.stringify(updatedCodes));
+    } catch (e) {
+      console.error("코드 동기화 실패", e);
+    }
+
     Alert.alert('생성 완료', `게스트 코드가 발급되었습니다: ${randomCode}`);
   };
 
@@ -90,6 +119,12 @@ export default function AdminDashboard() {
     } catch (e) { console.log(e); }
   };
 
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem('user_authenticated');
+    await AsyncStorage.removeItem('user_role');
+    router.replace('/login');
+  };
+
   return (
     <View className="flex-1 bg-gray-50">
       {/* 고정 헤더 */}
@@ -101,7 +136,7 @@ export default function AdminDashboard() {
           </View>
           <TouchableOpacity 
             className="bg-slate-700 px-3 py-1.5 rounded-lg"
-            onPress={() => router.replace('/login')}
+            onPress={handleLogout}
           >
             <Text className="text-white text-xs font-semibold">로그아웃</Text>
           </TouchableOpacity>

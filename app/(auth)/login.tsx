@@ -4,9 +4,6 @@ import { useRouter } from 'expo-router';
 import { useAuth } from '../contexts/AuthContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 🔒 기본 임시 게스트 승인코드 설정 (비상용)
-const DEFAULT_GUEST_CODE = "GUEST1220"; 
-
 export default function LoginScreen() {
   const router = useRouter();
   const { loginAsAdmin } = useAuth();
@@ -24,7 +21,7 @@ export default function LoginScreen() {
 
     // 🛡️ [관리자 로그인 프리패스 체크]
     if (email.trim() === 'wizhou' && password === '203302') {
-      const success = loginAsAdmin('won81'); // AuthContext의 관리자 비번won81로 내부 인증
+      const success = loginAsAdmin('won81'); 
       if (success) {
         await AsyncStorage.setItem('user_authenticated', 'true');
         await AsyncStorage.setItem('user_role', 'ADMIN');
@@ -48,7 +45,7 @@ export default function LoginScreen() {
     }
   };
 
-  // 2. 임시 게스트 사용승인코드 검증 로직 (자동 생성 코드 연동)
+  // 2. 임시 게스트 사용승인코드 검증 로직 (실시간 동기화)
   const handleGuestLogin = async () => {
     if (!guestCode) {
       Alert.alert('오류', '게스트 사용승인코드를 입력해주세요.');
@@ -57,24 +54,24 @@ export default function LoginScreen() {
 
     const inputCode = guestCode.trim().toUpperCase();
 
-    try {
-      // 1. 관리자가 생성한 코드 목록 확인 (현재는 메모리 기반이므로 로컬 스토리지 등에 저장된 정보가 필요함)
-      // 실제 구현에서는 서버 DB나 공용 저장소가 필요하지만, 현재 구조에서는 관리자가 발급한 코드를 
-      // 로컬 스토리지에 저장하여 공유하는 방식으로 임시 구현하거나 기본 코드를 활용합니다.
-      
-      // 우선 기본 코드 체크
-      if (inputCode === DEFAULT_GUEST_CODE) {
-        await AsyncStorage.setItem('user_authenticated', 'true');
-        await AsyncStorage.setItem('user_role', 'GUEST');
-        Alert.alert('인증 성공', '게스트 모드로 임시 진입합니다.');
-        router.replace('/(tabs)/input');
-        return;
-      }
+    // 🔒 비상용 마스터 고정 코드
+    const MASTER_GUEST_CODE = "GUEST1220";
 
-      // 2. 관리자가 발급한 동적 코드 체크 (관리자 화면에서 발급 시 저장된 코드가 있다고 가정)
-      // 현재는 서버가 없으므로 'GUEST-'로 시작하는 6자리 랜덤 코드를 모두 허용하거나 
-      // 특정 규칙을 가진 코드를 통과시키는 방식으로 유연하게 처리합니다.
-      if (inputCode.startsWith('GUEST-') && inputCode.length === 12) {
+    if (inputCode === MASTER_GUEST_CODE) {
+      await AsyncStorage.setItem('user_authenticated', 'true');
+      await AsyncStorage.setItem('user_role', 'GUEST');
+      Alert.alert('인증 성공', '마스터 게스트 모드로 임시 진입합니다.');
+      router.replace('/(tabs)/input');
+      return;
+    }
+
+    try {
+      // 🚀 [핵심 추가] 관리자가 대시보드에서 자동 생성해 둔 코드 리스트를 불러옵니다.
+      const savedCodesJson = await AsyncStorage.getItem('active_guest_codes');
+      const activeCodes: string[] = savedCodesJson ? JSON.parse(savedCodesJson) : [];
+
+      // 🎯 입력한 코드가 발급된 리스트에 존재하는지 검사
+      if (activeCodes.includes(inputCode)) {
         await AsyncStorage.setItem('user_authenticated', 'true');
         await AsyncStorage.setItem('user_role', 'GUEST');
         Alert.alert('인증 성공', '발급된 게스트 코드로 접속되었습니다.');
