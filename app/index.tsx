@@ -1,11 +1,10 @@
 import React from 'react';
 import { Redirect } from 'expo-router';
-import { useAuth } from './contexts/AuthContext';
 
+/**
+ * 앱의 최상위 진입점입니다.
+ * 첫 실행 시 즉시 로그인 페이지(/login)로 사용자를 보냅니다.
+ */
 export default function Index() {
-  const { isAdmin, guestSession, accessCodeValidated } = useAuth();
-  const isAuthenticated = isAdmin || guestSession !== null || accessCodeValidated;
-
-  // 인증 상태에 따라 메인 탭 또는 로그인 화면으로 리다이렉트
-  return isAuthenticated ? <Redirect href="/(tabs)" /> : <Redirect href="/login" />;
+  return <Redirect href="/login" />;
 }
