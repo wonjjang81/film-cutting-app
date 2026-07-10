@@ -19,19 +19,26 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          // 입력 탭이 첫 화면이므로 탭 바는 항상 보여주되, 
-          // 비로그인 시에는 '입력' 탭 외의 다른 탭을 숨깁니다.
           display: 'flex',
         },
       }}
     >
-      {/* 입력 탭: 항상 노출 */}
+      {/* 입력 탭: 첫 화면 (사용자 요청에 따라 첫 번째 배치) */}
       <Tabs.Screen 
         name="input" 
         options={{ 
           title: "입력", 
           href: "/input" 
         }} 
+      />
+      
+      {/* 홈 탭: 프로젝트 관리 (복구됨) */}
+      <Tabs.Screen
+        name="index"
+        options={{
+          title: "관리",
+          href: isLoggedIn ? "/index" : null,
+        }}
       />
       
       {/* 나머지 탭: 로그인 시에만 노출 */}
@@ -65,7 +72,6 @@ export default function TabLayout() {
       />
 
       {/* 숨겨진 탭들 */}
-      <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen name="login" options={{ href: null }} />
       <Tabs.Screen name="guide" options={{ href: null }} />
     </Tabs>
