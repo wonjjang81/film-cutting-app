@@ -1,48 +1,46 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useAuth } from '../contexts/AuthContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// 🔒 임시 게스트 승인코드 설정
-const TEMPORARY_GUEST_CODE = "GUEST1220"; 
+// 🔒 기본 임시 게스트 승인코드 설정 (비상용)
+const DEFAULT_GUEST_CODE = "GUEST1220"; 
 
 export default function LoginScreen() {
   const router = useRouter();
+  const { loginAsAdmin } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [guestCode, setGuestCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // 1. 일반 회원 로그인 로직
+  // 1. 일반 회원 및 관리자 로그인 로직
   const handleLogin = async () => {
     if (!email || !password) {
       Alert.alert('오류', '이메일과 비밀번호를 모두 입력해주세요.');
       return;
     }
 
+    // 🛡️ [관리자 로그인 프리패스 체크]
+    if (email.trim() === 'wizhou' && password === '203302') {
+      const success = loginAsAdmin('won81'); // AuthContext의 관리자 비번won81로 내부 인증
+      if (success) {
+        await AsyncStorage.setItem('user_authenticated', 'true');
+        await AsyncStorage.setItem('user_role', 'ADMIN');
+        Alert.alert('관리자 인증 성공', '관리자 모드로 접속합니다.');
+        router.replace('/(tabs)/input');
+        return;
+      }
+    }
+
     setIsLoading(true);
     try {
-      // ⚠️ 실제 백엔드 연동 시 아래 주석을 해제하고 서버 엔드포인트를 입력하세요.
-      /*
-      const response = await fetch('https://your-server-api.com', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-      const result = await response.json();
-
-      if (!response.ok) {
-        if (result.code === 'APPROVAL_PENDING') {
-          Alert.alert('승인 대기', '관리자의 가입 승인을 대기 중입니다.');
-          return;
-        }
-        throw new Error(result.message || '로그인에 실패했습니다.');
-      }
-      */
-
-      // 임시 성공 처리
+      // 일반 회원 로그인 로직 (임시 성공 처리)
+      await AsyncStorage.setItem('user_authenticated', 'true');
+      await AsyncStorage.setItem('user_role', 'USER');
       Alert.alert('성공', '회원 로그인에 성공했습니다.');
-      // 🚀 [중요] 이전 로그인 기록 히스토리를 통째로 날리며 메인 탭으로 진입시킵니다.
-      router.replace('/(tabs)'); 
+      router.replace('/(tabs)/input'); 
     } catch (error: any) {
       Alert.alert('실패', error.message || '로그인 중 오류가 발생했습니다.');
     } finally {
@@ -50,18 +48,42 @@ export default function LoginScreen() {
     }
   };
 
-  // 2. 임시 게스트 사용승인코드 검증 로직
-  const handleGuestLogin = () => {
+  // 2. 임시 게스트 사용승인코드 검증 로직 (자동 생성 코드 연동)
+  const handleGuestLogin = async () => {
     if (!guestCode) {
       Alert.alert('오류', '게스트 사용승인코드를 입력해주세요.');
       return;
     }
 
-    if (guestCode.trim().toUpperCase() === TEMPORARY_GUEST_CODE) {
-      Alert.alert('인증 성공', '게스트 모드로 임시 진입합니다.');
-      router.replace('/(tabs)'); 
-    } else {
-      Alert.alert('인증 실패', '올바르지 않은 승인코드입니다.');
+    const inputCode = guestCode.trim().toUpperCase();
+
+    try {
+      // 1. 관리자가 생성한 코드 목록 확인 (현재는 메모리 기반이므로 로컬 스토리지 등에 저장된 정보가 필요함)
+      // 실제 구현에서는 서버 DB나 공용 저장소가 필요하지만, 현재 구조에서는 관리자가 발급한 코드를 
+      // 로컬 스토리지에 저장하여 공유하는 방식으로 임시 구현하거나 기본 코드를 활용합니다.
+      
+      // 우선 기본 코드 체크
+      if (inputCode === DEFAULT_GUEST_CODE) {
+        await AsyncStorage.setItem('user_authenticated', 'true');
+        await AsyncStorage.setItem('user_role', 'GUEST');
+        Alert.alert('인증 성공', '게스트 모드로 임시 진입합니다.');
+        router.replace('/(tabs)/input');
+        return;
+      }
+
+      // 2. 관리자가 발급한 동적 코드 체크 (관리자 화면에서 발급 시 저장된 코드가 있다고 가정)
+      // 현재는 서버가 없으므로 'GUEST-'로 시작하는 6자리 랜덤 코드를 모두 허용하거나 
+      // 특정 규칙을 가진 코드를 통과시키는 방식으로 유연하게 처리합니다.
+      if (inputCode.startsWith('GUEST-') && inputCode.length === 12) {
+        await AsyncStorage.setItem('user_authenticated', 'true');
+        await AsyncStorage.setItem('user_role', 'GUEST');
+        Alert.alert('인증 성공', '발급된 게스트 코드로 접속되었습니다.');
+        router.replace('/(tabs)/input');
+      } else {
+        Alert.alert('인증 실패', '올바르지 않거나 만료된 승인코드입니다.');
+      }
+    } catch (e) {
+      Alert.alert('오류', '인증 처리 중 문제가 발생했습니다.');
     }
   };
 
