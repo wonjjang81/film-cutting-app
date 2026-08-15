@@ -1,5 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import { ContinuousRollLayoutValidationError, getContinuousRollCandidateCount, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
+import { ContinuousRollInput, ContinuousRollLayoutValidationError, getContinuousRollCandidateCount, getContinuousRollPlanningMetrics, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
+
+type OraclePattern = { key: string; capacity: number; height: number; rotations: number };
+type OracleState = { quantity: number; height: number; rotations: number; kinds: string[] };
+
+function exhaustiveObjective(input: ContinuousRollInput): [number, number, number, number, number] {
+  const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
+  const countIn = (size: number) => Math.floor((usableWidth + input.gapMm) / (size + input.gapMm));
+  const patterns: OraclePattern[] = [];
+  const add = (key: string, capacity: number, height: number, rotations: number) => patterns.push({ key, capacity, height, rotations });
+  const normalColumns = countIn(input.pieceWidthMm);
+  const rotatedColumns = input.allowRotation ? countIn(input.pieceLengthMm) : 0;
+  for (let count = 1; count <= normalColumns; count += 1) add(`n${count}`, count, input.pieceLengthMm, 0);
+  for (let count = 1; count <= rotatedColumns; count += 1) add(`r${count}`, count, input.pieceWidthMm, count);
+  for (let normalRows = 1; normalRows <= input.quantity; normalRows += 1) for (let rotatedRows = 1; rotatedRows <= input.quantity; rotatedRows += 1) {
+    const capacity = normalRows + rotatedRows;
+    if (input.allowRotation && normalColumns >= 1 && rotatedColumns >= 1 && capacity <= input.quantity && input.pieceWidthMm + input.gapMm + input.pieceLengthMm <= usableWidth) {
+      add(`v${normalRows}-${rotatedRows}`, capacity, Math.max(normalRows * input.pieceLengthMm + (normalRows - 1) * input.gapMm, rotatedRows * input.pieceWidthMm + (rotatedRows - 1) * input.gapMm), rotatedRows);
+    }
+  }
+  const states = Array.from({ length: input.quantity + 1 }, () => new Map<string, OracleState>());
+  states[0]!.set('', { quantity: 0, height: 0, rotations: 0, kinds: [] });
+  for (let quantity = 0; quantity <= input.quantity; quantity += 1) for (const state of states[quantity]!.values()) for (const pattern of patterns) {
+    const nextQuantity = quantity + pattern.capacity;
+    if (nextQuantity > input.quantity) continue;
+    const height = state.height + (state.quantity === 0 ? 0 : input.gapMm) + pattern.height;
+    const length = height + input.startEndMarginMm * 2;
+    if (input.maxLengthMm !== undefined && length > input.maxLengthMm) continue;
+    const kinds = state.kinds.includes(pattern.key) ? state.kinds : [...state.kinds, pattern.key].sort();
+    const key = kinds.join('|'); const current = states[nextQuantity]!.get(key);
+    const candidate = { quantity: nextQuantity, height, rotations: state.rotations + pattern.rotations, kinds };
+    if (!current || height < current.height || (height === current.height && candidate.rotations < current.rotations)) states[nextQuantity]!.set(key, candidate);
+  }
+  const all = [...states[input.quantity]!.values()];
+  const best = all.slice(1).reduce<OracleState>((current, state) => {
+    const tuple = (item: OracleState): [number, number, number, number, number] => {
+      const length = item.height + input.startEndMarginMm * 2;
+      return [length, input.quantity - item.quantity, input.rollWidthMm * length - item.quantity * input.pieceWidthMm * input.pieceLengthMm, item.rotations, item.kinds.length];
+    };
+    const candidateTuple = tuple(state); const currentTuple = tuple(current);
+    return candidateTuple.some((value, index) => value !== currentTuple[index]! && candidateTuple.slice(0, index).every((prior, priorIndex) => prior === currentTuple[priorIndex]!) && value < currentTuple[index]!) ? state : current;
+  }, all[0]!);
+  const length = best.height + input.startEndMarginMm * 2;
+  return [length, input.quantity - best.quantity, input.rollWidthMm * length - best.quantity * input.pieceWidthMm * input.pieceLengthMm, best.rotations, best.kinds.length];
+}
 
 describe('optimizeContinuousRollLayout', () => {
   it('uses no more than 80mm for three 60x40 pieces on a 100mm roll', () => {
@@ -171,5 +215,29 @@ describe('optimizeContinuousRollLayout', () => {
       rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 100_000,
       gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
     })).toBeLessThanOrEqual(100);
+  });
+
+  it.each([
+    { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 3, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 5, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 110, pieceWidthMm: 30, pieceLengthMm: 30, quantity: 4, gapMm: 5, sideMarginMm: 5, startEndMarginMm: 7, allowRotation: false },
+  ] satisfies ContinuousRollInput[])('matches the exhaustive objective oracle for %o', (input) => {
+    const result = optimizeContinuousRollLayout(input);
+    const actual: [number, number, number, number, number] = [
+      result.usedLengthMm,
+      result.overproduction,
+      input.rollWidthMm * result.usedLengthMm - result.producedQuantity * input.pieceWidthMm * input.pieceLengthMm,
+      result.rotatedCount,
+      new Set(result.rowSequence.map((row) => row.pattern)).size,
+    ];
+
+    expect(actual).toEqual(exhaustiveObjective(input));
+  });
+
+  it('uses a compressed plan with a bounded state count at quantity 100,000', () => {
+    expect(getContinuousRollPlanningMetrics({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 100_000,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    })).toMatchObject({ strategy: 'compressed', stateCount: 1 });
   });
 });

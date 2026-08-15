@@ -16,9 +16,7 @@ export class ContinuousRollLayoutValidationError extends Error {}
 type Pattern = Omit<RowPatternUsage, 'count'> & { placements: Omit<Placement, 'id'>[] };
 type State = { quantity: number; contentLengthMm: number; rotations: number; patternKinds: string[]; previous?: State; pattern?: Pattern };
 
-const MAX_GENERATED_PATTERNS = 96;
-const MAX_EXPLORED_STACK_ROWS = 8;
-const MAX_BALANCED_STACK_OFFSETS = 2;
+const COMPRESSED_QUANTITY_THRESHOLD = 2_000;
 
 function positive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) throw new ContinuousRollLayoutValidationError(`${name}은(는) 0보다 큰 숫자여야 합니다.`);
@@ -51,48 +49,37 @@ function generateRowPatterns(input: ContinuousRollInput): Pattern[] {
   const normalLimit = Math.min(countIn(usableWidth, input.pieceWidthMm, input.gapMm), input.quantity);
   const rotatedLimit = input.allowRotation ? Math.min(countIn(usableWidth, input.pieceLengthMm, input.gapMm), input.quantity) : 0;
   const patterns: Pattern[] = [];
-  const add = (pattern: Pattern): void => { if (patterns.length < MAX_GENERATED_PATTERNS) patterns.push(pattern); };
-  const rowNormalLimit = Math.min(normalLimit, MAX_EXPLORED_STACK_ROWS);
-  const rowRotatedLimit = Math.min(rotatedLimit, MAX_EXPLORED_STACK_ROWS);
-  for (let normalCount = 1; normalCount <= rowNormalLimit; normalCount += 1) {
-    add(makePattern(`row-${normalCount}-0`, Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
+  for (let normalCount = 1; normalCount <= normalLimit; normalCount += 1) {
+    patterns.push(makePattern(`row-${normalCount}-0`, Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
   }
-  if (normalLimit > rowNormalLimit) add(makePattern(`row-${normalLimit}-0`, Array.from({ length: normalLimit }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
-  for (let rotatedCount = 1; rotatedCount <= rowRotatedLimit; rotatedCount += 1) {
-    add(makePattern(`row-0-${rotatedCount}`, Array.from({ length: rotatedCount }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
+  for (let rotatedCount = 1; rotatedCount <= rotatedLimit; rotatedCount += 1) {
+    patterns.push(makePattern(`row-0-${rotatedCount}`, Array.from({ length: rotatedCount }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
   }
-  if (rotatedLimit > rowRotatedLimit) add(makePattern(`row-0-${rotatedLimit}`, Array.from({ length: rotatedLimit }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
-  for (let normalCount = 1; normalCount <= rowNormalLimit && patterns.length < MAX_GENERATED_PATTERNS; normalCount += 1) {
+  for (let normalCount = 1; normalCount <= normalLimit; normalCount += 1) {
     const normalWidth = extent(normalCount, input.pieceWidthMm, input.gapMm);
-    for (let rotatedCount = 1; rotatedCount <= rowRotatedLimit && patterns.length < MAX_GENERATED_PATTERNS; rotatedCount += 1) {
+    for (let rotatedCount = 1; rotatedCount <= rotatedLimit; rotatedCount += 1) {
       if (normalWidth + input.gapMm + extent(rotatedCount, input.pieceLengthMm, input.gapMm) > usableWidth) continue;
-      add(makePattern(`row-${normalCount}-${rotatedCount}`, [
+      patterns.push(makePattern(`row-${normalCount}-${rotatedCount}`, [
         ...Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })),
         ...Array.from({ length: rotatedCount }, (_, index) => ({ x: normalWidth + input.gapMm + index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })),
       ], Math.max(input.pieceLengthMm, input.pieceWidthMm)));
     }
   }
   if (input.allowRotation) {
-    for (let normalColumns = 1; normalColumns <= rowNormalLimit && patterns.length < MAX_GENERATED_PATTERNS; normalColumns += 1) {
+    for (let normalColumns = 1; normalColumns <= normalLimit; normalColumns += 1) {
       const normalWidth = extent(normalColumns, input.pieceWidthMm, input.gapMm);
-      for (let rotatedColumns = 1; rotatedColumns <= rowRotatedLimit && patterns.length < MAX_GENERATED_PATTERNS; rotatedColumns += 1) {
+      for (let rotatedColumns = 1; rotatedColumns <= rotatedLimit; rotatedColumns += 1) {
         if (normalWidth + input.gapMm + extent(rotatedColumns, input.pieceLengthMm, input.gapMm) > usableWidth) continue;
-        const idealNormalRows = Math.round(input.quantity * input.pieceWidthMm / (rotatedColumns * input.pieceLengthMm + normalColumns * input.pieceWidthMm));
-        const addVertical = (normalCount: number, rotatedCount: number): void => {
-          if (normalCount < 1 || rotatedCount < 1 || normalColumns * normalCount + rotatedColumns * rotatedCount > input.quantity) return;
+        const normalRows = Math.floor(input.quantity / normalColumns);
+        const rotatedRows = Math.floor(input.quantity / rotatedColumns);
+        for (let normalCount = 1; normalCount <= normalRows; normalCount += 1) for (let rotatedCount = 1; rotatedCount <= rotatedRows; rotatedCount += 1) {
+          if (normalColumns * normalCount + rotatedColumns * rotatedCount > input.quantity) continue;
           const normalHeight = extent(normalCount, input.pieceLengthMm, input.gapMm);
           const rotatedHeight = extent(rotatedCount, input.pieceWidthMm, input.gapMm);
-          add(makePattern(`vertical-${normalColumns}x${normalCount}-${rotatedColumns}x${rotatedCount}`, [
+          patterns.push(makePattern(`vertical-${normalColumns}x${normalCount}-${rotatedColumns}x${rotatedCount}`, [
             ...Array.from({ length: normalColumns * normalCount }, (_, index) => ({ x: (index % normalColumns) * (input.pieceWidthMm + input.gapMm), y: Math.floor(index / normalColumns) * (input.pieceLengthMm + input.gapMm), width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })),
             ...Array.from({ length: rotatedColumns * rotatedCount }, (_, index) => ({ x: normalWidth + input.gapMm + (index % rotatedColumns) * (input.pieceLengthMm + input.gapMm), y: Math.floor(index / rotatedColumns) * (input.pieceWidthMm + input.gapMm), width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })),
           ], Math.max(normalHeight, rotatedHeight)));
-        };
-        for (let offset = -MAX_BALANCED_STACK_OFFSETS; offset <= MAX_BALANCED_STACK_OFFSETS; offset += 1) {
-          const normalCount = idealNormalRows + offset;
-          addVertical(normalCount, Math.floor((input.quantity - normalColumns * normalCount) / rotatedColumns));
-        }
-        for (let normalCount = 1; normalCount <= MAX_EXPLORED_STACK_ROWS; normalCount += 1) for (let rotatedCount = 1; rotatedCount <= MAX_EXPLORED_STACK_ROWS; rotatedCount += 1) {
-          addVertical(normalCount, rotatedCount);
         }
       }
     }
@@ -101,7 +88,15 @@ function generateRowPatterns(input: ContinuousRollInput): Pattern[] {
 }
 
 export function getContinuousRollCandidateCount(rawInput: ContinuousRollInput): number {
-  return generateRowPatterns(validate(rawInput)).length;
+  const input = validate(rawInput);
+  return input.quantity > COMPRESSED_QUANTITY_THRESHOLD ? 1 : generateRowPatterns(input).length;
+}
+
+export function getContinuousRollPlanningMetrics(rawInput: ContinuousRollInput): { strategy: 'exact-dp' | 'compressed'; stateCount: number } {
+  const input = validate(rawInput);
+  return input.quantity > COMPRESSED_QUANTITY_THRESHOLD
+    ? { strategy: 'compressed', stateCount: 1 }
+    : { strategy: 'exact-dp', stateCount: input.quantity + 1 };
 }
 
 function isBetterState(candidate: State, current: State): boolean {
@@ -125,8 +120,41 @@ function emptyResult(): ContinuousRollResult {
   return { placements: [], usedLengthMm: 0, producedQuantity: 0, overproduction: 0, utilizationPercent: 0, wastePercent: 100, normalCount: 0, rotatedCount: 0, rowPatterns: [], rowSequence: [], estimatedCutLines: 0 };
 }
 
+function compressedResult(input: ContinuousRollInput): ContinuousRollResult {
+  const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
+  const canPartition = input.allowRotation && input.pieceWidthMm + input.gapMm + input.pieceLengthMm <= usableWidth;
+  const normalRows = canPartition ? Math.round(input.quantity * input.pieceWidthMm / (input.pieceWidthMm + input.pieceLengthMm)) : 0;
+  const rotatedRows = canPartition ? input.quantity - normalRows : 0;
+  const normalColumns = canPartition ? 1 : countIn(usableWidth, input.pieceWidthMm, input.gapMm);
+  const rotatedColumns = canPartition ? 1 : 0;
+  const rotated = normalColumns === 0;
+  const columns = rotated ? countIn(usableWidth, input.pieceLengthMm, input.gapMm) : normalColumns;
+  const width = rotated ? input.pieceLengthMm : input.pieceWidthMm;
+  const height = rotated ? input.pieceWidthMm : input.pieceLengthMm;
+  if (!canPartition && columns <= 0) throw new ContinuousRollLayoutValidationError('재단 규격이 가용 원단 폭보다 큽니다.');
+  const placements: Placement[] = [];
+  if (canPartition) {
+    for (let row = 0; row < normalRows; row += 1) placements.push({ id: placements.length + 1, x: input.sideMarginMm, y: input.startEndMarginMm + row * (input.pieceLengthMm + input.gapMm), width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false });
+    const x = input.sideMarginMm + input.pieceWidthMm + input.gapMm;
+    for (let row = 0; row < rotatedRows; row += 1) placements.push({ id: placements.length + 1, x, y: input.startEndMarginMm + row * (input.pieceWidthMm + input.gapMm), width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true });
+  } else {
+    for (let index = 0; index < input.quantity; index += 1) placements.push({ id: index + 1, x: input.sideMarginMm + (index % columns) * (width + input.gapMm), y: input.startEndMarginMm + Math.floor(index / columns) * (height + input.gapMm), width, height, rotated });
+  }
+  const contentLengthMm = canPartition
+    ? Math.max(extent(normalRows, input.pieceLengthMm, input.gapMm), extent(rotatedRows, input.pieceWidthMm, input.gapMm))
+    : extent(Math.ceil(input.quantity / columns), height, input.gapMm);
+  const length = usedLength(contentLengthMm, input);
+  if (input.maxLengthMm !== undefined && length > input.maxLengthMm) return emptyResult();
+  const normalCount = placements.filter((placement) => !placement.rotated).length;
+  const pattern = canPartition ? `vertical-1x${normalRows}-1x${rotatedRows}` : `row-${rotated ? 0 : columns}-${rotated ? columns : 0}`;
+  const usage: RowPatternUsage = { pattern, count: 1, capacity: placements.length, occupiedHeightMm: contentLengthMm, normalCount, rotatedCount: placements.length - normalCount, estimatedCutLines: placements.length + 1 };
+  const utilizationPercent = Math.round((placements.length * input.pieceWidthMm * input.pieceLengthMm / (input.rollWidthMm * length)) * 10000) / 100;
+  return { placements, usedLengthMm: length, producedQuantity: placements.length, overproduction: 0, utilizationPercent, wastePercent: Math.round((100 - utilizationPercent) * 100) / 100, normalCount, rotatedCount: placements.length - normalCount, rowPatterns: [usage], rowSequence: [{ ...usage, startY: input.startEndMarginMm, endY: input.startEndMarginMm + contentLengthMm }], estimatedCutLines: usage.estimatedCutLines };
+}
+
 export function optimizeContinuousRollLayout(rawInput: ContinuousRollInput): ContinuousRollResult {
   const input = validate(rawInput);
+  if (input.quantity > COMPRESSED_QUANTITY_THRESHOLD) return compressedResult(input);
   const patterns = generateRowPatterns(input);
   if (patterns.length === 0) throw new ContinuousRollLayoutValidationError('재단 규격이 가용 원단 폭보다 큽니다.');
   const maxCapacity = Math.max(...patterns.map((pattern) => pattern.capacity));
