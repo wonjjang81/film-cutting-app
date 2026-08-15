@@ -1,5 +1,3 @@
-// Load environment variables with proper priority (system > .env)
-import "./scripts/load-env.js";
 import type { ExpoConfig } from "expo/config";
 
 const rawBundleId = "space.manus.film.cutting.app.t20260508072837";
@@ -22,7 +20,6 @@ const schemeFromBundleId = `manus${timestamp}`;
 const env = {
   appName: "필름 재단 계산기",
   appSlug: "film-cutting-app",
-  logoUrl: "https://d2xsxph8kpxj0f.cloudfront.net/310519663621166093/czacS5zrJGM3kokLMdaXgF/icon-N44ZVk8AaKmssN48Lds56C.png",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,
   androidPackage: bundleId,
@@ -33,7 +30,6 @@ const config: ExpoConfig = {
   slug: env.appSlug,
   version: "1.0.0",
   orientation: "portrait",
-  icon: "./assets/images/icon.png",
   scheme: env.scheme,
   userInterfaceStyle: "automatic",
   newArchEnabled: true,
@@ -45,12 +41,6 @@ const config: ExpoConfig = {
       }
   },
   android: {
-    adaptiveIcon: {
-      backgroundColor: "#E6F4FE",
-      foregroundImage: "./assets/images/android-icon-foreground.png",
-      backgroundImage: "./assets/images/android-icon-background.png",
-      monochromeImage: "./assets/images/android-icon-monochrome.png",
-    },
     edgeToEdgeEnabled: true,
     predictiveBackGestureEnabled: false,
     package: env.androidPackage,
@@ -59,7 +49,6 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "static",
-    favicon: "./assets/images/favicon.png",
     // ⚠️ 중요: GitHub Pages 하위 경로 설정을 위해 baseUrl 추가
     baseUrl: "/film-cutting-app"
   },
@@ -79,10 +68,6 @@ const config: ExpoConfig = {
       },
     ],
   ],
-  router: {
-    // GitHub Pages에서 가장 안정적인 해시 기반 라우팅 사용
-    origin: "https://wonjjang81.github.io/film-cutting-app/",
-  },
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
