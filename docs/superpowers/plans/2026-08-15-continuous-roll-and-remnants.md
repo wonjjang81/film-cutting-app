@@ -12,6 +12,7 @@
 
 - Optimization priority is new-roll length, overproduction, waste, rotations, then row-pattern count.
 - Roll width is fixed and roll length is continuous.
+- Finite remnants pass their exact length as `maxLengthMm`; new-roll optimization has no maximum length.
 - Quantity must be an integer from 1 through 100,000.
 - Remnants are saved as exact rectangular width and length with required brand and product number.
 - Remnant inventory changes only after explicit job confirmation.
@@ -72,7 +73,7 @@ Expected: FAIL because `optimizeContinuousRollLayout` does not exist.
 
 - [ ] **Step 3: Implement row patterns and dynamic programming**
 
-Generate every `(normalCount, rotatedCount)` row that fits the usable width. Record row height as the maximum occupied item height and row width with gaps. Build states `0..quantity + maxPatternCapacity`, where each state stores the best predecessor under the global priority tuple.
+Generate every `(normalCount, rotatedCount)` row that fits the usable width, plus vertical-partition blocks that combine stacked normal pieces beside stacked rotated pieces. Record each candidate's occupied height, capacity, rotations, and cut complexity. Build states `0..quantity + maxPatternCapacity`, where each state stores the best predecessor under the global priority tuple. Reject candidates or sequences beyond optional `maxLengthMm`.
 
 ```ts
 export function optimizeContinuousRollLayout(input: ContinuousRollInput): ContinuousRollResult {
@@ -90,7 +91,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Add one failing test at a time for geometry and tie-breaking**
 
-Cover side/start/end margins, gaps, rotation disabled, exact quantity, minimum overproduction on equal length, deterministic output, non-overlap, bounds, and quantity 100,001 rejection. Run each test before implementing the corresponding behavior and confirm the expected failure.
+Cover side/start/end margins, gaps, rotation disabled, exact quantity, minimum overproduction on equal length, deterministic output, non-overlap, bounds, finite `maxLengthMm`, vertical-partition geometry, and quantity 100,001 rejection. Run each test before implementing the corresponding behavior and confirm the expected failure.
 
 - [ ] **Step 6: Extend the preview to continuous-roll coordinates**
 
@@ -162,7 +163,7 @@ Expected: FAIL because the remnant planner does not exist.
 
 - [ ] **Step 3: Implement eligibility and savings ordering**
 
-Filter exact brand/product-number matches. Optimize each rectangle independently, discard zero-capacity candidates, then sort by avoided new-roll length descending and remnant area ascending.
+Filter exact brand/product-number matches. Optimize each rectangle independently with `rollWidthMm = remnant.widthMm` and `maxLengthMm = remnant.lengthMm`, discard zero-capacity candidates, then sort by avoided new-roll length descending and remnant area ascending.
 
 - [ ] **Step 4: Run the test and verify GREEN**
 
