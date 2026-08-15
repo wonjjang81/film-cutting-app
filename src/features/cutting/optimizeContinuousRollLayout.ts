@@ -16,6 +16,10 @@ export class ContinuousRollLayoutValidationError extends Error {}
 type Pattern = Omit<RowPatternUsage, 'count'> & { placements: Omit<Placement, 'id'>[] };
 type State = { quantity: number; contentLengthMm: number; rotations: number; patternKinds: string[]; previous?: State; pattern?: Pattern };
 
+const MAX_GENERATED_PATTERNS = 96;
+const MAX_EXPLORED_STACK_ROWS = 8;
+const MAX_BALANCED_STACK_OFFSETS = 2;
+
 function positive(name: string, value: number): void {
   if (!Number.isFinite(value) || value <= 0) throw new ContinuousRollLayoutValidationError(`${name}은(는) 0보다 큰 숫자여야 합니다.`);
 }
@@ -47,42 +51,57 @@ function generateRowPatterns(input: ContinuousRollInput): Pattern[] {
   const normalLimit = Math.min(countIn(usableWidth, input.pieceWidthMm, input.gapMm), input.quantity);
   const rotatedLimit = input.allowRotation ? Math.min(countIn(usableWidth, input.pieceLengthMm, input.gapMm), input.quantity) : 0;
   const patterns: Pattern[] = [];
-  for (let normalCount = 1; normalCount <= normalLimit; normalCount += 1) {
-    patterns.push(makePattern(`row-${normalCount}-0`, Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
+  const add = (pattern: Pattern): void => { if (patterns.length < MAX_GENERATED_PATTERNS) patterns.push(pattern); };
+  const rowNormalLimit = Math.min(normalLimit, MAX_EXPLORED_STACK_ROWS);
+  const rowRotatedLimit = Math.min(rotatedLimit, MAX_EXPLORED_STACK_ROWS);
+  for (let normalCount = 1; normalCount <= rowNormalLimit; normalCount += 1) {
+    add(makePattern(`row-${normalCount}-0`, Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
   }
-  for (let rotatedCount = 1; rotatedCount <= rotatedLimit; rotatedCount += 1) {
-    patterns.push(makePattern(`row-0-${rotatedCount}`, Array.from({ length: rotatedCount }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
+  if (normalLimit > rowNormalLimit) add(makePattern(`row-${normalLimit}-0`, Array.from({ length: normalLimit }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })), input.pieceLengthMm));
+  for (let rotatedCount = 1; rotatedCount <= rowRotatedLimit; rotatedCount += 1) {
+    add(makePattern(`row-0-${rotatedCount}`, Array.from({ length: rotatedCount }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
   }
-  for (let normalCount = 1; normalCount <= normalLimit; normalCount += 1) {
+  if (rotatedLimit > rowRotatedLimit) add(makePattern(`row-0-${rotatedLimit}`, Array.from({ length: rotatedLimit }, (_, index) => ({ x: index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })), input.pieceWidthMm));
+  for (let normalCount = 1; normalCount <= rowNormalLimit && patterns.length < MAX_GENERATED_PATTERNS; normalCount += 1) {
     const normalWidth = extent(normalCount, input.pieceWidthMm, input.gapMm);
-    for (let rotatedCount = 1; rotatedCount <= rotatedLimit; rotatedCount += 1) {
+    for (let rotatedCount = 1; rotatedCount <= rowRotatedLimit && patterns.length < MAX_GENERATED_PATTERNS; rotatedCount += 1) {
       if (normalWidth + input.gapMm + extent(rotatedCount, input.pieceLengthMm, input.gapMm) > usableWidth) continue;
-      patterns.push(makePattern(`row-${normalCount}-${rotatedCount}`, [
+      add(makePattern(`row-${normalCount}-${rotatedCount}`, [
         ...Array.from({ length: normalCount }, (_, index) => ({ x: index * (input.pieceWidthMm + input.gapMm), y: 0, width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })),
         ...Array.from({ length: rotatedCount }, (_, index) => ({ x: normalWidth + input.gapMm + index * (input.pieceLengthMm + input.gapMm), y: 0, width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })),
       ], Math.max(input.pieceLengthMm, input.pieceWidthMm)));
     }
   }
   if (input.allowRotation) {
-    for (let normalColumns = 1; normalColumns <= normalLimit; normalColumns += 1) {
+    for (let normalColumns = 1; normalColumns <= rowNormalLimit && patterns.length < MAX_GENERATED_PATTERNS; normalColumns += 1) {
       const normalWidth = extent(normalColumns, input.pieceWidthMm, input.gapMm);
-      for (let rotatedColumns = 1; rotatedColumns <= rotatedLimit; rotatedColumns += 1) {
+      for (let rotatedColumns = 1; rotatedColumns <= rowRotatedLimit && patterns.length < MAX_GENERATED_PATTERNS; rotatedColumns += 1) {
         if (normalWidth + input.gapMm + extent(rotatedColumns, input.pieceLengthMm, input.gapMm) > usableWidth) continue;
-        const normalRows = Math.floor(input.quantity / normalColumns);
-        const rotatedRows = Math.floor(input.quantity / rotatedColumns);
-        for (let normalCount = 1; normalCount <= normalRows; normalCount += 1) for (let rotatedCount = 1; rotatedCount <= rotatedRows; rotatedCount += 1) {
-          if (normalColumns * normalCount + rotatedColumns * rotatedCount > input.quantity) continue;
+        const idealNormalRows = Math.round(input.quantity * input.pieceWidthMm / (rotatedColumns * input.pieceLengthMm + normalColumns * input.pieceWidthMm));
+        const addVertical = (normalCount: number, rotatedCount: number): void => {
+          if (normalCount < 1 || rotatedCount < 1 || normalColumns * normalCount + rotatedColumns * rotatedCount > input.quantity) return;
           const normalHeight = extent(normalCount, input.pieceLengthMm, input.gapMm);
           const rotatedHeight = extent(rotatedCount, input.pieceWidthMm, input.gapMm);
-          patterns.push(makePattern(`vertical-${normalColumns}x${normalCount}-${rotatedColumns}x${rotatedCount}`, [
+          add(makePattern(`vertical-${normalColumns}x${normalCount}-${rotatedColumns}x${rotatedCount}`, [
             ...Array.from({ length: normalColumns * normalCount }, (_, index) => ({ x: (index % normalColumns) * (input.pieceWidthMm + input.gapMm), y: Math.floor(index / normalColumns) * (input.pieceLengthMm + input.gapMm), width: input.pieceWidthMm, height: input.pieceLengthMm, rotated: false })),
             ...Array.from({ length: rotatedColumns * rotatedCount }, (_, index) => ({ x: normalWidth + input.gapMm + (index % rotatedColumns) * (input.pieceLengthMm + input.gapMm), y: Math.floor(index / rotatedColumns) * (input.pieceWidthMm + input.gapMm), width: input.pieceLengthMm, height: input.pieceWidthMm, rotated: true })),
           ], Math.max(normalHeight, rotatedHeight)));
+        };
+        for (let offset = -MAX_BALANCED_STACK_OFFSETS; offset <= MAX_BALANCED_STACK_OFFSETS; offset += 1) {
+          const normalCount = idealNormalRows + offset;
+          addVertical(normalCount, Math.floor((input.quantity - normalColumns * normalCount) / rotatedColumns));
+        }
+        for (let normalCount = 1; normalCount <= MAX_EXPLORED_STACK_ROWS; normalCount += 1) for (let rotatedCount = 1; rotatedCount <= MAX_EXPLORED_STACK_ROWS; rotatedCount += 1) {
+          addVertical(normalCount, rotatedCount);
         }
       }
     }
   }
   return patterns;
+}
+
+export function getContinuousRollCandidateCount(rawInput: ContinuousRollInput): number {
+  return generateRowPatterns(validate(rawInput)).length;
 }
 
 function isBetterState(candidate: State, current: State): boolean {
@@ -92,6 +111,15 @@ function isBetterState(candidate: State, current: State): boolean {
 }
 
 function usedLength(contentLengthMm: number, input: ContinuousRollInput): number { return contentLengthMm + input.startEndMarginMm * 2; }
+
+function isBetterPartialState(candidate: State, current: State, input: ContinuousRollInput): boolean {
+  if (candidate.quantity !== current.quantity) return candidate.quantity > current.quantity;
+  const candidateLength = usedLength(candidate.contentLengthMm, input);
+  const currentLength = usedLength(current.contentLengthMm, input);
+  if (candidateLength !== currentLength) return candidateLength < currentLength;
+  if (candidate.rotations !== current.rotations) return candidate.rotations < current.rotations;
+  return candidate.patternKinds.length < current.patternKinds.length;
+}
 
 function emptyResult(): ContinuousRollResult {
   return { placements: [], usedLengthMm: 0, producedQuantity: 0, overproduction: 0, utilizationPercent: 0, wastePercent: 100, normalCount: 0, rotatedCount: 0, rowPatterns: [], rowSequence: [], estimatedCutLines: 0 };
@@ -120,6 +148,9 @@ export function optimizeContinuousRollLayout(rawInput: ContinuousRollInput): Con
     }
   }
   const complete = states.slice(input.quantity).flatMap((state) => [...state.values()]);
+  const partial = states.flatMap((candidates) => [...candidates.values()]).reduce<State | undefined>((current, state) => (
+    !current || isBetterPartialState(state, current, input) ? state : current
+  ), undefined);
   const best = complete.reduce<State | undefined>((current, state) => {
     if (!current) return state;
     const currentLength = usedLength(current.contentLengthMm, input); const stateLength = usedLength(state.contentLengthMm, input);
@@ -130,7 +161,7 @@ export function optimizeContinuousRollLayout(rawInput: ContinuousRollInput): Con
     if (stateWaste !== currentWaste) return stateWaste < currentWaste ? state : current;
     if (state.rotations !== current.rotations) return state.rotations < current.rotations ? state : current;
     return state.patternKinds.length < current.patternKinds.length ? state : current;
-  }, undefined) ?? states.reduce<State | undefined>((current, candidates) => [...candidates.values()].reduce<State | undefined>((best, state) => (!best || state.quantity > best.quantity ? state : best), current), undefined);
+  }, undefined) ?? partial;
   if (!best || best.quantity === 0) return emptyResult();
   const sequence: Pattern[] = [];
   for (let cursor: State | undefined = best; cursor?.pattern; cursor = cursor.previous) sequence.unshift(cursor.pattern);

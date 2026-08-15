@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ContinuousRollLayoutValidationError, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
+import { ContinuousRollLayoutValidationError, getContinuousRollCandidateCount, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
 
 describe('optimizeContinuousRollLayout', () => {
   it('uses no more than 80mm for three 60x40 pieces on a 100mm roll', () => {
@@ -154,5 +154,22 @@ describe('optimizeContinuousRollLayout', () => {
       { pattern: 'row-2-0', startY: 7, endY: 37 },
       { pattern: 'row-2-0', startY: 42, endY: 72 },
     ]);
+  });
+
+  it('prefers the shorter rotated partial layout at the finite-length capacity limit', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 30, pieceLengthMm: 100, quantity: 4,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+      maxLengthMm: 100,
+    });
+
+    expect(result).toMatchObject({ producedQuantity: 3, usedLengthMm: 90, rotatedCount: 3 });
+  });
+
+  it('bounds generated candidates at the documented maximum quantity', () => {
+    expect(getContinuousRollCandidateCount({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 100_000,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    })).toBeLessThanOrEqual(100);
   });
 });
