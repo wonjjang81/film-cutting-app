@@ -121,4 +121,38 @@ describe('optimizeContinuousRollLayout', () => {
     ]);
     expect(result.rowPatterns[0]?.pattern).toContain('vertical-');
   });
+
+  it('packs five 60x40 pieces into the complete 120mm vertical partition', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 5,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result.usedLengthMm).toBe(120);
+    expect(result.producedQuantity).toBe(5);
+    expect(result.rowPatterns).toHaveLength(1);
+    expect(result.rowPatterns[0]?.pattern).toBe('vertical-1x3-1x2');
+  });
+
+  it('accepts the complete five-piece partition within a finite 120mm remnant', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 5,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+      maxLengthMm: 120,
+    });
+
+    expect(result).toMatchObject({ usedLengthMm: 120, producedQuantity: 5 });
+  });
+
+  it('preserves ordered row identities and gap-aware coordinates for tie-breaking and preview guides', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 110, pieceWidthMm: 30, pieceLengthMm: 30, quantity: 4,
+      gapMm: 5, sideMarginMm: 5, startEndMarginMm: 7, allowRotation: false,
+    });
+
+    expect(result.rowSequence).toMatchObject([
+      { pattern: 'row-2-0', startY: 7, endY: 37 },
+      { pattern: 'row-2-0', startY: 42, endY: 72 },
+    ]);
+  });
 });

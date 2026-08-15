@@ -31,10 +31,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
   if (!validSize) return null;
   const fontSize = Math.max(8, Math.min(18, Math.min(rollWidthMm, displayLengthMm) / 22));
   const rowSeparators = continuous
-    ? (result as ContinuousRollResult).rowPatterns.flatMap((usage) => Array.from({ length: usage.count }, (_, index) => ({
-      label: usage.pattern,
-      y: verticalMarginMm + usage.occupiedHeightMm * (index + 1),
-    })))
+    ? (result as ContinuousRollResult).rowSequence.map((row) => ({ label: row.pattern, y: row.endY }))
     : [];
 
   return (
