@@ -1,48 +1,120 @@
 import { describe, expect, it } from 'vitest';
 import { ContinuousRollInput, ContinuousRollLayoutValidationError, getContinuousRollCandidateCount, getContinuousRollPlanningMetrics, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
 
+type Objective = [number, number, number, number, number];
 type OraclePattern = { key: string; capacity: number; height: number; rotations: number };
 type OracleState = { quantity: number; height: number; rotations: number; kinds: string[] };
 
-function exhaustiveObjective(input: ContinuousRollInput): [number, number, number, number, number] {
+function compareTuple(left: readonly number[], right: readonly number[]): number {
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return left[index]! - right[index]!;
+  }
+  return 0;
+}
+
+/**
+ * Test-only bounded enumeration. It deliberately derives geometry from the
+ * public dimensions rather than importing production pattern helpers.
+ */
+function exhaustiveOracle(input: ContinuousRollInput): { producedQuantity: number; objective: Objective } {
   const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
-  const countIn = (size: number) => Math.floor((usableWidth + input.gapMm) / (size + input.gapMm));
+  const extent = (count: number, size: number) => count * size + Math.max(0, count - 1) * input.gapMm;
+  const fitsSideBySide = (normalColumns: number, rotatedColumns: number) => (
+    extent(normalColumns, input.pieceWidthMm)
+    + (normalColumns > 0 && rotatedColumns > 0 ? input.gapMm : 0)
+    + extent(rotatedColumns, input.pieceLengthMm)
+    <= usableWidth
+  );
+  const normalColumnLimit = Math.floor((usableWidth + input.gapMm) / (input.pieceWidthMm + input.gapMm));
+  const rotatedColumnLimit = input.allowRotation
+    ? Math.floor((usableWidth + input.gapMm) / (input.pieceLengthMm + input.gapMm))
+    : 0;
+  const maximumRowCapacity = Math.max(1, normalColumnLimit + rotatedColumnLimit);
+  const producedLimit = input.quantity + maximumRowCapacity;
   const patterns: OraclePattern[] = [];
-  const add = (key: string, capacity: number, height: number, rotations: number) => patterns.push({ key, capacity, height, rotations });
-  const normalColumns = countIn(input.pieceWidthMm);
-  const rotatedColumns = input.allowRotation ? countIn(input.pieceLengthMm) : 0;
-  for (let count = 1; count <= normalColumns; count += 1) add(`n${count}`, count, input.pieceLengthMm, 0);
-  for (let count = 1; count <= rotatedColumns; count += 1) add(`r${count}`, count, input.pieceWidthMm, count);
-  for (let normalRows = 1; normalRows <= input.quantity; normalRows += 1) for (let rotatedRows = 1; rotatedRows <= input.quantity; rotatedRows += 1) {
-    const capacity = normalRows + rotatedRows;
-    if (input.allowRotation && normalColumns >= 1 && rotatedColumns >= 1 && capacity <= input.quantity && input.pieceWidthMm + input.gapMm + input.pieceLengthMm <= usableWidth) {
-      add(`v${normalRows}-${rotatedRows}`, capacity, Math.max(normalRows * input.pieceLengthMm + (normalRows - 1) * input.gapMm, rotatedRows * input.pieceWidthMm + (rotatedRows - 1) * input.gapMm), rotatedRows);
+
+  for (let normalCount = 0; normalCount <= Math.min(normalColumnLimit, producedLimit); normalCount += 1) {
+    for (let rotatedCount = 0; rotatedCount <= Math.min(rotatedColumnLimit, producedLimit - normalCount); rotatedCount += 1) {
+      if (normalCount + rotatedCount === 0 || !fitsSideBySide(normalCount, rotatedCount)) continue;
+      patterns.push({
+        key: `row-${normalCount}-${rotatedCount}`,
+        capacity: normalCount + rotatedCount,
+        height: Math.max(normalCount > 0 ? input.pieceLengthMm : 0, rotatedCount > 0 ? input.pieceWidthMm : 0),
+        rotations: rotatedCount,
+      });
     }
   }
-  const states = Array.from({ length: input.quantity + 1 }, () => new Map<string, OracleState>());
-  states[0]!.set('', { quantity: 0, height: 0, rotations: 0, kinds: [] });
-  for (let quantity = 0; quantity <= input.quantity; quantity += 1) for (const state of states[quantity]!.values()) for (const pattern of patterns) {
-    const nextQuantity = quantity + pattern.capacity;
-    if (nextQuantity > input.quantity) continue;
-    const height = state.height + (state.quantity === 0 ? 0 : input.gapMm) + pattern.height;
-    const length = height + input.startEndMarginMm * 2;
-    if (input.maxLengthMm !== undefined && length > input.maxLengthMm) continue;
-    const kinds = state.kinds.includes(pattern.key) ? state.kinds : [...state.kinds, pattern.key].sort();
-    const key = kinds.join('|'); const current = states[nextQuantity]!.get(key);
-    const candidate = { quantity: nextQuantity, height, rotations: state.rotations + pattern.rotations, kinds };
-    if (!current || height < current.height || (height === current.height && candidate.rotations < current.rotations)) states[nextQuantity]!.set(key, candidate);
+
+  for (let normalColumns = 1; normalColumns <= normalColumnLimit; normalColumns += 1) {
+    for (let rotatedColumns = 1; rotatedColumns <= rotatedColumnLimit; rotatedColumns += 1) {
+      if (!fitsSideBySide(normalColumns, rotatedColumns)) continue;
+      for (let normalRows = 1; normalColumns * normalRows < producedLimit; normalRows += 1) {
+        for (let rotatedRows = 1; ; rotatedRows += 1) {
+          const capacity = normalColumns * normalRows + rotatedColumns * rotatedRows;
+          if (capacity > producedLimit) break;
+          const normalSlots = normalColumns * normalRows;
+          for (const produced of new Set([capacity, Math.min(capacity, input.quantity)])) {
+            if (produced <= normalSlots) continue;
+            patterns.push({
+              key: `vertical-${normalColumns}x${normalRows}-${rotatedColumns}x${rotatedRows}`,
+              capacity: produced,
+              height: Math.max(extent(normalRows, input.pieceLengthMm), extent(rotatedRows, input.pieceWidthMm)),
+              rotations: produced - normalSlots,
+            });
+          }
+        }
+      }
+    }
   }
-  const all = [...states[input.quantity]!.values()];
-  const best = all.slice(1).reduce<OracleState>((current, state) => {
-    const tuple = (item: OracleState): [number, number, number, number, number] => {
-      const length = item.height + input.startEndMarginMm * 2;
-      return [length, input.quantity - item.quantity, input.rollWidthMm * length - item.quantity * input.pieceWidthMm * input.pieceLengthMm, item.rotations, item.kinds.length];
-    };
-    const candidateTuple = tuple(state); const currentTuple = tuple(current);
-    return candidateTuple.some((value, index) => value !== currentTuple[index]! && candidateTuple.slice(0, index).every((prior, priorIndex) => prior === currentTuple[priorIndex]!) && value < currentTuple[index]!) ? state : current;
-  }, all[0]!);
-  const length = best.height + input.startEndMarginMm * 2;
-  return [length, input.quantity - best.quantity, input.rollWidthMm * length - best.quantity * input.pieceWidthMm * input.pieceLengthMm, best.rotations, best.kinds.length];
+
+  const states = Array.from({ length: producedLimit + 1 }, () => new Map<string, OracleState>());
+  states[0]!.set('', { quantity: 0, height: 0, rotations: 0, kinds: [] });
+  for (let quantity = 0; quantity <= input.quantity; quantity += 1) {
+    for (const state of states[quantity]!.values()) {
+      for (const pattern of patterns) {
+        const nextQuantity = quantity + pattern.capacity;
+        if (nextQuantity > producedLimit) continue;
+        const height = state.height + (quantity === 0 ? 0 : input.gapMm) + pattern.height;
+        if (input.maxLengthMm !== undefined && height + input.startEndMarginMm * 2 > input.maxLengthMm) continue;
+        const kinds = state.kinds.includes(pattern.key) ? state.kinds : [...state.kinds, pattern.key].sort();
+        const candidate: OracleState = {
+          quantity: nextQuantity,
+          height,
+          rotations: state.rotations + pattern.rotations,
+          kinds,
+        };
+        const kindKey = kinds.join('|');
+        const current = states[nextQuantity]!.get(kindKey);
+        if (!current || compareTuple([candidate.height, candidate.rotations], [current.height, current.rotations]) < 0) {
+          states[nextQuantity]!.set(kindKey, candidate);
+        }
+      }
+    }
+  }
+
+  const objective = (state: OracleState): Objective => {
+    const length = state.height + input.startEndMarginMm * 2;
+    return [
+      length,
+      Math.max(0, state.quantity - input.quantity),
+      input.rollWidthMm * length - state.quantity * input.pieceWidthMm * input.pieceLengthMm,
+      state.rotations,
+      state.kinds.length,
+    ];
+  };
+  const complete = states.slice(input.quantity).flatMap((state) => [...state.values()]);
+  const candidates = complete.length > 0
+    ? complete
+    : states.slice(1, input.quantity).flatMap((state) => [...state.values()]);
+  const best = candidates.reduce<OracleState | undefined>((current, candidate) => {
+    if (!current) return candidate;
+    if (complete.length === 0 && candidate.quantity !== current.quantity) {
+      return candidate.quantity > current.quantity ? candidate : current;
+    }
+    return compareTuple(objective(candidate), objective(current)) < 0 ? candidate : current;
+  }, undefined);
+  if (!best) return { producedQuantity: 0, objective: [0, 0, 0, 0, 0] };
+  return { producedQuantity: best.quantity, objective: objective(best) };
 }
 
 describe('optimizeContinuousRollLayout', () => {
@@ -120,6 +192,14 @@ describe('optimizeContinuousRollLayout', () => {
     })).toThrow(ContinuousRollLayoutValidationError);
   });
 
+  it('rejects a piece that cannot fit even when the finite area bound is empty', () => {
+    expect(() => optimizeContinuousRollLayout({
+      rollWidthMm: 50, pieceWidthMm: 60, pieceLengthMm: 70, quantity: 1,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+      maxLengthMm: 1,
+    })).toThrow(ContinuousRollLayoutValidationError);
+  });
+
   it('does not rotate pieces when rotation is disabled', () => {
     const result = optimizeContinuousRollLayout({
       rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 3,
@@ -137,6 +217,19 @@ describe('optimizeContinuousRollLayout', () => {
     };
 
     expect(optimizeContinuousRollLayout(input)).toEqual(optimizeContinuousRollLayout(input));
+  });
+
+  it('labels a safely enumerated small layout exact and reports the same metrics helper route', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 5,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+    const result = optimizeContinuousRollLayout(input);
+
+    expect(result.optimizationStatus).toBe('exact');
+    expect(result.lowerBoundLengthMm).toBeGreaterThanOrEqual(0);
+    expect(result.optimalityGapMm).toBeGreaterThanOrEqual(0);
+    expect(result.planningMetrics).toEqual(getContinuousRollPlanningMetrics(input));
   });
 
   it('returns only the quantity that fits a finite maximum length', () => {
@@ -176,6 +269,16 @@ describe('optimizeContinuousRollLayout', () => {
     expect(result.producedQuantity).toBe(5);
     expect(result.rowPatterns).toHaveLength(1);
     expect(result.rowPatterns[0]?.pattern).toBe('vertical-1x3-1x2');
+  });
+
+  it('reports populated vertical row counts in pattern identities', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 4,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result.rowPatterns.map((pattern) => pattern.pattern)).toContain('vertical-1x3-1x1');
+    expect(result.rowPatterns.map((pattern) => pattern.pattern)).not.toContain('vertical-1x3-1x2');
   });
 
   it('accepts the complete five-piece partition within a finite 120mm remnant', () => {
@@ -221,6 +324,14 @@ describe('optimizeContinuousRollLayout', () => {
     { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 3, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
     { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 5, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
     { rollWidthMm: 110, pieceWidthMm: 30, pieceLengthMm: 30, quantity: 4, gapMm: 5, sideMarginMm: 5, startEndMarginMm: 7, allowRotation: false },
+    { rollWidthMm: 200, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 7, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 4, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 8, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: false, maxLengthMm: 80 },
+    { rollWidthMm: 4, pieceWidthMm: 2, pieceLengthMm: 3, quantity: 3, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 7, pieceWidthMm: 2, pieceLengthMm: 3, quantity: 6, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 12, pieceWidthMm: 3, pieceLengthMm: 4, quantity: 7, gapMm: 1, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true },
+    { rollWidthMm: 13, pieceWidthMm: 3, pieceLengthMm: 5, quantity: 8, gapMm: 1, sideMarginMm: 1, startEndMarginMm: 2, allowRotation: true },
+    { rollWidthMm: 9, pieceWidthMm: 2, pieceLengthMm: 5, quantity: 8, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 1, allowRotation: true, maxLengthMm: 10 },
   ] satisfies ContinuousRollInput[])('matches the exhaustive objective oracle for %o', (input) => {
     const result = optimizeContinuousRollLayout(input);
     const actual: [number, number, number, number, number] = [
@@ -230,14 +341,190 @@ describe('optimizeContinuousRollLayout', () => {
       result.rotatedCount,
       new Set(result.rowSequence.map((row) => row.pattern)).size,
     ];
+    const expected = exhaustiveOracle(input);
 
-    expect(actual).toEqual(exhaustiveObjective(input));
+    expect(result.producedQuantity).toBe(expected.producedQuantity);
+    expect(actual).toEqual(expected.objective);
   });
 
-  it('uses a compressed plan with a bounded state count at quantity 100,000', () => {
-    expect(getContinuousRollPlanningMetrics({
+  it('matches the independent oracle across a deterministic bounded geometry matrix', () => {
+    for (let rollWidthMm = 4; rollWidthMm <= 7; rollWidthMm += 1) {
+      for (let pieceWidthMm = 1; pieceWidthMm <= 3; pieceWidthMm += 1) {
+        for (let pieceLengthMm = 1; pieceLengthMm <= 3; pieceLengthMm += 1) {
+          for (let gapMm = 0; gapMm <= 1; gapMm += 1) {
+            for (let quantity = 1; quantity <= 5; quantity += 1) {
+              const input: ContinuousRollInput = {
+                rollWidthMm,
+                pieceWidthMm,
+                pieceLengthMm,
+                quantity,
+                gapMm,
+                sideMarginMm: 0,
+                startEndMarginMm: 0,
+                allowRotation: true,
+              };
+              const result = optimizeContinuousRollLayout(input);
+              const expected = exhaustiveOracle(input);
+              expect({
+                producedQuantity: result.producedQuantity,
+                objective: [
+                  result.usedLengthMm,
+                  result.overproduction,
+                  input.rollWidthMm * result.usedLengthMm - result.producedQuantity * input.pieceWidthMm * input.pieceLengthMm,
+                  result.rotatedCount,
+                  new Set(result.rowSequence.map((row) => row.pattern)).size,
+                ],
+              }).toEqual(expected);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('routes large work through the material-first planner with truthful public metrics', () => {
+    const input = {
       rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 100_000,
       gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
-    })).toMatchObject({ strategy: 'compressed', stateCount: 1 });
+    } satisfies ContinuousRollInput;
+    const metrics = getContinuousRollPlanningMetrics(input);
+    const result = optimizeContinuousRollLayout(input);
+
+    expect(metrics).toMatchObject({ strategy: 'material-first' });
+    expect(metrics.estimatedWork).toBeGreaterThan(0);
+    expect(metrics.retainedStates).toBeGreaterThan(0);
+    expect(result).toMatchObject({ planningMetrics: metrics });
+    expect(['certified', 'approximate']).toContain(result.optimizationStatus);
+    expect(result.lowerBoundLengthMm).toBeGreaterThanOrEqual(0);
+    expect(result.optimalityGapMm).toBeGreaterThanOrEqual(0);
+  });
+
+  it('chooses a layout no longer than the five-across rotated rows above the compression boundary', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 200, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 2_001,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result.producedQuantity).toBe(2_001);
+    expect(result.usedLengthMm).toBe(24_020);
+  });
+
+  it('chooses the shorter all-rotated plan when only one orientation fits efficiently', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 40, pieceLengthMm: 90, quantity: 2_001,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result).toMatchObject({
+      producedQuantity: 2_001,
+      usedLengthMm: 80_040,
+      rotatedCount: 2_001,
+    });
+  });
+
+  it('returns the maximum fitting partial quantity above the compression boundary', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 2_001,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: false,
+      maxLengthMm: 80,
+    });
+
+    expect(result).toMatchObject({ producedQuantity: 2, usedLengthMm: 80, rotatedCount: 0 });
+  });
+
+  it('routes an adversarial wide roll before a dense exact allocation', () => {
+    expect(getContinuousRollPlanningMetrics({
+      rollWidthMm: 1_000_000, pieceWidthMm: 1, pieceLengthMm: 1, quantity: 2_000,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    })).toMatchObject({ strategy: 'material-first' });
+  });
+
+  it('materializes the exact 2,000-piece wide-roll boundary without candidate expansion', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 1_000_000, pieceWidthMm: 1, pieceLengthMm: 1, quantity: 2_000,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result).toMatchObject({
+      producedQuantity: 2_000,
+      usedLengthMm: 1,
+      normalCount: 2_000,
+      rotatedCount: 0,
+    });
+    expect(result.rowPatterns).toHaveLength(1);
+  });
+
+  it('materializes the representative 100,000-piece perfect tiling as one retained plan', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 100, pieceWidthMm: 60, pieceLengthMm: 40, quantity: 100_000,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result).toMatchObject({
+      producedQuantity: 100_000,
+      usedLengthMm: 2_400_000,
+      normalCount: 60_000,
+      rotatedCount: 40_000,
+    });
+    expect(result.rowPatterns).toHaveLength(1);
+  });
+
+  it('routes W10/3x4/100000 before allocation and reports an honest material-first result', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 10, pieceWidthMm: 3, pieceLengthMm: 4, quantity: 100_000,
+      gapMm: 1, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+
+    const metrics = getContinuousRollPlanningMetrics(input);
+    expect(metrics).toMatchObject({ strategy: 'material-first' });
+    expect(metrics.retainedStates).toBeLessThanOrEqual(400_000);
+
+    const result = optimizeContinuousRollLayout(input);
+    expect(result.producedQuantity).toBe(100_000);
+    expect(['certified', 'approximate']).toContain(result.optimizationStatus);
+    expect(result.optimalityGapMm).toBeCloseTo(Math.max(0, result.usedLengthMm - result.lowerBoundLengthMm));
+  });
+
+  it('routes W100000/2x3/100000 before allocation with bounded retained states', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 100_000, pieceWidthMm: 2, pieceLengthMm: 3, quantity: 100_000,
+      gapMm: 1, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+
+    const metrics = getContinuousRollPlanningMetrics(input);
+    expect(metrics).toMatchObject({ strategy: 'material-first' });
+    expect(metrics.retainedStates).toBeLessThanOrEqual(400_000);
+    const result = optimizeContinuousRollLayout(input);
+    expect(result.producedQuantity).toBe(100_000);
+    expect(['certified', 'approximate']).toContain(result.optimizationStatus);
+  });
+
+  it('allows two mixed blocks when they minimize rotations at the optimal length', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 9, pieceWidthMm: 1, pieceLengthMm: 2, quantity: 15,
+      gapMm: 2, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result).toMatchObject({
+      usedLengthMm: 16,
+      producedQuantity: 15,
+      overproduction: 0,
+      rotatedCount: 8,
+    });
+    expect(result.rowSequence.map((row) => row.pattern)).toEqual([
+      'vertical-2x3-1x4',
+      'vertical-1x1-2x2',
+    ]);
+  });
+
+  it('marks a bounded large material-first witness approximate when it exceeds the physical bound', () => {
+    const result = optimizeContinuousRollLayout({
+      rollWidthMm: 10, pieceWidthMm: 3, pieceLengthMm: 4, quantity: 100_000,
+      gapMm: 1, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    });
+
+    expect(result.optimizationStatus).toBe('approximate');
+    expect(result.usedLengthMm).toBeGreaterThan(result.lowerBoundLengthMm);
+    expect(result.optimalityGapMm).toBeCloseTo(result.usedLengthMm - result.lowerBoundLengthMm);
   });
 });
