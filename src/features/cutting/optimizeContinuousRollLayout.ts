@@ -864,15 +864,16 @@ function planTickPatternSequence(quantity: number, input: ContinuousRollInput, p
   return undefined;
 }
 
-type ExactPlannerStats = { retainedStates: number };
+type ExactSearchOutcome =
+  | { kind: 'plan'; plan: CompactPlan; retainedStates: number }
+  | { kind: 'budget-exceeded'; retainedStates: number };
 
-function planExactPatternSequence(quantity: number, input: ContinuousRollInput, stats?: ExactPlannerStats): CompactPlan | undefined {
+function planExactPatternSequence(quantity: number, input: ContinuousRollInput): ExactSearchOutcome {
   const patterns = generateExactSequencePatterns(input, quantity);
   const maximumCapacity = Math.max(...patterns.map((pattern) => pattern.capacity));
   const states = Array.from({ length: quantity + maximumCapacity + 1 }, () => new Map<string, ExactSequenceState>());
   states[0]!.set('', { quantity: 0, adjustedLengthMm: 0, rotations: 0, kinds: [] });
   let retainedStates = 1;
-  if (stats) stats.retainedStates = retainedStates;
   for (let produced = 0; produced < quantity; produced += 1) {
     for (const state of states[produced]!.values()) {
       for (const pattern of patterns) {
@@ -892,8 +893,7 @@ function planExactPatternSequence(quantity: number, input: ContinuousRollInput, 
         const current = states[nextQuantity]!.get(key);
         if (!current) {
           retainedStates += 1;
-          if (stats) stats.retainedStates = retainedStates;
-          if (retainedStates > EXACT_RETAINED_STATE_LIMIT) return undefined;
+          if (retainedStates > EXACT_RETAINED_STATE_LIMIT) return { kind: 'budget-exceeded', retainedStates };
         }
         if (!current
           || candidate.adjustedLengthMm < current.adjustedLengthMm
@@ -914,22 +914,26 @@ function planExactPatternSequence(quantity: number, input: ContinuousRollInput, 
     if (candidate.kinds.length !== current.kinds.length) return candidate.kinds.length < current.kinds.length ? candidate : current;
     return candidate.kinds.join('|') < current.kinds.join('|') ? candidate : current;
   }, undefined);
-  if (!best) return undefined;
+  if (!best) return { kind: 'budget-exceeded', retainedStates };
   const sequence: Pattern[] = [];
   for (let cursor: ExactSequenceState | undefined = best; cursor?.pattern; cursor = cursor.previous) {
     sequence.unshift(cursor.pattern);
   }
   return {
-    adjustedLengthMm: best.adjustedLengthMm,
-    rotations: best.rotations,
-    patternKindCount: best.kinds.length,
-    pure: { normalRows: 0, rotatedRows: 0, normalPieces: 0, rotatedPieces: 0 },
-    sequence,
-    signature: best.kinds.join('|'),
+    kind: 'plan',
+    retainedStates,
+    plan: {
+      adjustedLengthMm: best.adjustedLengthMm,
+      rotations: best.rotations,
+      patternKindCount: best.kinds.length,
+      pure: { normalRows: 0, rotatedRows: 0, normalPieces: 0, rotatedPieces: 0 },
+      sequence,
+      signature: best.kinds.join('|'),
+    },
   };
 }
 
-function planExactQuantity(quantity: number, input: ContinuousRollInput): CompactPlan {
+function planExactQuantity(quantity: number, input: ContinuousRollInput, latticeStates: number): ExactSearchOutcome {
   const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
   const normalCapacity = countIn(usableWidth, input.pieceWidthMm, input.gapMm);
   const rotatedCapacity = input.allowRotation ? countIn(usableWidth, input.pieceLengthMm, input.gapMm) : 0;
@@ -940,13 +944,13 @@ function planExactQuantity(quantity: number, input: ContinuousRollInput): Compac
 
   if (hasCertifiedDirectPlan(quantity, input, usableWidth, normalCapacity, rotatedCapacity, pure)) {
     const perfectTiling = planPerfectTiling(quantity, input, usableWidth, normalCapacity, rotatedCapacity);
-    return perfectTiling && comparePlans(perfectTiling, pure) ? perfectTiling : pure;
+    return { kind: 'plan', plan: perfectTiling && comparePlans(perfectTiling, pure) ? perfectTiling : pure, retainedStates: 1 };
   }
   const latticePlan = certifySingleLatticePattern(quantity, input, usableWidth, normalCapacity, rotatedCapacity);
-  if (latticePlan) return latticePlan;
+  if (latticePlan) return { kind: 'plan', plan: latticePlan, retainedStates: Math.max(1, latticeStates) };
   const tickPlan = planTickPatternSequence(quantity, input, pure);
-  if (tickPlan) return tickPlan;
-  return planExactPatternSequence(quantity, input) ?? pure;
+  if (tickPlan) return { kind: 'plan', plan: tickPlan, retainedStates: Math.max(1, latticeStates) };
+  return planExactPatternSequence(quantity, input);
 }
 
 function usedLength(plan: CompactPlan, input: ContinuousRollInput): number {
@@ -959,28 +963,6 @@ function maximumAreaQuantity(input: ContinuousRollInput): number {
   const usableLength = Math.max(0, input.maxLengthMm - input.startEndMarginMm * 2);
   const raw = usableWidth * usableLength / (input.pieceWidthMm * input.pieceLengthMm);
   return Math.min(input.quantity, Math.max(0, Math.floor(raw + Number.EPSILON * Math.max(1, raw) * 8)));
-}
-
-function selectPlan(input: ContinuousRollInput): { quantity: number; plan?: CompactPlan } {
-  const areaBound = maximumAreaQuantity(input);
-  if (areaBound === 0) return { quantity: 0 };
-  if (input.maxLengthMm === undefined) return { quantity: input.quantity, plan: planExactQuantity(input.quantity, input) };
-  const cache = new Map<number, CompactPlan>();
-  const planFor = (quantity: number): CompactPlan => {
-    const cached = cache.get(quantity);
-    if (cached) return cached;
-    const plan = planExactQuantity(quantity, input);
-    cache.set(quantity, plan);
-    return plan;
-  };
-  let low = 0;
-  let high = areaBound;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (usedLength(planFor(middle), input) <= input.maxLengthMm) low = middle;
-    else high = middle - 1;
-  }
-  return low === 0 ? { quantity: 0 } : { quantity: low, plan: planFor(low) };
 }
 
 function makePattern(pattern: string, placements: Omit<Placement, 'id'>[], occupiedHeightMm: number): Pattern {
@@ -1213,7 +1195,6 @@ function selectExactPlan(input: ContinuousRollInput, quantity: number): { quanti
   if (!preflight) return undefined;
   let retainedStates = 0;
   for (let produced = quantity; produced >= 1; produced -= 1) {
-    const stats: ExactPlannerStats = { retainedStates: 0 };
     const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
     const normalCapacity = countIn(usableWidth, input.pieceWidthMm, input.gapMm);
     const rotatedCapacity = input.allowRotation ? countIn(usableWidth, input.pieceLengthMm, input.gapMm) : 0;
@@ -1223,13 +1204,15 @@ function selectExactPlan(input: ContinuousRollInput, quantity: number): { quanti
     // The older lattice planner is useful for small mixed-block instances. Its
     // own dense arrays are admitted only when their complete allocation is small.
     const latticeStates = (tickCount + 1) * (produced + 1);
-    const plan = latticeStates <= EXACT_RETAINED_STATE_LIMIT
-      ? planExactQuantity(produced, input)
-      : planExactPatternSequence(produced, input, stats);
-    retainedStates += latticeStates <= EXACT_RETAINED_STATE_LIMIT ? latticeStates : stats.retainedStates;
-    if (!plan) return undefined;
-    if (input.maxLengthMm === undefined || usedLength(plan, input) <= input.maxLengthMm) {
-      return { quantity: produced, plan, metrics: { strategy: 'exact', estimatedWork: preflight.estimatedWork, retainedStates } };
+    const outcome = latticeStates <= EXACT_RETAINED_STATE_LIMIT
+      ? planExactQuantity(produced, input, latticeStates)
+      : planExactPatternSequence(produced, input);
+    retainedStates += outcome.retainedStates;
+    // A cap hit is not an exact plan. Returning undefined makes the caller
+    // recompute from the material-first family and report only that route.
+    if (outcome.kind === 'budget-exceeded') return undefined;
+    if (input.maxLengthMm === undefined || usedLength(outcome.plan, input) <= input.maxLengthMm) {
+      return { quantity: produced, plan: outcome.plan, metrics: { strategy: 'exact', estimatedWork: preflight.estimatedWork, retainedStates } };
     }
   }
   return { quantity: 0, metrics: { strategy: 'exact', estimatedWork: preflight.estimatedWork, retainedStates } };

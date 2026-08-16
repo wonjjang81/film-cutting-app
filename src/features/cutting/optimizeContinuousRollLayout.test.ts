@@ -527,4 +527,29 @@ describe('optimizeContinuousRollLayout', () => {
     expect(result.usedLengthMm).toBeGreaterThan(result.lowerBoundLengthMm);
     expect(result.optimalityGapMm).toBeCloseTo(result.usedLengthMm - result.lowerBoundLengthMm);
   });
+
+  it('fails over to material-first when an admitted exact pattern search reaches its runtime cap', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 4, pieceWidthMm: 1, pieceLengthMm: 1.000001, quantity: 20,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+    const result = optimizeContinuousRollLayout(input);
+
+    expect(result.optimizationStatus).not.toBe('exact');
+    expect(result.planningMetrics.strategy).toBe('material-first');
+    expect(result.planningMetrics).toEqual(getContinuousRollPlanningMetrics(input));
+  });
+
+  it('reports actual exact-pattern retained work for a large-dimension three-piece layout', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 1_000_003, pieceWidthMm: 1_000_001, pieceLengthMm: 1_000_000, quantity: 3,
+      gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+    const result = optimizeContinuousRollLayout(input);
+
+    expect(result.optimizationStatus).toBe('exact');
+    expect(result.planningMetrics.strategy).toBe('exact');
+    expect(result.planningMetrics.retainedStates).toBeGreaterThan(0);
+    expect(result.planningMetrics).toEqual(getContinuousRollPlanningMetrics(input));
+  });
 });
