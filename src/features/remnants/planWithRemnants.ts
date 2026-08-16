@@ -163,18 +163,30 @@ function residualsFor(
   });
 }
 
-function makeInventoryDelta(consumed: ConsumedSource[]): InventoryDelta {
+function makeInventoryDelta(consumed: ConsumedSource[], inventoryIds: readonly string[]): InventoryDelta {
   const removeIds: string[] = [];
   const add: FilmRemnant[] = [];
   const basedOnUpdatedAt: Record<string, string> = {};
+  // Every persisted ID is reserved, including mismatched remnants that this
+  // request leaves untouched. A residual can therefore never steal an ID
+  // which currently belongs to another inventory record.
+  const reservedIds = new Set(inventoryIds);
   const addedIds = new Set<string>();
-  const addUnique = (remnant: FilmRemnant): void => {
+  const addCarryForward = (remnant: FilmRemnant): void => {
+    // This is the one intentional add/remove intersection: replacing a
+    // partially consumed source with its unconsumed identical units.
+    if (addedIds.has(remnant.id)) throw new Error(`Duplicate inventory addition: ${remnant.id}`);
+    addedIds.add(remnant.id);
+    add.push(remnant);
+  };
+  const addResidual = (remnant: FilmRemnant): void => {
     let id = remnant.id;
     let suffix = 2;
-    while (addedIds.has(id)) {
+    while (reservedIds.has(id) || addedIds.has(id)) {
       id = `${remnant.id}--${suffix}`;
       suffix += 1;
     }
+    reservedIds.add(id);
     addedIds.add(id);
     add.push(id === remnant.id ? remnant : { ...remnant, id });
   };
@@ -183,9 +195,9 @@ function makeInventoryDelta(consumed: ConsumedSource[]): InventoryDelta {
     basedOnUpdatedAt[item.source.id] = item.source.updatedAt;
     const unconsumedQuantity = item.source.quantity - item.unitsConsumed;
     if (unconsumedQuantity > 0) {
-      addUnique({ ...item.source, quantity: unconsumedQuantity });
+      addCarryForward({ ...item.source, quantity: unconsumedQuantity });
     }
-    item.residuals.forEach(addUnique);
+    item.residuals.forEach(addResidual);
   }
   return { removeIds, add, basedOnUpdatedAt };
 }
@@ -253,6 +265,9 @@ export function planWithRemnants(request: RemnantPlanRequest, remnantOverride?: 
     remnantUses,
     newRollQuantity: remainingQuantity,
     newRollResult,
-    inventoryDelta: makeInventoryDelta([...consumed.values()].sort((left, right) => left.sourceIndex - right.sourceIndex)),
+    inventoryDelta: makeInventoryDelta(
+      [...consumed.values()].sort((left, right) => left.sourceIndex - right.sourceIndex),
+      remnants.map((remnant) => remnant.id),
+    ),
   };
 }

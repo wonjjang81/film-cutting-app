@@ -120,6 +120,7 @@ describe('planWithRemnants', () => {
       id: 'many', quantity: 1, createdAt: 'created', updatedAt: 'updated',
     }));
     expect(new Set(plan.inventoryDelta.add.map((item) => item.id)).size).toBe(plan.inventoryDelta.add.length);
+    expect(plan.inventoryDelta.add.filter((item) => plan.inventoryDelta.removeIds.includes(item.id)).map((item) => item.id)).toEqual(['many']);
   });
 
   it('never mutates requests or inventory, and produces the same tentative plan twice', () => {
@@ -150,5 +151,45 @@ describe('planWithRemnants', () => {
     expect(plan.remnantUses[0]?.result.optimizationStatus).not.toBe('exact');
     expect(plan.remnantUses[0]?.result.lowerBoundLengthMm).toBeGreaterThanOrEqual(0);
     expect(plan.remnantUses[0]?.result.optimalityGapMm).toBeGreaterThanOrEqual(0);
+  });
+
+  it('never assigns a residual ID already held by another inventory source', () => {
+    const request = {
+      ...baseRequest,
+      pieceWidthMm: 40,
+      pieceLengthMm: 30,
+      quantity: 2,
+      gapMm: 30,
+    };
+    const sources = [
+      remnant({ id: 'b', widthMm: 100, lengthMm: 50 }),
+      remnant({ id: 'b--residual-1-1-right', widthMm: 100, lengthMm: 50 }),
+      remnant({ id: 'reserved-mismatch', brand: 'B', widthMm: 100, lengthMm: 50 }),
+    ];
+
+    const plan = planWithRemnants(request, sources);
+    const sourceIds = new Set(sources.map((source) => source.id));
+    const addIds = plan.inventoryDelta.add.map((item) => item.id);
+    const removeIds = new Set(plan.inventoryDelta.removeIds);
+
+    expect(plan.remnantUses.map((use) => use.remnantId)).toEqual(['b', 'b--residual-1-1-right']);
+    expect(new Set(addIds).size).toBe(addIds.length);
+    expect(addIds.every((id) => !sourceIds.has(id))).toBe(true);
+    expect(addIds.every((id) => !removeIds.has(id))).toBe(true);
+    expect(addIds).toContain('b--residual-1-1-right--2');
+  });
+
+  it('reserves IDs from mismatched inventory that it leaves untouched', () => {
+    const request = { ...baseRequest, pieceWidthMm: 40, pieceLengthMm: 30, quantity: 1, gapMm: 30 };
+    const sources = [
+      remnant({ id: 'b', widthMm: 100, lengthMm: 50 }),
+      remnant({ id: 'b--residual-1-1-right', brand: 'B', widthMm: 100, lengthMm: 50 }),
+    ];
+
+    const plan = planWithRemnants(request, sources);
+
+    expect(plan.inventoryDelta.removeIds).toEqual(['b']);
+    expect(plan.inventoryDelta.add.map((item) => item.id)).toContain('b--residual-1-1-right--2');
+    expect(plan.inventoryDelta.add.map((item) => item.id)).not.toContain('b--residual-1-1-right');
   });
 });
