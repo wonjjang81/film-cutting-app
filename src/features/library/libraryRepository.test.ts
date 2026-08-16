@@ -42,6 +42,34 @@ function trackedAdapter(initial: string | null = null): KeyValueAdapter & { writ
   };
 }
 
+function retryableReadAdapter(): KeyValueAdapter & {
+  writes: number;
+  rejectNextRead(): void;
+} {
+  let value: string | null = null;
+  let writes = 0;
+  let rejectRead = false;
+  return {
+    get: async () => {
+      if (rejectRead) {
+        rejectRead = false;
+        throw new Error('storage unavailable');
+      }
+      return value;
+    },
+    set: async (_key, nextValue) => {
+      writes += 1;
+      value = nextValue;
+    },
+    get writes() {
+      return writes;
+    },
+    rejectNextRead: () => {
+      rejectRead = true;
+    },
+  };
+}
+
 function remnant(overrides: Partial<FilmRemnant> = {}): FilmRemnant {
   return {
     id: 'remnant-1',
@@ -199,6 +227,76 @@ describe('library repository', () => {
     ]);
 
     expect((await repository.load()).document.presets.map((item) => item.id)).toEqual(['first', 'second']);
+  });
+
+  it('does not overwrite existing storage when a mutation cannot read it', async () => {
+    const adapter = retryableReadAdapter();
+    const repository = createLibraryRepository(adapter);
+    await repository.saveRemnant(remnant({ id: 'existing' }));
+    const writesBeforeFailure = adapter.writes;
+    adapter.rejectNextRead();
+
+    await expect(repository.saveRemnant(remnant({ id: 'new' }))).rejects.toThrow('storage unavailable');
+
+    expect(adapter.writes).toBe(writesBeforeFailure);
+    expect((await repository.load()).document.remnants.map((item) => item.id)).toEqual(['existing']);
+  });
+
+  it('keeps the mutation queue usable after a read failure and preserves later updates', async () => {
+    const adapter = retryableReadAdapter();
+    const repository = createLibraryRepository(adapter);
+    await repository.saveRemnant(remnant({ id: 'existing' }));
+    adapter.rejectNextRead();
+
+    await expect(repository.saveRemnant(remnant({ id: 'lost' }))).rejects.toThrow('storage unavailable');
+    await repository.saveRemnant(remnant({ id: 'retained' }));
+
+    expect((await repository.load()).document.remnants.map((item) => item.id)).toEqual(['existing', 'retained']);
+  });
+
+  it('does not rewrite a partially corrupt document during a mutation', async () => {
+    const stored = JSON.stringify({
+      version: 1,
+      presets: [],
+      jobs: [],
+      remnants: [remnant(), { ...remnant({ id: 'bad' }), widthMm: 0 }],
+    });
+    const adapter = trackedAdapter(stored);
+    const repository = createLibraryRepository(adapter);
+
+    await expect(repository.saveRemnant(remnant({ id: 'new' }))).rejects.toThrow('must be recovered');
+
+    expect(adapter.writes).toBe(0);
+    expect(adapter.value()).toBe(stored);
+  });
+
+  it('normalizes valid ISO-8601 instants and accepts equivalent delta versions', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    await repository.saveRemnant(remnant({
+      id: 'source',
+      createdAt: '2026-08-16T00:00:00Z',
+      updatedAt: '2026-08-16T09:00:00+09:00',
+    }));
+
+    expect((await repository.load()).document.remnants[0]).toMatchObject({
+      createdAt: '2026-08-16T00:00:00.000Z',
+      updatedAt: '2026-08-16T00:00:00.000Z',
+    });
+
+    await repository.applyInventoryDelta({
+      removeIds: ['source'],
+      add: [remnant({ id: 'residual', widthMm: 20, lengthMm: 40 })],
+      basedOnUpdatedAt: { source: '2026-08-16T00:00:00Z' },
+    });
+
+    expect((await repository.load()).document.remnants.map((item) => item.id)).toEqual(['residual']);
+  });
+
+  it('rejects date-only and locale timestamp strings', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+
+    await expect(repository.saveRemnant(remnant({ createdAt: '2026-08-16' }))).rejects.toThrow('Invalid remnant');
+    await expect(repository.saveRemnant(remnant({ updatedAt: '8/16/2026, 9:00 AM' }))).rejects.toThrow('Invalid remnant');
   });
 
   it('rejects stale inventory before writing anything', async () => {

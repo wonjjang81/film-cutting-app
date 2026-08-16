@@ -66,10 +66,29 @@ function positiveInteger(value: unknown): value is number {
   return finitePositive(value) && Number.isInteger(value);
 }
 
-function validTimestamp(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
+const ISO_INSTANT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+
+function normalizeTimestamp(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const match = ISO_INSTANT.exec(value);
+  if (match === null) return undefined;
+  const [, year = '', month = '', day = '', hour = '', minute = '', second = '', zone = ''] = match;
+  const numericYear = Number(year);
+  const numericMonth = Number(month);
+  const numericDay = Number(day);
+  const numericHour = Number(hour);
+  const numericMinute = Number(minute);
+  const numericSecond = Number(second);
+  const zoneHours = zone === 'Z' ? 0 : Number(zone.slice(1, 3));
+  const zoneMinutes = zone === 'Z' ? 0 : Number(zone.slice(4, 6));
+  const isLeapYear = numericYear % 4 === 0 && (numericYear % 100 !== 0 || numericYear % 400 === 0);
+  const daysInMonth = [31, isLeapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][numericMonth - 1] ?? 0;
+  if (numericMonth < 1 || numericMonth > 12
+    || numericDay < 1 || numericDay > daysInMonth
+    || numericHour > 23 || numericMinute > 59 || numericSecond > 59
+    || zoneHours > 23 || zoneMinutes > 59) return undefined;
   const parsed = new Date(value);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value;
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 }
 
 function validId(value: unknown): value is string {
@@ -130,8 +149,11 @@ function validateResult(value: unknown): SavedCuttingResultSummary | undefined {
 }
 
 function validatePreset(value: unknown): FilmPreset | undefined {
-  if (!isRecord(value)
-    || !validId(value.id)
+  if (!isRecord(value)) return undefined;
+  const createdAt = normalizeTimestamp(value.createdAt);
+  const updatedAt = normalizeTimestamp(value.updatedAt);
+  if (
+    !validId(value.id)
     || !nonblankString(value.brand)
     || !nonblankString(value.productNumber)
     || !finitePositive(value.rollWidthMm)
@@ -141,43 +163,49 @@ function validatePreset(value: unknown): FilmPreset | undefined {
     || !finiteNonnegative(value.sideMarginMm)
     || !finiteNonnegative(value.startEndMarginMm)
     || typeof value.allowRotation !== 'boolean'
-    || !validTimestamp(value.createdAt)
-    || !validTimestamp(value.updatedAt)) return undefined;
+    || createdAt === undefined
+    || updatedAt === undefined) return undefined;
   return {
     id: value.id, brand: value.brand, productNumber: value.productNumber,
     rollWidthMm: value.rollWidthMm, pieceWidthMm: value.pieceWidthMm, pieceLengthMm: value.pieceLengthMm,
     gapMm: value.gapMm, sideMarginMm: value.sideMarginMm, startEndMarginMm: value.startEndMarginMm,
-    allowRotation: value.allowRotation, createdAt: value.createdAt, updatedAt: value.updatedAt,
+    allowRotation: value.allowRotation, createdAt, updatedAt,
   };
 }
 
 function validateRemnant(value: unknown): FilmRemnant | undefined {
-  if (!isRecord(value)
-    || !validId(value.id)
+  if (!isRecord(value)) return undefined;
+  const createdAt = normalizeTimestamp(value.createdAt);
+  const updatedAt = normalizeTimestamp(value.updatedAt);
+  if (
+    !validId(value.id)
     || !nonblankString(value.brand)
     || !nonblankString(value.productNumber)
     || !finitePositive(value.widthMm)
     || !finitePositive(value.lengthMm)
     || !positiveInteger(value.quantity)
-    || !validTimestamp(value.createdAt)
-    || !validTimestamp(value.updatedAt)
+    || createdAt === undefined
+    || updatedAt === undefined
     || (value.note !== undefined && typeof value.note !== 'string')) return undefined;
   return {
     id: value.id, brand: value.brand, productNumber: value.productNumber,
     widthMm: value.widthMm, lengthMm: value.lengthMm, quantity: value.quantity,
-    createdAt: value.createdAt, updatedAt: value.updatedAt,
+    createdAt, updatedAt,
     ...(value.note === undefined ? {} : { note: value.note }),
   };
 }
 
 function validateJob(value: unknown): SavedCuttingJob | undefined {
-  if (!isRecord(value)
-    || !validId(value.id)
+  if (!isRecord(value)) return undefined;
+  const createdAt = normalizeTimestamp(value.createdAt);
+  const updatedAt = normalizeTimestamp(value.updatedAt);
+  if (
+    !validId(value.id)
     || !nonblankString(value.name)
     || !nonblankString(value.brand)
     || !nonblankString(value.productNumber)
-    || !validTimestamp(value.createdAt)
-    || !validTimestamp(value.updatedAt)
+    || createdAt === undefined
+    || updatedAt === undefined
     || !Array.isArray(value.remnantIds)
     || !value.remnantIds.every(validId)
     || !Array.isArray(value.remnantSummary)) return undefined;
@@ -187,7 +215,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
-    createdAt: value.createdAt, updatedAt: value.updatedAt, input,
+    createdAt, updatedAt, input,
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
   };
 }
@@ -284,9 +312,19 @@ function isPartialCarryForward(source: FilmRemnant, replacement: FilmRemnant): b
 export function createLibraryRepository(adapter: KeyValueAdapter): LibraryRepository {
   let mutationQueue: Promise<void> = Promise.resolve();
 
+  const readStorage = async (): Promise<LibraryLoadResult> => parseDocument(await adapter.get(LIBRARY_STORAGE_KEY));
+
+  const readForMutation = async (): Promise<LibraryLoadResult> => {
+    const loaded = await readStorage();
+    if (loaded.warnings.length > 0) {
+      throw new Error('Saved library must be recovered before it can be changed.');
+    }
+    return loaded;
+  };
+
   const read = async (): Promise<LibraryLoadResult> => {
     try {
-      return parseDocument(await adapter.get(LIBRARY_STORAGE_KEY));
+      return await readStorage();
     } catch {
       return { document: emptyDocument(), warnings: ['Saved library could not be read and was reset.'] };
     }
@@ -294,7 +332,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
 
   const mutate = <T>(operation: (document: LibraryDocument) => T): Promise<T> => {
     const run = async (): Promise<T> => {
-      const loaded = await read();
+      const loaded = await readForMutation();
       const document = clone(loaded.document);
       const result = operation(document);
       await adapter.set(LIBRARY_STORAGE_KEY, JSON.stringify(document));
@@ -335,10 +373,11 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
     async renameJob(id, name, updatedAt): Promise<void> {
       assertId(id);
       if (!nonblankString(name)) throw new Error('Job name must be nonblank.');
-      if (!validTimestamp(updatedAt)) throw new Error('Job updatedAt must be an ISO timestamp.');
+      const normalizedUpdatedAt = normalizeTimestamp(updatedAt);
+      if (normalizedUpdatedAt === undefined) throw new Error('Job updatedAt must be an ISO timestamp.');
       await mutate((document) => {
         document.jobs = orderJobs(document.jobs.map((job) => job.id === id
-          ? { ...job, name, updatedAt }
+          ? { ...job, name, updatedAt: normalizedUpdatedAt }
           : clone(job)));
       });
     },
@@ -380,12 +419,12 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         const currentById = new Map(document.remnants.map((remnant) => [remnant.id, remnant]));
         for (const removeId of removeIds) {
           const source = currentById.get(removeId);
-          const basedOn = delta.basedOnUpdatedAt[removeId];
-          if (source === undefined || !validTimestamp(basedOn) || source.updatedAt !== basedOn) {
+          const basedOn = normalizeTimestamp(delta.basedOnUpdatedAt[removeId]);
+          if (source === undefined || basedOn === undefined || source.updatedAt !== basedOn) {
             throw new Error(`Inventory remnant "${removeId}" is missing or stale.`);
           }
         }
-        if (Object.keys(delta.basedOnUpdatedAt).some((id) => !removeIds.has(id) || !validTimestamp(delta.basedOnUpdatedAt[id]))) {
+        if (Object.keys(delta.basedOnUpdatedAt).some((id) => !removeIds.has(id) || normalizeTimestamp(delta.basedOnUpdatedAt[id]) === undefined)) {
           throw new Error('Inventory delta has an invalid version check.');
         }
         for (const addition of additions) {
