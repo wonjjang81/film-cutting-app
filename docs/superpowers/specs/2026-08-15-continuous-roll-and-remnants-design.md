@@ -57,7 +57,16 @@ type ContinuousRollInput = {
 → 행 패턴 종류 최소
 ```
 
-동일 입력은 항상 동일 결과를 반환한다. 입력 수량은 최대 100,000개로 제한해 브라우저 정지를 방지한다.
+동일 입력은 항상 동일 결과를 반환한다. 입력 수량은 최대 100,000개로 제한한다.
+
+### 2.2.1 실용형 최적화 계약 (2026-08-16 승인)
+
+브라우저 안전성을 위해 계산 전 예상 상태·전이 수를 산정하고 다음 두 경로 중 하나를 결정적으로 선택한다.
+
+- **완전 최적 경로:** 예상 작업량이 안전 예산 이하면 위 우선순위 전체를 정확하게 최적화한다.
+- **원단 절약 경로:** 안전 예산을 넘으면 사용 길이를 가장 먼저 줄이는 제한된 후보 집합을 계산한다. 패턴 종류 수는 전역 최적화하지 않고 결과 정렬과 작업 편의용 보조 기준으로만 사용한다.
+
+원단 절약 경로는 임의로 정확한 결과라고 표시하지 않는다. 물리적 길이 하한과 결과 길이가 같으면 `certified`, 그렇지 않으면 `approximate`를 반환하고 하한 대비 차이를 함께 표시한다. 유한 자투리에서는 계산된 후보 중 배치 수량을 최대화한 뒤 같은 기준을 적용한다. 어떤 경로에서도 실제 좌표, 수량, 자투리 길이 제한을 위반해서는 안 된다.
 
 ### 2.3 출력
 
@@ -73,6 +82,14 @@ type ContinuousRollResult = {
   rotatedCount: number;
   rowPatterns: RowPatternUsage[];
   estimatedCutLines: number;
+  optimizationStatus: 'exact' | 'certified' | 'approximate';
+  lowerBoundLengthMm: number;
+  optimalityGapMm: number;
+  planningMetrics: {
+    strategy: 'exact' | 'material-first';
+    estimatedWork: number;
+    retainedStates: number;
+  };
 };
 ```
 

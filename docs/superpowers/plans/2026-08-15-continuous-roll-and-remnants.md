@@ -10,7 +10,7 @@
 
 ## Global Constraints
 
-- Optimization priority is new-roll length, overproduction, waste, rotations, then row-pattern count.
+- Optimization priority is new-roll length, overproduction, waste, rotations, then row-pattern count. When the deterministic browser-safety budget is exceeded, switch to the approved material-first path: pattern-kind minimization becomes a local tie-break, and the result must expose `exact`, `certified`, or `approximate` status plus a physical lower bound and gap.
 - Roll width is fixed and roll length is continuous.
 - Finite remnants pass their exact length as `maxLengthMm`; new-roll optimization has no maximum length.
 - Quantity must be an integer from 1 through 100,000.
@@ -49,7 +49,9 @@
 
 **Interfaces:**
 - Consumes: `ContinuousRollInput` from the approved design.
-- Produces: `optimizeContinuousRollLayout(input): ContinuousRollResult` with placements, used length, overproduction, utilization, orientation counts, row usage, and estimated cut lines.
+- Produces: `optimizeContinuousRollLayout(input): ContinuousRollResult` with placements, used length, overproduction, utilization, orientation counts, row usage, estimated cut lines, optimization status, lower bound/gap, and planning metrics.
+
+**Approved practical amendment (2026-08-16):** Estimate work before allocating planner state. Use the globally exact path only inside a deterministic browser-safety budget. Above it, use a bounded deterministic material-first candidate set, preserve exact geometry and finite-length constraints, minimize used length among retained candidates, and label the result honestly. A result is `certified` only when it reaches the physical lower bound; otherwise it is `approximate`. The public UI must never describe an approximate result as globally optimal.
 
 - [ ] **Step 1: Write a failing minimum-length test**
 
@@ -73,7 +75,7 @@ Expected: FAIL because `optimizeContinuousRollLayout` does not exist.
 
 - [ ] **Step 3: Implement row patterns and dynamic programming**
 
-Generate every `(normalCount, rotatedCount)` row that fits the usable width, plus vertical-partition blocks that combine stacked normal pieces beside stacked rotated pieces. Record each candidate's occupied height, capacity, rotations, and cut complexity. Build states `0..quantity + maxPatternCapacity`, where each state stores the best predecessor under the global priority tuple. Reject candidates or sequences beyond optional `maxLengthMm`.
+For the exact path, generate every `(normalCount, rotatedCount)` row that fits the usable width plus vertical-partition blocks and retain the full priority tuple. Before allocation, estimate its work. If it exceeds the safety budget, use bounded geometry event candidates (pure orientations, best-density rows, balanced mixed partitions, and finite-length partial candidates) and expose material-first status/lower-bound/gap. Reject candidates or sequences beyond optional `maxLengthMm`.
 
 ```ts
 export function optimizeContinuousRollLayout(input: ContinuousRollInput): ContinuousRollResult {
@@ -91,7 +93,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Add one failing test at a time for geometry and tie-breaking**
 
-Cover side/start/end margins, gaps, rotation disabled, exact quantity, minimum overproduction on equal length, deterministic output, non-overlap, bounds, finite `maxLengthMm`, vertical-partition geometry, and quantity 100,001 rejection. Run each test before implementing the corresponding behavior and confirm the expected failure.
+Cover side/start/end margins, gaps, rotation disabled, exact quantity, minimum overproduction on equal length, deterministic output, non-overlap, bounds, finite `maxLengthMm`, vertical-partition geometry, quantity 100,001 rejection, exact/material-first routing, physical lower-bound certification, honest positive gaps, and deterministic retained-state bounds on adversarial 100,000-piece inputs. Run each test before implementing the corresponding behavior and confirm the expected failure.
 
 - [ ] **Step 6: Extend the preview to continuous-roll coordinates**
 
