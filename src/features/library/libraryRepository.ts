@@ -34,6 +34,7 @@ export type LibraryRepository = {
   saveRemnant(remnant: FilmRemnant): Promise<void>;
   deleteRemnant(id: string): Promise<void>;
   applyInventoryDelta(delta: InventoryDelta): Promise<void>;
+  confirmJob(job: SavedCuttingJob, delta: InventoryDelta): Promise<void>;
 };
 
 type Validator<T> = (value: unknown) => T | undefined;
@@ -305,6 +306,46 @@ function isPartialCarryForward(source: FilmRemnant, replacement: FilmRemnant): b
     && replacement.note === source.note;
 }
 
+function applyInventoryDeltaToDocument(document: LibraryDocument, delta: InventoryDelta): void {
+  if (!isRecord(delta)
+    || !Array.isArray(delta.removeIds)
+    || !delta.removeIds.every(validId)
+    || !isRecord(delta.basedOnUpdatedAt)
+    || !Array.isArray(delta.add)) throw new Error('Invalid inventory delta.');
+  const removeIds = new Set(delta.removeIds);
+  if (removeIds.size !== delta.removeIds.length) throw new Error('Inventory delta removes a remnant more than once.');
+  const additions = delta.add.map((item) => assertValid(item, validateRemnant, 'inventory remnant'));
+  const addIds = new Set(additions.map((item) => item.id));
+  if (addIds.size !== additions.length) throw new Error('Inventory delta adds duplicate remnant IDs.');
+
+  const currentById = new Map(document.remnants.map((remnant) => [remnant.id, remnant]));
+  for (const removeId of removeIds) {
+    const source = currentById.get(removeId);
+    const basedOn = normalizeTimestamp(delta.basedOnUpdatedAt[removeId]);
+    if (source === undefined || basedOn === undefined || source.updatedAt !== basedOn) {
+      throw new Error(`Inventory remnant "${removeId}" is missing or stale.`);
+    }
+  }
+  if (Object.keys(delta.basedOnUpdatedAt).some((id) => !removeIds.has(id) || normalizeTimestamp(delta.basedOnUpdatedAt[id]) === undefined)) {
+    throw new Error('Inventory delta has an invalid version check.');
+  }
+  for (const addition of additions) {
+    if (currentById.has(addition.id) && !removeIds.has(addition.id)) {
+      throw new Error(`Inventory addition "${addition.id}" conflicts with an untouched remnant.`);
+    }
+    if (removeIds.has(addition.id)) {
+      const source = currentById.get(addition.id);
+      if (source === undefined || !isPartialCarryForward(source, addition)) {
+        throw new Error(`Inventory replacement "${addition.id}" is not a partial carry-forward.`);
+      }
+    }
+  }
+  document.remnants = [
+    ...document.remnants.filter((remnant) => !removeIds.has(remnant.id)),
+    ...additions.map(clone),
+  ];
+}
+
 /**
  * A single-process repository. Its promise queue prevents lost updates among
  * calls through this instance; separate instances need a stronger storage API.
@@ -405,43 +446,15 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
 
     async applyInventoryDelta(delta): Promise<void> {
       await mutate((document) => {
-        if (!isRecord(delta)
-          || !Array.isArray(delta.removeIds)
-          || !delta.removeIds.every(validId)
-          || !isRecord(delta.basedOnUpdatedAt)
-          || !Array.isArray(delta.add)) throw new Error('Invalid inventory delta.');
-        const removeIds = new Set(delta.removeIds);
-        if (removeIds.size !== delta.removeIds.length) throw new Error('Inventory delta removes a remnant more than once.');
-        const additions = delta.add.map((item) => assertValid(item, validateRemnant, 'inventory remnant'));
-        const addIds = new Set(additions.map((item) => item.id));
-        if (addIds.size !== additions.length) throw new Error('Inventory delta adds duplicate remnant IDs.');
+        applyInventoryDeltaToDocument(document, delta);
+      });
+    },
 
-        const currentById = new Map(document.remnants.map((remnant) => [remnant.id, remnant]));
-        for (const removeId of removeIds) {
-          const source = currentById.get(removeId);
-          const basedOn = normalizeTimestamp(delta.basedOnUpdatedAt[removeId]);
-          if (source === undefined || basedOn === undefined || source.updatedAt !== basedOn) {
-            throw new Error(`Inventory remnant "${removeId}" is missing or stale.`);
-          }
-        }
-        if (Object.keys(delta.basedOnUpdatedAt).some((id) => !removeIds.has(id) || normalizeTimestamp(delta.basedOnUpdatedAt[id]) === undefined)) {
-          throw new Error('Inventory delta has an invalid version check.');
-        }
-        for (const addition of additions) {
-          if (currentById.has(addition.id) && !removeIds.has(addition.id)) {
-            throw new Error(`Inventory addition "${addition.id}" conflicts with an untouched remnant.`);
-          }
-          if (removeIds.has(addition.id)) {
-            const source = currentById.get(addition.id);
-            if (source === undefined || !isPartialCarryForward(source, addition)) {
-              throw new Error(`Inventory replacement "${addition.id}" is not a partial carry-forward.`);
-            }
-          }
-        }
-        document.remnants = [
-          ...document.remnants.filter((remnant) => !removeIds.has(remnant.id)),
-          ...additions.map(clone),
-        ];
+    async confirmJob(job, delta): Promise<void> {
+      const valid = assertValid(job, validateJob, 'job');
+      await mutate((document) => {
+        applyInventoryDeltaToDocument(document, delta);
+        document.jobs = orderJobs(replaceById(document.jobs, valid));
       });
     },
   };

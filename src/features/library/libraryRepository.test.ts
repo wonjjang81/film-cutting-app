@@ -333,6 +333,62 @@ describe('library repository', () => {
     ]);
   });
 
+  it('confirms a job and its inventory delta together in exactly one write', async () => {
+    const adapter = trackedAdapter();
+    const repository = createLibraryRepository(adapter);
+    await repository.saveRemnant(remnant({ id: 'source' }));
+    const writesBeforeConfirmation = adapter.writes;
+
+    await repository.confirmJob(job(1), {
+      removeIds: ['source'],
+      add: [remnant({ id: 'residual', widthMm: 20, lengthMm: 40 })],
+      basedOnUpdatedAt: { source: timestamp },
+    });
+
+    const confirmed = (await repository.load()).document;
+    expect(adapter.writes).toBe(writesBeforeConfirmation + 1);
+    expect(confirmed.jobs.map((item) => item.id)).toEqual(['job-1']);
+    expect(confirmed.remnants).toEqual([
+      expect.objectContaining({ id: 'residual', widthMm: 20, lengthMm: 40 }),
+    ]);
+  });
+
+  it('does not save a job when its confirmation delta is stale', async () => {
+    const adapter = trackedAdapter();
+    const repository = createLibraryRepository(adapter);
+    await repository.saveRemnant(remnant({ id: 'source' }));
+    const writesBeforeConfirmation = adapter.writes;
+
+    await expect(repository.confirmJob(job(1), {
+      removeIds: ['source'],
+      add: [],
+      basedOnUpdatedAt: { source: '2026-08-16T00:00:01.000Z' },
+    })).rejects.toThrow('stale');
+
+    const unchanged = (await repository.load()).document;
+    expect(adapter.writes).toBe(writesBeforeConfirmation);
+    expect(unchanged.jobs).toEqual([]);
+    expect(unchanged.remnants.map((item) => item.id)).toEqual(['source']);
+  });
+
+  it('does not apply inventory when the confirmed job is malformed', async () => {
+    const adapter = trackedAdapter();
+    const repository = createLibraryRepository(adapter);
+    await repository.saveRemnant(remnant({ id: 'source' }));
+    const writesBeforeConfirmation = adapter.writes;
+
+    await expect(repository.confirmJob(job(1, { name: '  ' }), {
+      removeIds: ['source'],
+      add: [],
+      basedOnUpdatedAt: { source: timestamp },
+    })).rejects.toThrow('Invalid job');
+
+    const unchanged = (await repository.load()).document;
+    expect(adapter.writes).toBe(writesBeforeConfirmation);
+    expect(unchanged.jobs).toEqual([]);
+    expect(unchanged.remnants.map((item) => item.id)).toEqual(['source']);
+  });
+
   it('allows a timestamp-checked partial carry-forward to replace its own source ID', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     await repository.saveRemnant(remnant({ id: 'source', quantity: 3 }));
