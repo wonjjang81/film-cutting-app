@@ -67,6 +67,9 @@ export type SavedCuttingJob = {
   remnantIds: string[];
   remnantSummary: SavedRemnantSummary[];
   result: SavedCuttingResultSummary;
+  /** Physical cutting completion is tracked separately from inventory confirmation. */
+  isCuttingComplete?: boolean;
+  cuttingCompletedAt?: string;
 };
 
 export type LibraryDocument = {
