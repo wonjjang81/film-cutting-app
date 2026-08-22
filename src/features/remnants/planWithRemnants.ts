@@ -215,7 +215,7 @@ export function planWithRemnants(request: RemnantPlanRequest, remnantOverride?: 
     .filter(({ source }) => {
       if (!usableRemnant(source)
         || !sameProduct(source.brand, request.brand)
-        || !sameProduct(source.productNumber, request.productNumber)
+        || (request.productNumber.trim().length > 0 && !sameProduct(source.productNumber, request.productNumber))
         || seenIds.has(source.id)) return false;
       seenIds.add(source.id);
       return true;

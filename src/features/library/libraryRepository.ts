@@ -55,6 +55,10 @@ function nonblankString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function stringValue(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
 function finitePositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
@@ -156,7 +160,7 @@ function validatePreset(value: unknown): FilmPreset | undefined {
   if (
     !validId(value.id)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || !finitePositive(value.rollWidthMm)
     || !finitePositive(value.pieceWidthMm)
     || !finitePositive(value.pieceLengthMm)
@@ -181,7 +185,7 @@ function validateRemnant(value: unknown): FilmRemnant | undefined {
   if (
     !validId(value.id)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || !finitePositive(value.widthMm)
     || !finitePositive(value.lengthMm)
     || !positiveInteger(value.quantity)
@@ -204,7 +208,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     !validId(value.id)
     || !nonblankString(value.name)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || createdAt === undefined
     || updatedAt === undefined
     || !Array.isArray(value.remnantIds)
@@ -213,11 +217,16 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const input = validateInput(value.input);
   const result = validateResult(value.result);
   const remnantSummary = value.remnantSummary.map(validateRemnantSummary);
+  const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
+  if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
+  if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
     createdAt, updatedAt, input,
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
+    ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
+    ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
   };
 }
 
