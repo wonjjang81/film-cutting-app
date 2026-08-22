@@ -23,13 +23,15 @@ export function calculateEstimate(
   job: SavedCuttingJob,
   materialCostPerM = DEFAULT_MATERIAL_COST_PER_M,
   constructionCostPerM2 = DEFAULT_CONSTRUCTION_COST_PER_M2,
+  discountRateOverride?: number,
 ): Estimate {
   const materialLengthM = Math.max(0, job.result.newRollLengthMm) / 1000;
   const productAreaM2 = Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * job.input.quantity) / 1_000_000;
   const materialCost = roundWon(materialLengthM * Math.max(0, materialCostPerM));
   const constructionCost = roundWon(productAreaM2 * Math.max(0, constructionCostPerM2));
   const subtotal = materialCost + constructionCost;
-  const discountRate = productAreaM2 >= 10 ? 0.15 : productAreaM2 >= 5 ? 0.1 : productAreaM2 >= 1 ? 0.05 : 0;
+  const automaticDiscountRate = productAreaM2 >= 10 ? 0.15 : productAreaM2 >= 5 ? 0.1 : productAreaM2 >= 1 ? 0.05 : 0;
+  const discountRate = discountRateOverride === undefined ? automaticDiscountRate : Math.min(1, Math.max(0, discountRateOverride));
   const discount = roundWon(subtotal * discountRate);
   return { materialLengthM, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount };
 }

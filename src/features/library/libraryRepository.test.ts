@@ -446,4 +446,15 @@ describe('library repository', () => {
     expect(asyncStorage.getItem).toHaveBeenCalledWith('key');
     expect(asyncStorage.setItem).toHaveBeenCalledWith('key', 'value');
   });
+
+  it('exports and imports a validated portable library document', async () => {
+    const source = createLibraryRepository(memoryAdapter());
+    await source.saveJob(job(1));
+    const raw = await source.exportDocument();
+    expect(JSON.parse(raw)).toMatchObject({ version: 1, jobs: [expect.objectContaining({ id: 'job-1' })] });
+
+    const target = createLibraryRepository(memoryAdapter());
+    await expect(target.importDocument(raw)).resolves.toEqual({ document: expect.objectContaining({ jobs: [expect.objectContaining({ id: 'job-1' })] }), warnings: [] });
+    await expect(target.importDocument('{not json')).rejects.toThrow('가져오지 못했습니다');
+  });
 });

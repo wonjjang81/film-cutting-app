@@ -48,6 +48,20 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} />,
         }}
       />
+      <Tabs.Screen
+        name="guide"
+        options={{
+          title: '사용 안내',
+          tabBarIcon: ({ color, size }) => <Ionicons name="help-circle-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: '설정',
+          tabBarIcon: ({ color, size }) => <Ionicons name="options-outline" color={color} size={size} />,
+        }}
+      />
     </Tabs>
   );
 }

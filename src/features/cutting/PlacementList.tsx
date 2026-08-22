@@ -9,17 +9,18 @@ type Props = {
   startEndMarginMm: number;
   onPlacementsChange?: (placements: Placement[]) => void;
   onCheckedIdsChange?: (ids: number[]) => void;
+  checkedPlacementIds?: readonly number[];
 };
 
 /** A compact production list: rows are the legacy "group" unit in the new roll planner. */
-export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMarginMm, onPlacementsChange, onCheckedIdsChange }: Props) {
+export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMarginMm, onPlacementsChange, onCheckedIdsChange, checkedPlacementIds = [] }: Props) {
   const [manual, setManual] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [placements, setPlacements] = useState<Placement[]>(result.placements);
   const [automaticPlacements, setAutomaticPlacements] = useState<Placement[]>(result.placements);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
   // Keep per-piece checks while the operator nudges coordinates; reset only for a new plan.
-  useEffect(() => { setPlacements(result.placements); setAutomaticPlacements(result.placements); setSelectedId(null); setManual(false); setCheckedIds(new Set()); onCheckedIdsChange?.([]); }, [result.usedLengthMm, result.producedQuantity, result.normalCount, result.rotatedCount, onCheckedIdsChange]);
+  useEffect(() => { setPlacements(result.placements); setAutomaticPlacements(result.placements); setSelectedId(null); setManual(false); const next = new Set(checkedPlacementIds.filter((id) => result.placements.some((placement) => placement.id === id))); setCheckedIds(next); onCheckedIdsChange?.([...next]); }, [result.usedLengthMm, result.producedQuantity, result.normalCount, result.rotatedCount, onCheckedIdsChange]);
 
   const groups = useMemo(() => {
     const sorted = [...placements].sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);

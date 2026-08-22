@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
@@ -146,10 +147,12 @@ export default function FilmCutInputScreen() {
         return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, request: toRemnantPlanRequest(normalized, []) };
       }));
       const planned = planGroupedPieces(requests, nextInventory(latest, useRemnants));
-      const usedIds = latest.jobs.map((job) => job.id);
+      const generatedIds = latest.jobs.map((job) => job.id);
       const timestamp = Date.now();
       for (const [index, entry] of planned.entries()) {
-        const job = buildSavedCuttingJob({ id: createUniqueUiId('job', timestamp + index, [...usedIds, ...planned.slice(0, index).map((item) => `job-${timestamp + index}`)]), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore });
+        const id = createUniqueUiId('job', timestamp + index, generatedIds);
+        generatedIds.push(id);
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore });
         await repository.saveJob(job);
       }
       setBatchPlans(planned);
@@ -222,6 +225,53 @@ export default function FilmCutInputScreen() {
     setBusy(true); setError(null);
     try { await repository.saveJob(draftJob); await refreshLibrary(); setNotice('현재 계산 결과를 프로젝트로 저장했습니다.'); }
     catch (caught) { setError(`프로젝트를 저장하지 못했습니다. ${messageOf(caught)}`); }
+    finally { setBusy(false); }
+  };
+
+  const exportLibrary = async () => {
+    setBusy(true); setError(null);
+    try {
+      const raw = await repository.exportDocument();
+      const filename = `film-cutting-library-${new Date().toISOString().slice(0, 10)}.json`;
+      if (Platform.OS === 'web') {
+        const blob = new Blob([raw], { type: 'application/json;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename; anchor.click(); URL.revokeObjectURL(url);
+      } else {
+        const FileSystem = await import('expo-file-system/legacy');
+        const uri = `${FileSystem.cacheDirectory}${filename}`;
+        await FileSystem.writeAsStringAsync(uri, raw, { encoding: FileSystem.EncodingType.UTF8 });
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: 'application/json', dialogTitle: '프로젝트 백업 공유' });
+        else throw new Error('이 기기에서는 파일 공유를 사용할 수 없습니다.');
+      }
+      setNotice('프로젝트 라이브러리를 JSON 파일로 내보냈습니다.');
+    } catch (caught) { setError(`프로젝트를 내보내지 못했습니다. ${messageOf(caught)}`); }
+    finally { setBusy(false); }
+  };
+
+  const importLibrary = async () => {
+    setBusy(true); setError(null);
+    try {
+      let raw: string | null = null;
+      if (Platform.OS === 'web') {
+        raw = await new Promise<string | null>((resolve) => {
+          const picker = document.createElement('input'); picker.type = 'file'; picker.accept = 'application/json,.json';
+          picker.onchange = async () => { const file = picker.files?.[0]; resolve(file ? await file.text() : null); };
+          picker.click();
+        });
+      } else {
+        const picked = await DocumentPicker.getDocumentAsync({ type: 'application/json', copyToCacheDirectory: true });
+        if (!picked.canceled) {
+          const FileSystem = await import('expo-file-system/legacy');
+          raw = await FileSystem.readAsStringAsync(picked.assets[0]!.uri, { encoding: FileSystem.EncodingType.UTF8 });
+        }
+      }
+      if (raw === null) return;
+      await repository.importDocument(raw);
+      await refreshLibrary();
+      setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setConfirmed(false); setCuttingComplete(false); setCheckedPlacementIds([]);
+      setNotice('프로젝트 라이브러리를 불러왔습니다.');
+    } catch (caught) { setError(`프로젝트를 불러오지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
 
@@ -328,11 +378,11 @@ export default function FilmCutInputScreen() {
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
         {batchPlans && <BatchPlanSummary plans={batchPlans} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
-        {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} />}
+        {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
         <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
         <View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View>
         <EstimateSummary job={draftJob} compact />
-        <View style={styles.exportRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="프로젝트 저장" disabled={busy} onPress={() => void saveProject()} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>프로젝트 저장</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="CSV 작업지시서 내보내기" disabled={busy} onPress={exportCsv} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>CSV 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="PDF 작업지시서 인쇄 또는 공유" disabled={busy} onPress={exportPdf} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>PDF·인쇄</Text></TouchableOpacity></View>
+        <View style={styles.exportRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="프로젝트 저장" disabled={busy} onPress={() => void saveProject()} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>프로젝트 저장</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="프로젝트 라이브러리 내보내기" disabled={busy} onPress={() => void exportLibrary()} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>백업 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="프로젝트 라이브러리 불러오기" disabled={busy} onPress={() => void importLibrary()} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>백업 불러오기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="CSV 작업지시서 내보내기" disabled={busy} onPress={exportCsv} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>CSV 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="PDF 작업지시서 인쇄 또는 공유" disabled={busy} onPress={exportPdf} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>PDF·인쇄</Text></TouchableOpacity></View>
       </View>}
 
       <View style={[styles.libraryGrid, libraryWide && styles.libraryGridWide]}>

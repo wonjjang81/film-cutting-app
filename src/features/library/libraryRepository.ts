@@ -26,6 +26,10 @@ export type InventoryDelta = {
 
 export type LibraryRepository = {
   load(): Promise<LibraryLoadResult>;
+  /** Returns the validated library document as a portable JSON file body. */
+  exportDocument(): Promise<string>;
+  /** Replaces the library with a validated document from a portable JSON file body. */
+  importDocument(raw: string): Promise<LibraryLoadResult>;
   savePreset(preset: FilmPreset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   saveJob(job: SavedCuttingJob): Promise<void>;
@@ -400,6 +404,25 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
     async load(): Promise<LibraryLoadResult> {
       const loaded = await read();
       return { document: clone(loaded.document), warnings: [...loaded.warnings] };
+    },
+
+    async exportDocument(): Promise<string> {
+      const loaded = await read();
+      if (loaded.warnings.length > 0) throw new Error(loaded.warnings.join(' '));
+      return JSON.stringify(loaded.document, null, 2);
+    },
+
+    async importDocument(raw: string): Promise<LibraryLoadResult> {
+      if (typeof raw !== 'string' || raw.trim().length === 0) throw new Error('가져올 프로젝트 파일이 비어 있습니다.');
+      const parsed = parseDocument(raw);
+      if (parsed.warnings.length > 0) throw new Error(`프로젝트 파일을 가져오지 못했습니다. ${parsed.warnings.join(' ')}`);
+      await mutate((document) => {
+        document.version = parsed.document.version;
+        document.presets = clone(parsed.document.presets);
+        document.jobs = orderJobs(parsed.document.jobs);
+        document.remnants = clone(parsed.document.remnants);
+      });
+      return { document: clone(parsed.document), warnings: [] };
     },
 
     async savePreset(preset): Promise<void> {
