@@ -1,22 +1,21 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-
-const COMPANY_KEY = 'film-cutting-company-v1';
+import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 
 export default function SettingsScreen() {
-  const [company, setCompany] = useState('');
+  const [info, setInfo] = useState<CompanyInfo>(emptyCompanyInfo);
   const [saved, setSaved] = useState(false);
-  useEffect(() => { void AsyncStorage.getItem(COMPANY_KEY).then((value) => { if (value !== null) setCompany(value); }); }, []);
-  const save = async (value: string) => { setCompany(value); setSaved(false); await AsyncStorage.setItem(COMPANY_KEY, value); setSaved(true); };
+  useEffect(() => { void AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY).then((value) => { if (value) { try { setInfo({ ...emptyCompanyInfo, ...JSON.parse(value) }); } catch { /* reset malformed settings */ } } }); }, []);
+  const save = async (field: keyof CompanyInfo, value: string) => { const next = { ...info, [field]: value }; setInfo(next); setSaved(false); await AsyncStorage.setItem(COMPANY_INFO_STORAGE_KEY, JSON.stringify(next)); setSaved(true); };
   return <View style={styles.page}>
     <View style={styles.content}>
       <Text style={styles.eyebrow}>SETTINGS</Text>
       <Text style={styles.title}>환경 설정</Text>
       <Text style={styles.subtitle}>견적서와 작업 화면에 사용할 정보를 관리합니다.</Text>
       <View style={styles.card}>
-        <Text style={styles.label}>회사명</Text>
-        <TextInput accessibilityLabel="회사명" value={company} onChangeText={(value) => void save(value)} placeholder="회사명을 입력하세요" placeholderTextColor="#94a3b8" style={styles.input} />
+        <Text style={styles.label}>견적서 회사 정보</Text>
+        {([['companyName', '회사명'], ['managerName', '담당자'], ['phone', '연락처'], ['email', '이메일'], ['address', '주소'], ['note', '견적서 메모']] as const).map(([field, label]) => <TextInput key={field} accessibilityLabel={label} value={info[field]} onChangeText={(value) => void save(field, value)} placeholder={label} placeholderTextColor="#94a3b8" multiline={field === 'note'} style={[styles.input, field === 'note' && styles.noteInput]} />)}
         <Text style={styles.hint}>{saved ? '자동 저장되었습니다.' : '입력 즉시 기기에 저장됩니다.'}</Text>
       </View>
       <View style={styles.card}>
@@ -38,6 +37,7 @@ const styles = StyleSheet.create({
   card: { marginTop: 24, padding: 20, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
   label: { fontSize: 13, fontWeight: '800', color: '#334155' },
   input: { minHeight: 48, marginTop: 9, paddingHorizontal: 13, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, color: '#0f172a', backgroundColor: '#f8fafc' },
+  noteInput: { minHeight: 76, paddingTop: 12, textAlignVertical: 'top' },
   hint: { marginTop: 7, fontSize: 11, color: '#64748b' },
   cardTitle: { fontSize: 15, fontWeight: '800', color: '#1e293b' },
   info: { marginTop: 8, fontSize: 13, color: '#64748b' },
