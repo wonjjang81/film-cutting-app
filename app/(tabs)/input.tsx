@@ -33,13 +33,13 @@ const initialForm: CuttingFormState = {
   quantity: '1', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
-type CuttingGroupDraft = { id: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; mergeGroupId?: string };
+type CuttingGroupDraft = { id: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
 function newPieceDraft(index: number): CuttingPieceDraft {
   return { id: index === 1 ? 'piece-1' : `piece-${Date.now()}-${index}`, name: `조각 ${index}`, form: { ...initialForm } };
 }
 function newGroupDraft(index: number): CuttingGroupDraft {
   const piece = newPieceDraft(1);
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: `그룹 ${index}`, form: piece.form, pieces: [piece] };
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: `그룹 ${index}`, form: piece.form, pieces: [piece], filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -119,15 +119,19 @@ export default function FilmCutInputScreen() {
     const request = toRemnantPlanRequest(normalizedForm, remnants);
     const nextPlan = planWithRemnants(request);
     const createdAt = new Date(timestampMs).toISOString();
+    const activeGroup = groups.find((group) => group.id === activeGroupId);
     const nextJob = buildSavedCuttingJob({
       id: createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
       name: request.productNumber ? `${request.brand} ${request.productNumber} 작업` : `${request.brand} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
+      filmName: activeGroup?.filmName,
+      materialCostPerM: optionalCost(activeGroup?.materialCostPerM),
+      constructionCostPerM2: optionalCost(activeGroup?.constructionCostPerM2),
     });
     const completedAt = completed ? new Date(timestampMs).toISOString() : undefined;
     const jobWithStatus = { ...nextJob, isCuttingComplete: completed, ...(completedAt ? { cuttingCompletedAt: completedAt } : {}), completedPlacementIds: [...completedIds] };
     setForm(normalizedForm); setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: normalizedForm, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: normalizedForm } : piece) } : group)); setPlanRequest(request); setPlan(nextPlan); setDraftJob(jobWithStatus); setBatchPlans(null); setConfirmed(false); setCuttingComplete(completed); setManualPlacements(null); setCheckedPlacementIds(completedIds);
     return { request, nextPlan, nextJob: jobWithStatus };
-  }, [activeGroupId, activePieceId]);
+  }, [activeGroupId, activePieceId, groups]);
 
   const calculate = useCallback(async (nextForm = form, nextUseRemnants = useRemnants, completed = false, completedIds: number[] = []) => {
     setBusy(true); setError(null); setNotice(null);
@@ -148,7 +152,7 @@ export default function FilmCutInputScreen() {
       const latest = await refreshLibrary();
       const requests: GroupedPieceRequest[] = groups.flatMap((group) => group.pieces.map((piece) => {
         const normalized = withProductionDefaults(piece.form);
-        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []) };
+        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       }));
       const planned = planGroupedPieces(requests, nextInventory(latest, useRemnants));
       const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM);
@@ -157,7 +161,7 @@ export default function FilmCutInputScreen() {
       for (const [index, entry] of planned.entries()) {
         const id = createUniqueUiId('job', timestamp + index, generatedIds);
         generatedIds.push(id);
-        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore });
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         await repository.saveJob(job);
       }
       setBatchPlans(planned);
@@ -173,7 +177,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request);
     const createdAt = new Date().toISOString();
-    const nextJob = buildSavedCuttingJob({ id: createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore });
+    const nextJob = buildSavedCuttingJob({ id: createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
 
@@ -375,7 +379,7 @@ export default function FilmCutInputScreen() {
       <View style={[styles.workspace, wide && styles.workspaceWide]}>
         <View style={[styles.panel, wide && styles.inputPanelWide]}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
-          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={(id, mergeGroupId) => setGroups((items) => items.map((group) => group.id === id ? { ...group, mergeGroupId } : group))} />
+          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={(id, mergeGroupId) => setGroups((items) => items.map((group) => group.id === id ? { ...group, mergeGroupId } : group))} onSettings={(id, patch) => setGroups((items) => items.map((group) => group.id === id ? { ...group, ...patch } : group))} />
           <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} />
           <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => updateActiveForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호 (선택)" value={form.productNumber} onChange={(productNumber) => updateActiveForm((current) => ({ ...current, productNumber }))} /></View>
           <FormSection title={`${groups.find((group) => group.id === activeGroupId)?.name ?? '현재 그룹'} · ${groups.find((group) => group.id === activeGroupId)?.pieces.find((piece) => piece.id === activePieceId)?.name ?? '현재 조각'} 생산 조건`} fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={updateActiveForm} />
@@ -411,14 +415,16 @@ type NumericKey = Exclude<keyof CuttingFormState, 'brand' | 'productNumber' | 'a
 function FormSection({ title, fields, form, setForm }: { title: string; fields: [NumericKey, string, string][]; form: CuttingFormState; setForm: React.Dispatch<React.SetStateAction<CuttingFormState>> }) {
   return <View style={styles.group}><Text style={styles.groupTitle}>{title}</Text><View style={styles.fieldGrid}>{fields.map(([key, label, unit]) => <NumericField key={key} label={label} unit={unit} value={form[key]} integer={key === 'quantity'} step={key === 'quantity' ? 1 : 50} min={key === 'quantity' ? 1 : 0} onChange={(value) => setForm((current) => ({ ...current, [key]: value }))} />)}</View></View>;
 }
-function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRename, onDelete, onMergeGroup }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRename(id: string, name: string): void; onDelete(id: string): void; onMergeGroup(id: string, mergeGroupId: string | undefined): void }) {
+function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRename, onDelete, onMergeGroup, onSettings }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRename(id: string, name: string): void; onDelete(id: string): void; onMergeGroup(id: string, mergeGroupId: string | undefined): void; onSettings(id: string, patch: Partial<Pick<CuttingGroupDraft, 'filmName' | 'materialCostPerM' | 'constructionCostPerM2'>>): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const finishRename = () => { if (editingId) onRename(editingId, editingName); setEditingId(null); };
+  const activeGroup = groups.find((group) => group.id === activeGroupId);
   return <View style={styles.groupInputPanel}>
     <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>그룹 입력</Text><Text style={styles.groupInputHint}>그룹을 선택해 조건을 입력하고 순서대로 계산합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 그룹 추가</Text></TouchableOpacity></View>
     <View style={styles.groupChips}>{groups.map((group, index) => <View key={group.id} style={[styles.groupChip, group.id === activeGroupId && styles.groupChipActive]}><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: group.id === activeGroupId }} onPress={() => onSelect(group)} style={styles.groupChipMain}>{editingId === group.id ? <TextInput accessibilityLabel={`${group.name} 이름`} autoFocus value={editingName} onChangeText={setEditingName} onBlur={finishRename} onSubmitEditing={finishRename} returnKeyType="done" style={styles.groupNameInput} /> : <><Text style={[styles.groupChipIndex, group.id === activeGroupId && styles.groupChipIndexActive]}>{index + 1}</Text><View style={styles.groupChipCopy}><Text style={[styles.groupChipText, group.id === activeGroupId && styles.groupChipTextActive]} numberOfLines={1}>{group.name}</Text><Text style={styles.groupChipMeta} numberOfLines={1}>{group.form.brand} · {group.form.pieceWidth || '—'}×{group.form.pieceLength || '—'} · {group.form.quantity || '—'}개{group.mergeGroupId ? ` · 병합 ${group.mergeGroupId}` : ''}</Text></View></>}</TouchableOpacity>{editingId !== group.id && <TouchableOpacity accessibilityLabel={`${group.name} 이름 변경`} onPress={() => { setEditingId(group.id); setEditingName(group.name); }} style={styles.groupChipAction}><Text>✎</Text></TouchableOpacity>}{groups.length > 1 && <TouchableOpacity accessibilityLabel={`${group.name} 삭제`} onPress={() => onDelete(group.id)} style={styles.groupChipAction}><Text style={styles.groupDeleteText}>×</Text></TouchableOpacity>}</View>)}</View>
     <View style={styles.mergeControl}><Text style={styles.mergeControlLabel}>현재 그룹 병합 번호</Text>{['1', '2', '3'].map((value) => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: groups.find((group) => group.id === activeGroupId)?.mergeGroupId === value }} onPress={() => { const group = groups.find((item) => item.id === activeGroupId); onMergeGroup(activeGroupId, group?.mergeGroupId === value ? undefined : value); }} style={[styles.mergeControlButton, groups.find((group) => group.id === activeGroupId)?.mergeGroupId === value && styles.mergeControlButtonActive]}><Text style={[styles.mergeControlText, groups.find((group) => group.id === activeGroupId)?.mergeGroupId === value && styles.mergeControlTextActive]}>{value}</Text></TouchableOpacity>)}<Text style={styles.mergeControlHint}>{groups.find((group) => group.id === activeGroupId)?.mergeGroupId ? '같은 번호 그룹을 하나의 혼합 롤로 계산합니다.' : '병합하지 않음'}</Text></View>
+    {activeGroup && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}><TextInput accessibilityLabel="그룹 필름명" value={activeGroup.filmName} onChangeText={(value) => onSettings(activeGroup.id, { filmName: value })} placeholder="그룹 필름명" placeholderTextColor="#94a3b8" style={{ flex: 1, minWidth: 120, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 원단 단가" value={activeGroup.materialCostPerM} onChangeText={(value) => onSettings(activeGroup.id, { materialCostPerM: value.replace(/[^0-9]/g, '') })} placeholder="원단 단가 원/m" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 시공 단가" value={activeGroup.constructionCostPerM2} onChangeText={(value) => onSettings(activeGroup.id, { constructionCostPerM2: value.replace(/[^0-9]/g, '') })} placeholder="시공 단가 원/m²" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /></View>}
   </View>;
 }
 function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onDelete }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onDelete(id: string): void }) {
@@ -463,6 +469,11 @@ function formFromRequest(request: RemnantPlanRequest): CuttingFormState {
 }
 function nextInventory(library: LibraryDocument, useRemnants: boolean): FilmRemnant[] {
   return useRemnants ? library.remnants.map((item) => ({ ...item })) : [];
+}
+function optionalCost(value: string | undefined): number | undefined {
+  if (!value || value.trim().length === 0) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 async function withBusy(operation: () => Promise<void>, setBusy: (value: boolean) => void, setError: (value: string | null) => void) { setBusy(true); setError(null); try { await operation(); } catch (caught) { setError(messageOf(caught)); } finally { setBusy(false); } }
 

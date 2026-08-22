@@ -8,6 +8,9 @@ export type GroupedPieceRequest = {
   pieceId: string;
   pieceName: string;
   mergeGroupId?: string;
+  filmName?: string;
+  materialCostPerM?: number;
+  constructionCostPerM2?: number;
   request: RemnantPlanRequest;
 };
 

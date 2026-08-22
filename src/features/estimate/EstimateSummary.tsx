@@ -5,9 +5,11 @@ import { calculateEstimate, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_C
 
 export function EstimateSummary({ job, compact = false, materialCostPerM, constructionCostPerM2, discountRateOverride }: { job: SavedCuttingJob; compact?: boolean; materialCostPerM?: number; constructionCostPerM2?: number; discountRateOverride?: number }) {
   const estimate = calculateEstimate(job, materialCostPerM, constructionCostPerM2, discountRateOverride);
+  const materialRate = materialCostPerM ?? job.materialCostPerM ?? DEFAULT_MATERIAL_COST_PER_M;
+  const constructionRate = constructionCostPerM2 ?? job.constructionCostPerM2 ?? DEFAULT_CONSTRUCTION_COST_PER_M2;
   return <View style={[styles.card, compact && styles.compactCard]} accessibilityLabel="자동 견적 결과">
     <View style={styles.header}><View><Text style={styles.eyebrow}>AUTO ESTIMATE</Text><Text style={styles.title}>자동 견적</Text></View><Text style={styles.total}>{estimate.total.toLocaleString('ko-KR')}원</Text></View>
-    <Text style={styles.caption}>{job.name} · 신규 원단 {(materialCostPerM ?? DEFAULT_MATERIAL_COST_PER_M).toLocaleString('ko-KR')}원/m · 시공 {(constructionCostPerM2 ?? DEFAULT_CONSTRUCTION_COST_PER_M2).toLocaleString('ko-KR')}원/m²</Text>
+    <Text style={styles.caption}>{job.name} · {job.filmName ? `${job.filmName} · ` : ''}신규 원단 {materialRate.toLocaleString('ko-KR')}원/m · 시공 {constructionRate.toLocaleString('ko-KR')}원/m²</Text>
     <View style={styles.rows}>
       <EstimateRow label="신규 원단" value={`${estimate.materialLengthM.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}m · ${estimate.materialCost.toLocaleString('ko-KR')}원`} />
       <EstimateRow label="시공 면적" value={`${estimate.productAreaM2.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}m² · ${estimate.constructionCost.toLocaleString('ko-KR')}원`} />

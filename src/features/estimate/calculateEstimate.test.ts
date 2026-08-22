@@ -22,4 +22,8 @@ describe('calculateEstimate', () => {
   it('accepts custom unit prices without changing the saved job', () => {
     expect(calculateEstimate(job, 12_000, 20_000)).toMatchObject({ materialCost: 24_000, constructionCost: 50_000, total: 70_300 });
   });
+
+  it('uses group-specific saved prices when the default rates are requested', () => {
+    expect(calculateEstimate({ ...job, materialCostPerM: 12_000, constructionCostPerM2: 20_000 })).toMatchObject({ materialCost: 24_000, constructionCost: 50_000 });
+  });
 });

@@ -70,6 +70,9 @@ export type BuildSavedCuttingJobOptions = {
   request: RemnantPlanRequest;
   plan: RemnantPlan;
   inventory: readonly FilmRemnant[];
+  filmName?: string;
+  materialCostPerM?: number;
+  constructionCostPerM2?: number;
 };
 
 /** Builds the storage/export view of a tentative plan without mutating it. */
@@ -80,6 +83,9 @@ export function buildSavedCuttingJob({
   request,
   plan,
   inventory,
+  filmName,
+  materialCostPerM,
+  constructionCostPerM2,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
   const inventoryById = new Map(inventory.map((remnant) => [remnant.id, remnant]));
   const usageCounts = new Map<string, number>();
@@ -118,6 +124,9 @@ export function buildSavedCuttingJob({
     name: name.trim() || (productNumber ? `${brand} ${productNumber} 작업` : `${brand} 작업`),
     brand,
     productNumber,
+    ...(filmName?.trim() ? { filmName: filmName.trim() } : {}),
+    ...(materialCostPerM === undefined ? {} : { materialCostPerM }),
+    ...(constructionCostPerM2 === undefined ? {} : { constructionCostPerM2 }),
     createdAt,
     updatedAt: createdAt,
     input: {

@@ -26,8 +26,9 @@ export default function EstimateScreen() {
     setLoading(true); setError(null);
     try {
       const loaded = await repository.load();
-      setJob(loaded.document.jobs[0] ?? null);
-      setMaterialCostText(String(DEFAULT_MATERIAL_COST_PER_M)); setConstructionCostText(String(DEFAULT_CONSTRUCTION_COST_PER_M2)); setDiscountEnabled(false); setDiscountText('');
+      const nextJob = loaded.document.jobs[0] ?? null;
+      setJob(nextJob);
+      setMaterialCostText(String(nextJob?.materialCostPerM ?? DEFAULT_MATERIAL_COST_PER_M)); setConstructionCostText(String(nextJob?.constructionCostPerM2 ?? DEFAULT_CONSTRUCTION_COST_PER_M2)); setDiscountEnabled(false); setDiscountText('');
       if (loaded.warnings.length > 0) setError(loaded.warnings.join(' '));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '저장된 프로젝트를 불러오지 못했습니다.');

@@ -225,11 +225,17 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
+  if (value.filmName !== undefined && typeof value.filmName !== 'string') return undefined;
+  if (value.materialCostPerM !== undefined && !finiteNonnegative(value.materialCostPerM)) return undefined;
+  if (value.constructionCostPerM2 !== undefined && !finiteNonnegative(value.constructionCostPerM2)) return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
   if (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id)))) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
     createdAt, updatedAt, input,
+    ...(value.filmName === undefined ? {} : { filmName: value.filmName }),
+    ...(value.materialCostPerM === undefined ? {} : { materialCostPerM: value.materialCostPerM }),
+    ...(value.constructionCostPerM2 === undefined ? {} : { constructionCostPerM2: value.constructionCostPerM2 }),
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
     ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
     ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),

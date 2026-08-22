@@ -61,6 +61,9 @@ export type SavedCuttingJob = {
   name: string;
   brand: string;
   productNumber: string;
+  filmName?: string;
+  materialCostPerM?: number;
+  constructionCostPerM2?: number;
   createdAt: string;
   updatedAt: string;
   input: SavedContinuousRollInput;
