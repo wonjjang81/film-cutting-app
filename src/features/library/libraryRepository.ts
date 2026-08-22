@@ -6,6 +6,8 @@ import {
   type SavedContinuousRollInput,
   type SavedCuttingJob,
   type SavedCuttingResultSummary,
+  type SavedMergedCuttingJob,
+  type SavedMergedPlacement,
   type SavedRemnantSummary,
 } from './models';
 
@@ -35,6 +37,8 @@ export type LibraryRepository = {
   saveJob(job: SavedCuttingJob): Promise<void>;
   renameJob(id: string, name: string, updatedAt: string): Promise<void>;
   deleteJob(id: string): Promise<void>;
+  saveMergedJob(job: SavedMergedCuttingJob): Promise<void>;
+  deleteMergedJob(id: string): Promise<void>;
   saveRemnant(remnant: FilmRemnant): Promise<void>;
   deleteRemnant(id: string): Promise<void>;
   applyInventoryDelta(delta: InventoryDelta): Promise<void>;
@@ -44,7 +48,7 @@ export type LibraryRepository = {
 type Validator<T> = (value: unknown) => T | undefined;
 
 function emptyDocument(): LibraryDocument {
-  return { version: 1, presets: [], jobs: [], remnants: [] };
+  return { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 }
 
 function clone<T>(value: T): T {
@@ -243,6 +247,51 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   };
 }
 
+function validateMergedPlacement(value: unknown): SavedMergedPlacement | undefined {
+  if (!isRecord(value)
+    || !positiveInteger(value.id)
+    || !validId(value.sourceId)
+    || typeof value.instanceIndex !== 'number' || !Number.isInteger(value.instanceIndex) || value.instanceIndex < 0
+    || !finiteNonnegative(value.x) || !finiteNonnegative(value.y)
+    || !finitePositive(value.width) || !finitePositive(value.height)
+    || typeof value.rotated !== 'boolean') return undefined;
+  return {
+    id: value.id, sourceId: value.sourceId, instanceIndex: value.instanceIndex,
+    x: value.x, y: value.y, width: value.width, height: value.height, rotated: value.rotated,
+  };
+}
+
+function validateMergedJob(value: unknown): SavedMergedCuttingJob | undefined {
+  if (!isRecord(value)) return undefined;
+  const createdAt = normalizeTimestamp(value.createdAt);
+  const updatedAt = normalizeTimestamp(value.updatedAt);
+  const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
+  if (!validId(value.id) || !nonblankString(value.name) || !validId(value.mergeGroupId)
+    || !Array.isArray(value.groupNames) || !value.groupNames.every(nonblankString)
+    || !Array.isArray(value.sourceJobIds) || !value.sourceJobIds.every(validId)
+    || createdAt === undefined || updatedAt === undefined
+    || !finitePositive(value.rollWidthMm) || !finiteNonnegative(value.usedLengthMm)
+    || !positiveInteger(value.producedQuantity)
+    || !finiteNonnegative(value.utilizationPercent) || !finiteNonnegative(value.wastePercent)
+    || !Array.isArray(value.placements)) return undefined;
+  const placements = value.placements.map(validateMergedPlacement);
+  const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
+  if (placements.some((item) => item === undefined)
+    || (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean')
+    || (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined)
+    || (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id))))) return undefined;
+  return {
+    id: value.id, name: value.name, mergeGroupId: value.mergeGroupId,
+    groupNames: [...value.groupNames], sourceJobIds: [...value.sourceJobIds], createdAt, updatedAt,
+    rollWidthMm: value.rollWidthMm, usedLengthMm: value.usedLengthMm, producedQuantity: value.producedQuantity,
+    utilizationPercent: value.utilizationPercent, wastePercent: value.wastePercent,
+    placements: placements as SavedMergedPlacement[],
+    ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
+    ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
+    ...(completedPlacementIds === undefined ? {} : { completedPlacementIds: [...completedPlacementIds] }),
+  };
+}
+
 function validateCollection<T extends { id: string }>(
   value: unknown,
   name: string,
@@ -289,6 +338,9 @@ function parseDocument(raw: string | null): LibraryLoadResult {
     presets: validateCollection(value.presets, 'presets', validatePreset, warnings),
     jobs: validateCollection(value.jobs, 'jobs', validateJob, warnings),
     remnants: validateCollection(value.remnants, 'remnants', validateRemnant, warnings),
+    mergedJobs: value.mergedJobs === undefined
+      ? []
+      : validateCollection(value.mergedJobs, 'mergedJobs', validateMergedJob, warnings),
   };
   return { document, warnings };
 }
@@ -310,6 +362,13 @@ function assertId(id: string): void {
 }
 
 function orderJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
+  return jobs
+    .map(clone)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
+    .slice(0, MAX_SAVED_JOBS);
+}
+
+function orderMergedJobs(jobs: readonly SavedMergedCuttingJob[]): SavedMergedCuttingJob[] {
   return jobs
     .map(clone)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
@@ -427,6 +486,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         document.presets = clone(parsed.document.presets);
         document.jobs = orderJobs(parsed.document.jobs);
         document.remnants = clone(parsed.document.remnants);
+        document.mergedJobs = orderMergedJobs(parsed.document.mergedJobs);
       });
       return { document: clone(parsed.document), warnings: [] };
     },
@@ -468,6 +528,20 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       assertId(id);
       await mutate((document) => {
         document.jobs = document.jobs.filter((job) => job.id !== id);
+      });
+    },
+
+    async saveMergedJob(job): Promise<void> {
+      const valid = assertValid(job, validateMergedJob, 'merged cutting job');
+      await mutate((document) => {
+        document.mergedJobs = orderMergedJobs(replaceById(document.mergedJobs, valid));
+      });
+    },
+
+    async deleteMergedJob(id): Promise<void> {
+      assertId(id);
+      await mutate((document) => {
+        document.mergedJobs = document.mergedJobs.filter((job) => job.id !== id);
       });
     },
 

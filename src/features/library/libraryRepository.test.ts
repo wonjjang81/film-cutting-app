@@ -4,6 +4,7 @@ import {
   type FilmPreset,
   type FilmRemnant,
   type SavedCuttingJob,
+  type SavedMergedCuttingJob,
 } from './models';
 import { createLibraryRepository, type KeyValueAdapter } from './libraryRepository';
 
@@ -135,6 +136,26 @@ function job(index: number, overrides: Partial<SavedCuttingJob> = {}): SavedCutt
   };
 }
 
+function mergedJob(index = 1, overrides: Partial<SavedMergedCuttingJob> = {}): SavedMergedCuttingJob {
+  const savedAt = new Date(Date.UTC(2026, 0, 2, 0, 0, index)).toISOString();
+  return {
+    id: `merged-${index}`,
+    name: `Merged ${index}`,
+    mergeGroupId: 'merge-1',
+    groupNames: ['그룹 1', '그룹 2'],
+    sourceJobIds: ['job-1', 'job-2'],
+    createdAt: savedAt,
+    updatedAt: savedAt,
+    rollWidthMm: 1220,
+    usedLengthMm: 500,
+    producedQuantity: 4,
+    utilizationPercent: 78,
+    wastePercent: 22,
+    placements: [{ id: 1, sourceId: 'group-1-piece-1', instanceIndex: 0, x: 5, y: 5, width: 400, height: 100, rotated: false }],
+    ...overrides,
+  };
+}
+
 describe('library repository', () => {
   it('saves and reloads a branded remnant at its exact size', async () => {
     const repository = createLibraryRepository(memoryAdapter());
@@ -167,9 +188,9 @@ describe('library repository', () => {
     const corrupted = await createLibraryRepository(trackedAdapter('{not json')).load();
     const unsupported = await createLibraryRepository(trackedAdapter(JSON.stringify({ version: 2 }))).load();
 
-    expect(corrupted.document).toEqual({ version: 1, presets: [], jobs: [], remnants: [] });
+    expect(corrupted.document).toEqual({ version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] });
     expect(corrupted.warnings[0]).toContain('corrupted');
-    expect(unsupported.document).toEqual({ version: 1, presets: [], jobs: [], remnants: [] });
+    expect(unsupported.document).toEqual({ version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] });
     expect(unsupported.warnings[0]).toContain('unsupported');
   });
 
@@ -205,6 +226,20 @@ describe('library repository', () => {
     expect(jobs).toHaveLength(20);
     expect(jobs[0]!.id).toBe('job-21');
     expect(jobs.at(-1)!.id).toBe('job-2');
+  });
+
+  it('saves and reloads a mixed-size merged roll as one production record', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    await repository.saveMergedJob(mergedJob());
+
+    const loaded = await repository.load();
+    expect(loaded.document.mergedJobs).toHaveLength(1);
+    expect(loaded.document.mergedJobs[0]).toMatchObject({
+      id: 'merged-1',
+      rollWidthMm: 1220,
+      sourceJobIds: ['job-1', 'job-2'],
+      placements: [{ sourceId: 'group-1-piece-1', width: 400 }],
+    });
   });
 
   it('renames and deletes a saved job while rejecting a blank name', async () => {

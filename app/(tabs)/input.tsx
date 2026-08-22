@@ -6,6 +6,7 @@ import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpa
 import { useLocalSearchParams } from 'expo-router';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
+import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { PlacementList } from '../../src/features/cutting/PlacementList';
 import type { Placement } from '../../src/features/cutting/optimizeContinuousRollLayout';
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
@@ -14,7 +15,7 @@ import { createWorkOrderHtml } from '../../src/features/export/createWorkOrderHt
 import { asyncStorageLibraryAdapter } from '../../src/features/library/asyncStorageLibraryAdapter';
 import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
 import { createLibraryRepository } from '../../src/features/library/libraryRepository';
-import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob } from '../../src/features/library/models';
+import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
 import { planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
@@ -22,7 +23,7 @@ import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } 
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
 
 const repository = createLibraryRepository(asyncStorageLibraryAdapter);
-const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [] };
+const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 const BRAND_OPTIONS = ['영림', '현대', 'Lx', '삼성'] as const;
 const FIXED_ROLL_WIDTH_MM = 1220;
 const DEFAULT_GAP_MM = 0;
@@ -157,19 +158,44 @@ export default function FilmCutInputScreen() {
       const planned = planGroupedPieces(requests, nextInventory(latest, useRemnants));
       const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM);
       const generatedIds = latest.jobs.map((job) => job.id);
+      const generatedMergedIds = latest.mergedJobs.map((job) => job.id);
+      const sourceJobIds = new Map<string, string>();
       const timestamp = Date.now();
       for (const [index, entry] of planned.entries()) {
         const id = createUniqueUiId('job', timestamp + index, generatedIds);
         generatedIds.push(id);
+        sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
         const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         await repository.saveJob(job);
+      }
+      for (const [index, entry] of merged.entries()) {
+        const mergedJob: SavedMergedCuttingJob = {
+          id: createUniqueUiId('merged-job', timestamp + 1000 + index, generatedMergedIds),
+          name: `병합 ${entry.mergeGroupId} · ${entry.groupNames.join(' + ')}`,
+          mergeGroupId: entry.mergeGroupId,
+          groupNames: [...entry.groupNames],
+          sourceJobIds: planned
+            .filter((piece) => piece.mergeGroupId === entry.mergeGroupId)
+            .map((piece) => sourceJobIds.get(`${piece.groupId}-${piece.pieceId}`))
+            .filter((id): id is string => id !== undefined),
+          createdAt: new Date(timestamp + 1000 + index).toISOString(),
+          updatedAt: new Date(timestamp + 1000 + index).toISOString(),
+          rollWidthMm: FIXED_ROLL_WIDTH_MM,
+          usedLengthMm: entry.result.usedLengthMm,
+          producedQuantity: entry.result.producedQuantity,
+          utilizationPercent: entry.result.utilizationPercent,
+          wastePercent: entry.result.wastePercent,
+          placements: entry.result.placements.map((placement) => ({ ...placement })),
+        };
+        generatedMergedIds.push(mergedJob.id);
+        await repository.saveMergedJob(mergedJob);
       }
       setBatchPlans(planned);
       setMergedGroupPlans(merged);
       const active = planned.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? planned[0];
       if (active) activateBatchPlan(active);
       await refreshLibrary();
-      setNotice(`${planned.length}개 조각의 그룹 통합 배치 계산 및 프로젝트 저장이 완료되었습니다.`);
+      setNotice(`${planned.length}개 조각의 그룹 통합 배치와 ${merged.length}개 병합 롤을 저장했습니다.`);
     } catch (caught) { setError(`그룹 통합 배치를 계산하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
@@ -456,7 +482,7 @@ function Metric({ label, value, accent }: { label: string; value: string; accent
 function BatchPlanSummary({ plans, mergedPlans }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[] }) {
   const produced = plans.reduce((sum, item) => sum + item.plan.remnantUses.reduce((inner, use) => inner + use.producedQuantity, 0) + (item.plan.newRollResult?.producedQuantity ?? 0), 0);
   const newRollLength = plans.reduce((sum, item) => sum + (item.plan.newRollResult?.usedLengthMm ?? 0), 0);
-  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.map((item) => <Text key={`merged-${item.mergeGroupId}`} style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text>)}</View>;
+  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.map((item) => <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} /></View>)}</View>;
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }

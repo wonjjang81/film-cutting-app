@@ -7,7 +7,7 @@ import { createLibraryRepository } from '../../src/features/library/libraryRepos
 import type { LibraryDocument, SavedCuttingJob } from '../../src/features/library/models';
 
 const repository = createLibraryRepository(asyncStorageLibraryAdapter);
-const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [] };
+const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 
 export default function ProjectsScreen() {
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
