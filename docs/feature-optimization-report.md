@@ -155,7 +155,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `4dd8a6567` Cloudflare 상태 확인 UI·Pages 배포 workflow
 - `7ed54e181` deprecated Pages Action을 Wrangler Action v3로 교체하고 Functions 배포 안내 보강
 - `85a51f587` Cloudflare health CORS·Access 쿠키 전송 및 허용 Origin 보강
-- (다음 커밋) Cloudflare 배포 preflight와 API URL 주입 검증 자동화
+- `4f08573b6` Cloudflare 배포 preflight와 API URL 주입 검증 자동화
 
 ## 결론
 
