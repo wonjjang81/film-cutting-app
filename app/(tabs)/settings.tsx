@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
-import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
+import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE_KEY, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 
 export default function SettingsScreen() {
   const [info, setInfo] = useState<CompanyInfo>(emptyCompanyInfo);
   const [saved, setSaved] = useState(false);
-  useEffect(() => { void AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY).then((value) => { if (value) { try { setInfo({ ...emptyCompanyInfo, ...JSON.parse(value) }); } catch { /* reset malformed settings */ } } }); }, []);
+  useEffect(() => { void (async () => { const current = await AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY); if (current) setInfo(parseCompanyInfo(current)); else { const legacy = await AsyncStorage.getItem(LEGACY_COMPANY_NAME_STORAGE_KEY); if (legacy) { const migrated = { ...emptyCompanyInfo, companyName: parseCompanyInfo(JSON.stringify(legacy)).companyName }; setInfo(migrated); await AsyncStorage.setItem(COMPANY_INFO_STORAGE_KEY, JSON.stringify(migrated)); } } })(); }, []);
   const save = async (field: keyof CompanyInfo, value: string) => { const next = { ...info, [field]: value }; setInfo(next); setSaved(false); await AsyncStorage.setItem(COMPANY_INFO_STORAGE_KEY, JSON.stringify(next)); setSaved(true); };
   return <View style={styles.page}>
     <View style={styles.content}>

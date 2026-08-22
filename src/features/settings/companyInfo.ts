@@ -8,12 +8,14 @@ export type CompanyInfo = {
 };
 
 export const COMPANY_INFO_STORAGE_KEY = 'film-cutting-company-v2';
+export const LEGACY_COMPANY_NAME_STORAGE_KEY = 'film-cutting-company-v1';
 export const emptyCompanyInfo: CompanyInfo = { companyName: '', managerName: '', phone: '', email: '', address: '', note: '' };
 
 export function parseCompanyInfo(raw: string | null): CompanyInfo {
   if (!raw) return { ...emptyCompanyInfo };
   try {
     const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed === 'string') return { ...emptyCompanyInfo, companyName: parsed };
     if (typeof parsed !== 'object' || parsed === null) return { ...emptyCompanyInfo };
     const record = parsed as Record<string, unknown>;
     return Object.fromEntries(Object.keys(emptyCompanyInfo).map((key) => [key, typeof record[key] === 'string' ? record[key] : ''])) as CompanyInfo;

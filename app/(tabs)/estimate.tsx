@@ -12,7 +12,7 @@ import { createLibraryRepository } from '../../src/features/library/libraryRepos
 import type { SavedCuttingJob } from '../../src/features/library/models';
 import { calculateEstimate, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M } from '../../src/features/estimate/calculateEstimate';
 import { calculateProjectEstimate, type ProjectEstimate } from '../../src/features/estimate/calculateProjectEstimate';
-import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
+import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE_KEY, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 
 const repository = createLibraryRepository(asyncStorageLibraryAdapter);
 
@@ -35,7 +35,7 @@ export default function EstimateScreen() {
       const nextJob = loaded.document.jobs[0] ?? null;
       setJob(nextJob);
       setJobs(loaded.document.jobs);
-      setCompany(parseCompanyInfo(await AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY)));
+      const companyRaw = await AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY); const legacyCompany = companyRaw ? null : await AsyncStorage.getItem(LEGACY_COMPANY_NAME_STORAGE_KEY); setCompany(parseCompanyInfo(companyRaw ?? (legacyCompany ? JSON.stringify(legacyCompany) : null)));
       setMaterialCostText(String(nextJob?.materialCostPerM ?? DEFAULT_MATERIAL_COST_PER_M)); setConstructionCostText(String(nextJob?.constructionCostPerM2 ?? DEFAULT_CONSTRUCTION_COST_PER_M2)); setDiscountEnabled(false); setDiscountText('');
       if (loaded.warnings.length > 0) setError(loaded.warnings.join(' '));
     } catch (caught) {
