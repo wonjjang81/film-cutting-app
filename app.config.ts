@@ -16,6 +16,8 @@ const bundleId =
 
 const timestamp = bundleId.split(".").pop()?.replace(/^t/, "") ?? "";
 const schemeFromBundleId = `manus${timestamp}`;
+const configuredWebBaseUrl = process.env.EXPO_PUBLIC_WEB_BASE_URL?.trim();
+const webBaseUrl = configuredWebBaseUrl || (process.env.CF_PAGES === "1" ? "/" : "/film-cutting-app");
 
 const env = {
   appName: "필름 재단 계산기",
@@ -49,8 +51,8 @@ const config: ExpoConfig = {
   web: {
     bundler: "metro",
     output: "static",
-    // ⚠️ 중요: GitHub Pages 하위 경로 설정을 위해 baseUrl 추가
-    baseUrl: "/film-cutting-app"
+    // GitHub Pages uses a project subpath; Cloudflare Pages serves at the root.
+    baseUrl: webBaseUrl
   },
   plugins: [
     "expo-router",
@@ -71,8 +73,8 @@ const config: ExpoConfig = {
   experiments: {
     typedRoutes: true,
     reactCompiler: true,
-    // experiments 내부에도 baseUrl 유지 (일부 버전 대응)
-    baseUrl: "/film-cutting-app",
+    // Keep the base path in experiments for Expo versions that read it there.
+    baseUrl: webBaseUrl,
   },
   extra: {
     eas: {
