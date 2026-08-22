@@ -2,11 +2,15 @@ import * as React from 'react';
 import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
+import type { SavedMergedCuttingJob } from '../library/models';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
 type Props = {
   plan: MergedGroupPlan;
+  job?: SavedMergedCuttingJob;
+  busy?: boolean;
+  onToggleComplete?(): void;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -14,7 +18,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -44,6 +48,7 @@ export function MergedRollPreview({ plan }: Props) {
               return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
                 <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
                 <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={color}>{placement.id}</SvgText>
+                {job?.isCuttingComplete && <G><Rect x={placement.x + placement.width * 0.18} y={placement.y + placement.height * 0.18} width={placement.width * 0.64} height={placement.height * 0.64} fill="none" stroke="#dc2626" strokeWidth={Math.max(3, placement.width / 45)} transform={`rotate(0 ${placement.x + placement.width / 2} ${placement.y + placement.height / 2})`} /><SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2} textAnchor="middle" fontSize={Math.max(12, Math.min(32, placement.width / 10))} fontWeight="900" fill="#dc2626">×</SvgText></G>}
               </G>;
             })}
           </Svg>
@@ -53,6 +58,7 @@ export function MergedRollPreview({ plan }: Props) {
         <Text style={styles.detailTitle}>제품 {selected.id} 상세</Text>
         <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm · {selected.rotated ? '90도 회전' : '기본 방향'} · 위치 ({selected.x}, {selected.y})mm</Text>
       </View>}
+      {onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
       <View style={styles.list}>
         {result.placements.map((placement) => <TouchableOpacity key={placement.id} accessibilityRole="button" accessibilityLabel={`병합 제품 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={[styles.item, selectedId === placement.id && styles.itemActive]}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · 90°' : ''}</Text></TouchableOpacity>)}
       </View>
@@ -68,4 +74,5 @@ const styles = StyleSheet.create({
   canvasScroll: { marginTop: 11, maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasContent: { minWidth: '100%' }, canvas: { width: '100%', minWidth: 320, overflow: 'hidden', borderRadius: 9 },
   detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
   list: { gap: 5, marginTop: 10 }, item: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#f8fafc' }, itemActive: { backgroundColor: '#e0f2fe' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' },
+  completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },
 });

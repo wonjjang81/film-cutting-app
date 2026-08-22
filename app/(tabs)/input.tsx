@@ -334,6 +334,21 @@ export default function FilmCutInputScreen() {
     } catch (caught) { setError(`재단 완료 상태를 저장하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
+  const toggleMergedComplete = async (id: string) => {
+    const current = library.mergedJobs.find((job) => job.id === id);
+    if (!current) return;
+    setBusy(true); setError(null);
+    try {
+      const now = new Date().toISOString();
+      const next = current.isCuttingComplete
+        ? { ...current, isCuttingComplete: false, updatedAt: now, cuttingCompletedAt: undefined, completedPlacementIds: [] }
+        : { ...current, isCuttingComplete: true, updatedAt: now, cuttingCompletedAt: now, completedPlacementIds: current.placements.map((placement) => placement.id) };
+      await repository.saveMergedJob(next);
+      await refreshLibrary();
+      setNotice(next.isCuttingComplete ? '병합 롤 전체 재단 완료를 저장했습니다.' : '병합 롤 재단 완료를 해제했습니다.');
+    } catch (caught) { setError(`병합 롤 완료 상태를 저장하지 못했습니다. ${messageOf(caught)}`); }
+    finally { setBusy(false); }
+  };
 
   const saveRemnant = async (draft: RemnantDraft) => {
     const brand = form.brand.trim(); const productNumber = form.productNumber.trim();
@@ -420,7 +435,7 @@ export default function FilmCutInputScreen() {
         <View style={styles.resultHeading}><View><Text style={styles.eyebrow}>MATERIAL PLAN</Text><Text style={styles.resultTitle}>원단 사용 계획</Text></View><View style={[styles.statusBadge, { backgroundColor: resultStatus.bg }]}><Text style={[styles.statusText, { color: resultStatus.tone }]}>{resultStatus.title}</Text></View></View>
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
-        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} />}
+        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onToggleMergedComplete={(id) => void toggleMergedComplete(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
         {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
         <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
@@ -479,10 +494,10 @@ function FixedProductionConditions() {
 }
 function PanelHeading({ step, title, subtitle, dark = false }: { step: string; title: string; subtitle: string; dark?: boolean }) { return <View style={styles.panelHeader}><View style={styles.panelHeaderCopy}><Text style={styles.panelTitle}>{title}</Text><Text style={styles.panelSubtitle}>{subtitle}</Text></View><View style={[styles.stepBadge, dark && styles.stepBadgeDark]}><Text style={[styles.stepText, dark && styles.stepTextLight]}>{step}</Text></View></View>; }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) { return <View style={styles.metric}><View style={[styles.metricAccent, { backgroundColor: accent }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
-function BatchPlanSummary({ plans, mergedPlans }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[] }) {
+function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onToggleMergedComplete }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[]; mergedJobs: readonly SavedMergedCuttingJob[]; busy: boolean; onToggleMergedComplete(id: string): void }) {
   const produced = plans.reduce((sum, item) => sum + item.plan.remnantUses.reduce((inner, use) => inner + use.producedQuantity, 0) + (item.plan.newRollResult?.producedQuantity ?? 0), 0);
   const newRollLength = plans.reduce((sum, item) => sum + (item.plan.newRollResult?.usedLengthMm ?? 0), 0);
-  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.map((item) => <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} /></View>)}</View>;
+  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} job={job} busy={busy} onToggleComplete={job ? () => onToggleMergedComplete(job.id) : undefined} /></View>; })}</View>;
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
