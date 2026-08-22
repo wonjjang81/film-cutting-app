@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Print from 'expo-print';
@@ -26,6 +26,7 @@ export default function EstimateScreen() {
   const [constructionCostText, setConstructionCostText] = useState(String(DEFAULT_CONSTRUCTION_COST_PER_M2));
   const [discountEnabled, setDiscountEnabled] = useState(false);
   const [discountText, setDiscountText] = useState('');
+  const hasFocusedOnce = useRef(false);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -52,7 +53,13 @@ export default function EstimateScreen() {
     else { const file = await Print.printToFileAsync({ html }); if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: '견적서 PDF 공유' }); }
   };
   const copyEstimate = async () => { if (jobs.length === 0) return; await Clipboard.setStringAsync(createEstimateText(jobs, projectEstimate, company)); };
-  useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
+  // Deep links on web can render before Expo Router emits its first focus event.
+  // Load on mount as well so a direct /estimate visit never remains in a spinner.
+  useEffect(() => { void refresh(); }, [refresh]);
+  useFocusEffect(useCallback(() => {
+    if (hasFocusedOnce.current) void refresh();
+    hasFocusedOnce.current = true;
+  }, [refresh]));
 
   return <ScrollView style={styles.page} contentContainerStyle={[styles.content, width < 420 && styles.contentSmall]}>
     <View style={styles.header}><View><Text style={styles.eyebrow}>ESTIMATE WORKSPACE</Text><Text style={styles.title}>자동 견적</Text><Text style={styles.description}>최근 저장된 프로젝트의 원단·시공 비용을 자동 계산합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="견적 새로고침" onPress={() => void refresh()} style={styles.refresh}><Text style={styles.refreshText}>새로고침</Text></TouchableOpacity></View>
