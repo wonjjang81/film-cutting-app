@@ -12,8 +12,9 @@ describe('Cloudflare library adapter', () => {
     await expect(adapter.get('film-cutting-library-v1')).resolves.toBe('{"version":1}');
     await adapter.set('film-cutting-library-v1', '{"version":1,"jobs":[]}');
 
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, 'https://film.example.com/api/library', { headers: { Accept: 'application/json' } });
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, 'https://film.example.com/api/library', { credentials: 'include', headers: { Accept: 'application/json' } });
     expect(fetchImpl).toHaveBeenNthCalledWith(2, 'https://film.example.com/api/library', expect.objectContaining({
+      credentials: 'include',
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'If-Match': '"v1"' },
       body: '{"version":1,"jobs":[]}',

@@ -13,9 +13,15 @@ class ApiError extends Error {
 }
 
 function corsHeaders(request: Request, env: CloudflareEnv): Record<string, string> {
-  const requestOrigin = request.headers.get('Origin');
-  const allowedOrigin = env.ALLOWED_ORIGIN ?? requestOrigin ?? '*';
-  return { 'Access-Control-Allow-Origin': allowedOrigin, 'Access-Control-Allow-Headers': 'Content-Type, If-Match', 'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS', Vary: 'Origin' };
+  const allowedOrigin = env.ALLOWED_ORIGIN ?? '*';
+  const headers: Record<string, string> = {
+    'Access-Control-Allow-Origin': allowedOrigin,
+    'Access-Control-Allow-Headers': 'Content-Type, If-Match',
+    'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+    Vary: 'Origin',
+  };
+  if (allowedOrigin !== '*') headers['Access-Control-Allow-Credentials'] = 'true';
+  return headers;
 }
 
 async function identityFromAccess(request: Request, env: CloudflareEnv): Promise<Identity> {

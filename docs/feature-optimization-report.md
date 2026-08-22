@@ -48,7 +48,7 @@
 
 `LibraryDocument`를 기준으로 프리셋·저장 작업·병합 작업·자투리 재고를 통합했다. 저장 작업에는 재단 완료 상태, 조각별 완료 ID, 재고 확정 상태, 필름명, 그룹별 단가를 선택적으로 저장해 기존 데이터와 호환되도록 했다. 병합 작업은 원본 작업 ID와 배치 좌표를 포함하는 하나의 저장 단위로 기록한다.
 
-Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 `libraries` 테이블 스키마를 추가했다. 앱은 `EXPO_PUBLIC_CLOUDFLARE_API_URL`이 설정된 경우에만 서버 어댑터를 사용하고, 미설정 시 기존 AsyncStorage를 유지한다.
+Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 `libraries` 테이블 스키마를 추가했다. 앱은 `EXPO_PUBLIC_CLOUDFLARE_API_URL`이 설정된 경우에만 서버 어댑터를 사용하고, 미설정 시 기존 AsyncStorage를 유지한다. 교차 출처 환경에서는 `ALLOWED_ORIGIN`을 명시하고 Access 쿠키를 포함해 상태 확인·라이브러리 동기화를 수행한다.
 
 저장소에는 다음 안전장치가 적용되어 있다.
 
@@ -154,6 +154,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `3c1cf50a3` Cloudflare Pages Functions·D1 저장 API·서버 어댑터
 - `4dd8a6567` Cloudflare 상태 확인 UI·Pages 배포 workflow
 - `7ed54e181` deprecated Pages Action을 Wrangler Action v3로 교체하고 Functions 배포 안내 보강
+- (다음 커밋) Cloudflare health CORS·Access 쿠키 전송 및 허용 Origin 보강
 
 ## 결론
 

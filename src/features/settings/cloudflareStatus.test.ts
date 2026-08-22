@@ -10,5 +10,6 @@ describe('cloudflare status', () => {
   it('reads the API and D1 readiness response', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response('{"ok":true,"databaseConfigured":true}', { status: 200 }));
     await expect(checkCloudflareHealth('https://film.example.com', fetchImpl)).resolves.toEqual({ ok: true, databaseConfigured: true });
+    expect(fetchImpl).toHaveBeenCalledWith('https://film.example.com/api/health', expect.objectContaining({ credentials: 'include' }));
   });
 });
