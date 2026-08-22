@@ -54,6 +54,10 @@ describe('toRemnantPlanRequest', () => {
   it('rejects a blank brand before remnant lookup', () => {
     expect(() => toRemnantPlanRequest({ ...form, brand: '  ' }, [remnant])).toThrow('브랜드');
   });
+
+  it('allows a blank product number for placement requests', () => {
+    expect(toRemnantPlanRequest({ ...form, productNumber: '  ' }, [])).toMatchObject({ brand: 'Film Co', productNumber: '' });
+  });
 });
 
 describe('createUniqueUiId', () => {

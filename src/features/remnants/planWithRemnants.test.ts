@@ -78,6 +78,16 @@ describe('planWithRemnants', () => {
     expect(plan.inventoryDelta.removeIds).toEqual(['trimmed']);
   });
 
+  it('matches same-brand remnants when the product number is omitted', () => {
+    const plan = planWithRemnants({ ...baseRequest, productNumber: '' }, [
+      remnant({ id: 'same-brand', productNumber: 'P9' }),
+      remnant({ id: 'other-brand', brand: 'B', productNumber: 'P1' }),
+    ]);
+
+    expect(plan.remnantUses.map((use) => use.remnantId)).toEqual(['same-brand']);
+    expect(plan.newRollQuantity).toBe(1);
+  });
+
   it('sends only the remaining quantity to an unrestricted new-roll calculation', () => {
     const plan = planWithRemnants({ ...baseRequest, quantity: 2, maxLengthMm: 1 }, [remnant()]);
 

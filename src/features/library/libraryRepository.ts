@@ -55,6 +55,10 @@ function nonblankString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function stringValue(value: unknown): value is string {
+  return typeof value === 'string';
+}
+
 function finitePositive(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
@@ -156,7 +160,7 @@ function validatePreset(value: unknown): FilmPreset | undefined {
   if (
     !validId(value.id)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || !finitePositive(value.rollWidthMm)
     || !finitePositive(value.pieceWidthMm)
     || !finitePositive(value.pieceLengthMm)
@@ -181,7 +185,7 @@ function validateRemnant(value: unknown): FilmRemnant | undefined {
   if (
     !validId(value.id)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || !finitePositive(value.widthMm)
     || !finitePositive(value.lengthMm)
     || !positiveInteger(value.quantity)
@@ -204,7 +208,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     !validId(value.id)
     || !nonblankString(value.name)
     || !nonblankString(value.brand)
-    || !nonblankString(value.productNumber)
+    || !stringValue(value.productNumber)
     || createdAt === undefined
     || updatedAt === undefined
     || !Array.isArray(value.remnantIds)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
@@ -42,11 +42,12 @@ export default function FilmCutInputScreen() {
   const [plan, setPlan] = useState<RemnantPlan | null>(null);
   const [planRequest, setPlanRequest] = useState<RemnantPlanRequest | null>(null);
   const [draftJob, setDraftJob] = useState<SavedCuttingJob | null>(null);
+  const [useRemnants, setUseRemnants] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const identifiersReady = form.brand.trim().length > 0 && form.productNumber.trim().length > 0;
+  const identifiersReady = form.brand.trim().length > 0;
 
   const refreshLibrary = useCallback(async (): Promise<LibraryDocument> => {
     const loaded = await repository.load();
@@ -56,34 +57,34 @@ export default function FilmCutInputScreen() {
   }, []);
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
 
-  const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now()) => {
+  const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now(), remnants = inventory.remnants) => {
     const normalizedForm = withProductionDefaults(nextForm);
-    const request = toRemnantPlanRequest(normalizedForm, inventory.remnants);
+    const request = toRemnantPlanRequest(normalizedForm, remnants);
     const nextPlan = planWithRemnants(request);
     const createdAt = new Date(timestampMs).toISOString();
     const nextJob = buildSavedCuttingJob({
       id: createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
-      name: `${request.brand} ${request.productNumber} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
+      name: request.productNumber ? `${request.brand} ${request.productNumber} 작업` : `${request.brand} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
     });
     setForm(normalizedForm); setPlanRequest(request); setPlan(nextPlan); setDraftJob(nextJob); setConfirmed(false);
     return { request, nextPlan, nextJob };
   }, []);
 
-  const calculate = useCallback(async (nextForm = form) => {
+  const calculate = useCallback(async (nextForm = form, nextUseRemnants = useRemnants) => {
     setBusy(true); setError(null); setNotice(null);
     try {
       const latest = await refreshLibrary();
-      const computed = computeAgainst(nextForm, latest);
+      const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : []);
       await repository.saveJob(computed.nextJob);
       await refreshLibrary();
       setNotice('계산 및 프로젝트 저장이 완료되었습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
     } catch (caught) {
       setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setError(messageOf(caught));
     } finally { setBusy(false); }
-  }, [computeAgainst, form, refreshLibrary]);
+  }, [computeAgainst, form, refreshLibrary, useRemnants]);
 
   const reset = () => {
-    setForm(initialForm); setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setError(null); setNotice(null);
+    setForm(initialForm); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setError(null); setNotice(null);
   };
 
   const confirmJob = async () => {
@@ -97,7 +98,7 @@ export default function FilmCutInputScreen() {
       setNotice(`작업을 확정했습니다. 재고 반영 완료 · 저장된 잔여 자투리 ${residualCount}건`);
     } catch (caught) {
       setError(`재고가 변경되어 확정하지 못했습니다. 최신 재고로 다시 계산했습니다. ${messageOf(caught)}`);
-      try { computeAgainst(form, await refreshLibrary()); }
+      try { const latest = await refreshLibrary(); computeAgainst(form, latest, Date.now(), useRemnants ? latest.remnants : []); }
       catch (refreshError) { setPlan(null); setPlanRequest(null); setDraftJob(null); setError(`최신 재고를 불러오지 못했습니다. ${messageOf(refreshError)}`); }
     } finally { setBusy(false); }
   };
@@ -141,7 +142,7 @@ export default function FilmCutInputScreen() {
 
   const saveRemnant = async (draft: RemnantDraft) => {
     const brand = form.brand.trim(); const productNumber = form.productNumber.trim();
-    if (!brand || !productNumber) throw new Error('브랜드와 제품 번호를 먼저 입력해 주세요.');
+    if (!brand) throw new Error('브랜드를 먼저 선택해 주세요.');
     setBusy(true);
     try {
       const nowMs = Date.now(); const now = new Date(nowMs).toISOString();
@@ -151,13 +152,13 @@ export default function FilmCutInputScreen() {
         ...(draft.note === undefined ? {} : { note: draft.note }),
       };
       await repository.saveRemnant(remnant);
-      const latest = await refreshLibrary(); if (plan !== null) computeAgainst(form, latest);
+      const latest = await refreshLibrary(); if (plan !== null) computeAgainst(form, latest, Date.now(), useRemnants ? latest.remnants : []);
       setNotice('자투리의 실제 크기를 저장했습니다.');
     } finally { setBusy(false); }
   };
   const deleteRemnant = async (id: string) => {
     setBusy(true); setError(null);
-    try { await repository.deleteRemnant(id); const latest = await refreshLibrary(); if (plan !== null) computeAgainst(form, latest); setNotice('자투리 재고를 삭제했습니다.'); }
+    try { await repository.deleteRemnant(id); const latest = await refreshLibrary(); if (plan !== null) computeAgainst(form, latest, Date.now(), useRemnants ? latest.remnants : []); setNotice('자투리 재고를 삭제했습니다.'); }
     catch (caught) { setError(messageOf(caught)); } finally { setBusy(false); }
   };
 
@@ -208,9 +209,10 @@ export default function FilmCutInputScreen() {
       <View style={[styles.workspace, wide && styles.workspaceWide]}>
         <View style={[styles.panel, wide && styles.inputPanelWide]}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
-          <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호" value={form.productNumber} onChange={(productNumber) => setForm((current) => ({ ...current, productNumber }))} /></View>
+          <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호 (선택)" value={form.productNumber} onChange={(productNumber) => setForm((current) => ({ ...current, productNumber }))} /></View>
           <FormSection title="원단과 제품" fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={setForm} />
           <FixedProductionConditions />
+          <View style={styles.switchCard}><View style={styles.switchCopy}><Text style={styles.switchTitle}>자투리 사용</Text><Text style={styles.switchDescription}>{useRemnants ? '브랜드 기준으로 사용 가능한 자투리를 먼저 배치합니다.' : '새 원본 롤만 계산합니다. 필요할 때 켜 주세요.'}</Text></View><Switch accessibilityLabel="자투리 사용" value={useRemnants} disabled={busy} onValueChange={(value) => { setUseRemnants(value); void calculate(form, value); }} trackColor={{ false: '#cbd5e1', true: '#99f6e4' }} thumbColor={useRemnants ? '#0f766e' : '#f8fafc'} /></View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="자투리 우선 자동 배치 계산" disabled={busy} onPress={() => void calculate()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '자투리 우선 자동 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
         <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.'} dark /><FilmLayoutPreview result={preview?.result ?? null} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} /></View>
@@ -273,7 +275,7 @@ const styles = StyleSheet.create({
   workspace: { gap: 20 }, workspaceWide: { flexDirection: 'row', alignItems: 'stretch' }, panel: { minWidth: 0, padding: 21, borderRadius: 20, backgroundColor: '#fff', ...shadow }, inputPanelWide: { width: 450, flexShrink: 0 }, previewPanel: { flex: 1, minHeight: 560 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }, panelHeaderCopy: { flex: 1 }, panelTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' }, panelSubtitle: { marginTop: 5, fontSize: 12, lineHeight: 18, color: '#64748b' }, stepBadge: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#eff6ff' }, stepBadgeDark: { backgroundColor: '#0f172a' }, stepText: { fontSize: 12, fontWeight: '800', color: '#2563eb' }, stepTextLight: { color: '#fff' },
   identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
-  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 15, fontWeight: '700', color: '#0f172a' }, unit: { paddingRight: 11, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
+  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 15, fontWeight: '700', color: '#0f172a' }, unit: { paddingRight: 11, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#f0fdfa' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#115e59' }, switchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#0f766e' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
   resultSection: { marginTop: 22, padding: 22, borderRadius: 20, backgroundColor: '#fff', ...shadow }, resultHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, resultTitle: { marginTop: 4, fontSize: 23, fontWeight: '800', color: '#0f172a' }, statusBadge: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }, statusText: { fontSize: 12, fontWeight: '800' }, statusDetail: { marginTop: 8, fontSize: 12, lineHeight: 18, color: '#64748b' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' },
   confirmBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 17, padding: 14, borderRadius: 12, borderWidth: 1 }, tentativeBar: { borderColor: '#fbbf24', backgroundColor: '#fffbeb' }, confirmedBar: { borderColor: '#6ee7b7', backgroundColor: '#ecfdf5' }, confirmCopy: { flex: 1, minWidth: 210 }, confirmTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b' }, confirmMeta: { marginTop: 3, fontSize: 11, lineHeight: 17, color: '#64748b' }, confirmButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#0f172a' }, confirmButtonText: { fontSize: 13, fontWeight: '800', color: '#fff' }, exportRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 }, secondaryButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff' }, secondaryButtonText: { fontSize: 12, fontWeight: '800', color: '#334155' }, libraryGrid: { gap: 20, marginTop: 22 }, libraryGridWide: { flexDirection: 'row', alignItems: 'flex-start' },

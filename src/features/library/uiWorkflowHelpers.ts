@@ -27,7 +27,7 @@ export function toRemnantPlanRequest(
 ): RemnantPlanRequest {
   return {
     brand: requiredIdentifier(form.brand, '브랜드'),
-    productNumber: requiredIdentifier(form.productNumber, '제품 번호'),
+    productNumber: form.productNumber.trim(),
     rollWidthMm: Number(form.rollWidth),
     pieceWidthMm: Number(form.pieceWidth),
     pieceLengthMm: Number(form.pieceLength),
@@ -115,7 +115,7 @@ export function buildSavedCuttingJob({
 
   return {
     id,
-    name: name.trim() || `${brand} ${productNumber} 작업`,
+    name: name.trim() || (productNumber ? `${brand} ${productNumber} 작업` : `${brand} 작업`),
     brand,
     productNumber,
     createdAt,

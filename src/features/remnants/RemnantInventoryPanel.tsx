@@ -50,7 +50,7 @@ export function RemnantInventoryPanel({
   const [note, setNote] = useState('');
   const [localError, setLocalError] = useState<string | null>(null);
   const matching = useMemo(
-    () => remnants.filter((item) => item.brand.trim() === brand.trim() && item.productNumber.trim() === productNumber.trim()),
+    () => remnants.filter((item) => item.brand.trim() === brand.trim() && (productNumber.trim().length === 0 || item.productNumber.trim() === productNumber.trim())),
     [brand, productNumber, remnants],
   );
   const useById = useMemo(() => {
@@ -61,7 +61,7 @@ export function RemnantInventoryPanel({
 
   const save = async () => {
     const next = { widthMm: Number(width), lengthMm: Number(length), quantity: Number(quantity), note: note.trim() || undefined };
-    if (!identifiersReady) return setLocalError('브랜드와 제품 번호를 먼저 입력해 주세요.');
+    if (!identifiersReady) return setLocalError('브랜드를 먼저 선택해 주세요.');
     if (!Number.isFinite(next.widthMm) || next.widthMm <= 0 || !Number.isFinite(next.lengthMm) || next.lengthMm <= 0) {
       return setLocalError('자투리 폭과 길이는 0보다 커야 합니다.');
     }
@@ -81,7 +81,7 @@ export function RemnantInventoryPanel({
       <Text style={styles.subtitle}>남은 직사각형의 실제 폭과 길이를 그대로 저장합니다.</Text>
       <View style={styles.identityBadge}>
         <Text style={styles.identityLabel}>현재 제품</Text>
-        <Text style={styles.identityValue}>{identifiersReady ? `${brand.trim()} · ${productNumber.trim()}` : '브랜드·제품 번호 필요'}</Text>
+        <Text style={styles.identityValue}>{identifiersReady ? `${brand.trim()}${productNumber.trim() ? ` · ${productNumber.trim()}` : ' · 제품 번호 미입력'}` : '브랜드 필요'}</Text>
       </View>
 
       <View style={styles.formGrid}>
