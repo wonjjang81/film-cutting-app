@@ -153,6 +153,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `ae7d93c40` 순차 그룹 원자적 확정·중복 확정 방지
 - `3c1cf50a3` Cloudflare Pages Functions·D1 저장 API·서버 어댑터
 - `4dd8a6567` Cloudflare 상태 확인 UI·Pages 배포 workflow
+- (다음 커밋) deprecated Pages Action을 Wrangler Action v3로 교체하고 Functions 배포 안내 보강
 
 ## 결론
 
