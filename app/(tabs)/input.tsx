@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { PlacementList } from '../../src/features/cutting/PlacementList';
@@ -47,6 +48,8 @@ const statusCopy = {
 } as const;
 
 export default function FilmCutInputScreen() {
+  const { jobId: routeJobId } = useLocalSearchParams<{ jobId?: string }>();
+  const routedJobRef = useRef<string | null>(null);
   const { width } = useWindowDimensions();
   const wide = width >= 1000;
   const libraryWide = width >= 1160;
@@ -217,6 +220,14 @@ export default function FilmCutInputScreen() {
     pieceWidth: String(job.input.pieceWidthMm), pieceLength: String(job.input.pieceLengthMm), quantity: String(job.input.quantity),
     gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
   }, useRemnants, Boolean(job.isCuttingComplete), job.completedPlacementIds ?? []);
+  useEffect(() => {
+    const id = Array.isArray(routeJobId) ? routeJobId[0] : routeJobId;
+    if (!id || routedJobRef.current === id) return;
+    const job = library.jobs.find((item) => item.id === id);
+    if (!job) return;
+    routedJobRef.current = id;
+    loadJob(job);
+  }, [library.jobs, loadJob, routeJobId]);
   const deletePreset = async (id: string) => withBusy(async () => { await repository.deletePreset(id); await refreshLibrary(); }, setBusy, setError);
   const deleteJob = async (id: string) => withBusy(async () => { await repository.deleteJob(id); await refreshLibrary(); }, setBusy, setError);
   const renameJob = async (id: string, name: string) => withBusy(async () => { await repository.renameJob(id, name, new Date().toISOString()); await refreshLibrary(); }, setBusy, setError);

@@ -26,6 +26,14 @@ export default function TabsLayout() {
       }}
     >
       <Tabs.Screen
+        name="projects"
+        options={{
+          title: '프로젝트',
+          href: '/projects' as any,
+          tabBarIcon: ({ color, size }) => <Ionicons name="folder-open-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="input"
         options={{
           title: '재단 계산',
