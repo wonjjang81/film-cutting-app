@@ -152,7 +152,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `0df1ae97a` 병합 롤 재단 완료 체크 저장
 - `ae7d93c40` 순차 그룹 원자적 확정·중복 확정 방지
 - `3c1cf50a3` Cloudflare Pages Functions·D1 저장 API·서버 어댑터
-- (이번 단계) Cloudflare 상태 확인 UI·Pages 배포 workflow
+- `4dd8a6567` Cloudflare 상태 확인 UI·Pages 배포 workflow
 
 ## 결론
 
