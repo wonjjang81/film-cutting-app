@@ -8,17 +8,18 @@ type Props = {
   sideMarginMm: number;
   startEndMarginMm: number;
   onPlacementsChange?: (placements: Placement[]) => void;
+  onCheckedIdsChange?: (ids: number[]) => void;
 };
 
 /** A compact production list: rows are the legacy "group" unit in the new roll planner. */
-export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMarginMm, onPlacementsChange }: Props) {
+export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMarginMm, onPlacementsChange, onCheckedIdsChange }: Props) {
   const [manual, setManual] = useState(false);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [placements, setPlacements] = useState<Placement[]>(result.placements);
   const [automaticPlacements, setAutomaticPlacements] = useState<Placement[]>(result.placements);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
   // Keep per-piece checks while the operator nudges coordinates; reset only for a new plan.
-  useEffect(() => { setPlacements(result.placements); setAutomaticPlacements(result.placements); setSelectedId(null); setManual(false); setCheckedIds(new Set()); }, [result.usedLengthMm, result.producedQuantity, result.normalCount, result.rotatedCount]);
+  useEffect(() => { setPlacements(result.placements); setAutomaticPlacements(result.placements); setSelectedId(null); setManual(false); setCheckedIds(new Set()); onCheckedIdsChange?.([]); }, [result.usedLengthMm, result.producedQuantity, result.normalCount, result.rotatedCount, onCheckedIdsChange]);
 
   const groups = useMemo(() => {
     const sorted = [...placements].sort((a, b) => a.y - b.y || a.x - b.x || a.id - b.id);
@@ -49,13 +50,14 @@ export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMargi
     setCheckedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) next.delete(id); else next.add(id);
+      onCheckedIdsChange?.([...next]);
       return next;
     });
   };
   const toggleAll = () => {
     const complete = checkedIds.size !== placements.length;
     const next = complete ? new Set(placements.map((item) => item.id)) : new Set<number>();
-    setCheckedIds(next);
+    setCheckedIds(next); onCheckedIdsChange?.([...next]);
   };
 
   return <View style={styles.wrap}>

@@ -1,4 +1,4 @@
-import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
@@ -12,9 +12,10 @@ type Props = {
   marginMm?: number;
   sideMarginMm?: number;
   startEndMarginMm?: number;
+  completedPlacementIds?: readonly number[];
 };
 
-export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm }: Props) {
+export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [] }: Props) {
   if (!result) {
     return (
       <View style={styles.empty}>
@@ -70,6 +71,10 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
                 textAnchor="middle" fontSize={fontSize} fontWeight="700" fill={item.rotated ? '#115e59' : '#1e3a8a'}>
                 {item.id} · {item.rotated ? '90도 회전' : '기본 방향'}
               </SvgText>
+              {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>
+                <Line x1={item.x + item.width * 0.15} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.85} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
+                <Line x1={item.x + item.width * 0.85} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.15} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
+              </G>}
             </G>
           ))}
         </Svg>

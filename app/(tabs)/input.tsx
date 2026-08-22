@@ -60,6 +60,7 @@ export default function FilmCutInputScreen() {
   const [confirmed, setConfirmed] = useState(false);
   const [cuttingComplete, setCuttingComplete] = useState(false);
   const [manualPlacements, setManualPlacements] = useState<Placement[] | null>(null);
+  const [checkedPlacementIds, setCheckedPlacementIds] = useState<number[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -117,7 +118,7 @@ export default function FilmCutInputScreen() {
     });
     const completedAt = completed ? new Date(timestampMs).toISOString() : undefined;
     const jobWithStatus = { ...nextJob, isCuttingComplete: completed, ...(completedAt ? { cuttingCompletedAt: completedAt } : {}) };
-    setForm(normalizedForm); setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: normalizedForm, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: normalizedForm } : piece) } : group)); setPlanRequest(request); setPlan(nextPlan); setDraftJob(jobWithStatus); setConfirmed(false); setCuttingComplete(completed); setManualPlacements(null);
+    setForm(normalizedForm); setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: normalizedForm, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: normalizedForm } : piece) } : group)); setPlanRequest(request); setPlan(nextPlan); setDraftJob(jobWithStatus); setConfirmed(false); setCuttingComplete(completed); setManualPlacements(null); setCheckedPlacementIds([]);
     return { request, nextPlan, nextJob: jobWithStatus };
   }, [activeGroupId, activePieceId]);
 
@@ -135,7 +136,7 @@ export default function FilmCutInputScreen() {
   }, [computeAgainst, form, refreshLibrary, useRemnants]);
 
   const reset = () => {
-    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setError(null); setNotice(null);
+    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
   };
 
   const confirmJob = async () => {
@@ -285,7 +286,7 @@ export default function FilmCutInputScreen() {
           <View style={styles.switchCard}><View style={styles.switchCopy}><Text style={styles.switchTitle}>자투리 사용</Text><Text style={styles.switchDescription}>{useRemnants ? '브랜드 기준으로 사용 가능한 자투리를 먼저 배치합니다.' : '새 원본 롤만 계산합니다. 필요할 때 켜 주세요.'}</Text></View><Switch accessibilityLabel="자투리 사용" value={useRemnants} disabled={busy} onValueChange={(value) => { setUseRemnants(value); void calculate(form, value); }} trackColor={{ false: '#cbd5e1', true: '#99f6e4' }} thumbColor={useRemnants ? '#0f766e' : '#f8fafc'} /></View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="자투리 우선 자동 배치 계산" disabled={busy} onPress={() => void calculate()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '자투리 우선 자동 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
-        <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.'} dark /><FilmLayoutPreview result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} /></View>
+        <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.'} dark /><FilmLayoutPreview result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} completedPlacementIds={checkedPlacementIds} /></View>
       </View>
 
       {plan && draftJob && resultStatus && <View style={styles.resultSection} accessibilityRole="summary">
@@ -293,7 +294,7 @@ export default function FilmCutInputScreen() {
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
-        {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} />}
+        {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} />}
         <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
         <View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View>
         <EstimateSummary job={draftJob} compact />
