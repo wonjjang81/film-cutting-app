@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { ContinuousRollResult, Placement } from './optimizeContinuousRollLayout';
+import { adjustManualPlacement, rotateManualPlacement } from './manualPlacement';
 
 type Props = {
   result: ContinuousRollResult;
@@ -19,6 +20,7 @@ export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMargi
   const [placements, setPlacements] = useState<Placement[]>(result.placements);
   const [automaticPlacements, setAutomaticPlacements] = useState<Placement[]>(result.placements);
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set());
+  const [manualError, setManualError] = useState<string | null>(null);
   // Keep per-piece checks while the operator nudges coordinates; reset only for a new plan.
   useEffect(() => { setPlacements(result.placements); setAutomaticPlacements(result.placements); setSelectedId(null); setManual(false); const next = new Set(checkedPlacementIds.filter((id) => result.placements.some((placement) => placement.id === id))); setCheckedIds(next); onCheckedIdsChange?.([...next]); }, [result.usedLengthMm, result.producedQuantity, result.normalCount, result.rotatedCount, onCheckedIdsChange]);
 
@@ -32,7 +34,12 @@ export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMargi
   }, [placements, result.rowSequence]);
 
   const updatePlacement = (id: number, patch: Partial<Placement>) => {
-    const next = placements.map((item) => item.id === id ? { ...item, ...patch } : item);
+    const current = placements.find((item) => item.id === id);
+    if (!current) return;
+    const adjusted = adjustManualPlacement(current, patch, placements, { rollWidthMm, usedLengthMm: result.usedLengthMm, sideMarginMm, startEndMarginMm });
+    if (!adjusted.placement) { setManualError(adjusted.error ?? '배치할 수 없는 위치입니다.'); return; }
+    setManualError(null);
+    const next = placements.map((item) => item.id === id ? adjusted.placement! : item);
     setPlacements(next); onPlacementsChange?.(next);
   };
   const nudge = (axis: 'x' | 'y', amount: number) => {
@@ -46,7 +53,17 @@ export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMargi
       : Math.min(maxY, Math.max(startEndMarginMm, item.y + amount));
     updatePlacement(selectedId, { [axis]: value });
   };
-  const reset = () => { setPlacements(automaticPlacements); onPlacementsChange?.(automaticPlacements); };
+  const rotateSelected = () => {
+    if (selectedId === null) return;
+    const current = placements.find((item) => item.id === selectedId);
+    if (!current) return;
+    const adjusted = rotateManualPlacement(current, placements, { rollWidthMm, usedLengthMm: result.usedLengthMm, sideMarginMm, startEndMarginMm });
+    if (!adjusted.placement) { setManualError(adjusted.error ?? '회전할 수 없는 조각입니다.'); return; }
+    setManualError(null);
+    const next = placements.map((item) => item.id === selectedId ? adjusted.placement! : item);
+    setPlacements(next); onPlacementsChange?.(next);
+  };
+  const reset = () => { setPlacements(automaticPlacements); setManualError(null); onPlacementsChange?.(automaticPlacements); };
   const toggleChecked = (id: number) => {
     setCheckedIds((current) => {
       const next = new Set(current);
@@ -63,7 +80,7 @@ export function PlacementList({ result, rollWidthMm, sideMarginMm, startEndMargi
 
   return <View style={styles.wrap}>
     <View style={styles.heading}><View><Text style={styles.title}>배치 목록</Text><Text style={styles.subtitle}>총 {placements.length}개 · {groups.length}개 그룹(행 패턴)</Text></View><TouchableOpacity accessibilityRole="button" onPress={() => setManual((value) => !value)} style={[styles.modeButton, manual && styles.modeButtonActive]}><Text style={[styles.modeText, manual && styles.modeTextActive]}>{manual ? '수동 배치 닫기' : '수동 배치'}</Text></TouchableOpacity></View>
-    {manual && <View style={styles.manualBar}><Text style={styles.manualHelp}>목록에서 제품을 선택한 뒤 5mm 단위로 위치를 조정합니다.</Text><View style={styles.nudgeRow}><TouchableOpacity accessibilityLabel="왼쪽 이동" onPress={() => nudge('x', -5)} style={styles.nudge}><Text>←</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="위로 이동" onPress={() => nudge('y', -5)} style={styles.nudge}><Text>↑</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="아래로 이동" onPress={() => nudge('y', 5)} style={styles.nudge}><Text>↓</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="오른쪽 이동" onPress={() => nudge('x', 5)} style={styles.nudge}><Text>→</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={reset} style={styles.reset}><Text style={styles.resetText}>자동 배치로 복원</Text></TouchableOpacity></View></View>}
+    {manual && <View style={styles.manualBar}><Text style={styles.manualHelp}>목록에서 제품을 선택한 뒤 5mm 단위로 위치를 조정합니다. 겹침·롤 밖 배치는 차단됩니다.</Text><View style={styles.nudgeRow}><TouchableOpacity accessibilityLabel="왼쪽 이동" onPress={() => nudge('x', -5)} style={styles.nudge}><Text>←</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="위로 이동" onPress={() => nudge('y', -5)} style={styles.nudge}><Text>↑</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="아래로 이동" onPress={() => nudge('y', 5)} style={styles.nudge}><Text>↓</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="오른쪽 이동" onPress={() => nudge('x', 5)} style={styles.nudge}><Text>→</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="선택 조각 90도 회전" onPress={rotateSelected} style={{ minHeight: 32, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#0f766e' }}><Text style={{ fontSize: 10, fontWeight: '800', color: '#fff' }}>↻ 90°</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={reset} style={styles.reset}><Text style={styles.resetText}>자동 배치로 복원</Text></TouchableOpacity></View>{manualError && <Text style={{ marginTop: 7, fontSize: 10, fontWeight: '700', color: '#b91c1c' }}>{manualError}</Text>}</View>}
     <View style={styles.checkBar}><Text style={styles.checkText}>재단 완료 {checkedIds.size}/{placements.length}</Text><TouchableOpacity accessibilityRole="button" onPress={toggleAll} style={styles.checkAll}><Text style={styles.checkAllText}>{checkedIds.size === placements.length ? '전체 해제' : '전체 완료'}</Text></TouchableOpacity></View>
     {groups.map((group) => <View key={group.id} style={styles.group}><View style={styles.groupHeading}><Text style={styles.groupTitle}>그룹 {group.id}</Text><Text style={styles.groupMeta}>{group.items.length}개 · Y {Math.round(group.row.startY)}–{Math.round(group.row.endY)}mm · {group.row.pattern}</Text></View>{group.items.map((item) => <View key={item.id} style={[styles.item, selectedId === item.id && styles.itemSelected]}><TouchableOpacity accessibilityLabel={`제품 ${item.id} 재단 완료`} accessibilityRole="checkbox" accessibilityState={{ checked: checkedIds.has(item.id) }} onPress={() => toggleChecked(item.id)} style={[styles.check, checkedIds.has(item.id) && styles.checkDone]}><Text style={[styles.checkMark, checkedIds.has(item.id) && styles.checkMarkDone]}>{checkedIds.has(item.id) ? '✓' : ''}</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: selectedId === item.id }} onPress={() => setSelectedId(item.id)} style={styles.itemMain}><View style={[styles.index, item.rotated && styles.indexRotated]}><Text style={styles.indexText}>{item.id}</Text></View><View style={styles.itemCopy}><Text style={[styles.itemTitle, checkedIds.has(item.id) && styles.itemTitleDone]}>{item.width} × {item.height} mm {item.rotated ? '· 90도 회전' : '· 기본 방향'}</Text><Text style={styles.itemMeta}>좌표 X {Math.round(item.x)} · Y {Math.round(item.y)} mm</Text></View></TouchableOpacity>{manual && selectedId === item.id && <View style={styles.editFields}><TextInput accessibilityLabel="수동 X 좌표" inputMode="decimal" keyboardType="numeric" value={String(Math.round(item.x))} onChangeText={(value) => { const parsed = Number(value); if (Number.isFinite(parsed)) updatePlacement(item.id, { x: parsed }); }} style={styles.coordInput} /><TextInput accessibilityLabel="수동 Y 좌표" inputMode="decimal" keyboardType="numeric" value={String(Math.round(item.y))} onChangeText={(value) => { const parsed = Number(value); if (Number.isFinite(parsed)) updatePlacement(item.id, { y: parsed }); }} style={styles.coordInput} /></View>}</View>)}</View>)}
   </View>;
