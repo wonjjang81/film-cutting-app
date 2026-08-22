@@ -1,5 +1,23 @@
 import { Tabs } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import {
+  CircleHelp,
+  FolderOpen,
+  ReceiptText,
+  Scissors,
+  Settings,
+  SlidersHorizontal,
+} from 'lucide-react-native';
+
+type TabIconProps = {
+  color: string;
+  size: number;
+};
+
+// Keep the tab icons SVG-based. Expo's icon font can render as a tofu/X when
+// the font asset is blocked or delayed by a hosted web deployment.
+const TabIcon = ({ Icon, color, size }: TabIconProps & { Icon: typeof FolderOpen }) => (
+  <Icon color={color} size={size} strokeWidth={2.25} />
+);
 
 export default function TabsLayout() {
   return (
@@ -30,7 +48,7 @@ export default function TabsLayout() {
         options={{
           title: '프로젝트',
           href: '/projects' as any,
-          tabBarIcon: ({ color, size }) => <Ionicons name="folder-open-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={FolderOpen} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -38,14 +56,14 @@ export default function TabsLayout() {
         options={{
           title: '재단 계산',
           href: '/input',
-          tabBarIcon: ({ color, size }) => <Ionicons name="cut-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={Scissors} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="estimate"
         options={{
           title: '견적',
-          tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={ReceiptText} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
@@ -53,21 +71,21 @@ export default function TabsLayout() {
         options={{
           title: '관리',
           href: '/admin',
-          tabBarIcon: ({ color, size }) => <Ionicons name="settings-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={Settings} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="guide"
         options={{
           title: '사용 안내',
-          tabBarIcon: ({ color, size }) => <Ionicons name="help-circle-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={CircleHelp} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
         name="settings"
         options={{
           title: '설정',
-          tabBarIcon: ({ color, size }) => <Ionicons name="options-outline" color={color} size={size} />,
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={SlidersHorizontal} color={color} size={size} />,
         }}
       />
     </Tabs>
