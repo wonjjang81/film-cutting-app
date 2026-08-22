@@ -74,6 +74,9 @@ export type SavedCuttingJob = {
   isCuttingComplete?: boolean;
   cuttingCompletedAt?: string;
   completedPlacementIds?: number[];
+  /** Inventory confirmation is separate from physical cutting completion. */
+  isInventoryConfirmed?: boolean;
+  inventoryConfirmedAt?: string;
 };
 
 /** One mixed-size roll layout, persisted as a single production unit. */

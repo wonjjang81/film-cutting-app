@@ -18,6 +18,7 @@ export type GroupedPiecePlan = GroupedPieceRequest & {
   plan: RemnantPlan;
   inventoryBefore: FilmRemnant[];
   inventoryAfter: FilmRemnant[];
+  savedJobId?: string;
 };
 
 export type MergedGroupPlan = {

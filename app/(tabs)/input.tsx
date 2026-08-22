@@ -14,7 +14,7 @@ import { createCsv } from '../../src/features/export/createCsv';
 import { createWorkOrderHtml } from '../../src/features/export/createWorkOrderHtml';
 import { asyncStorageLibraryAdapter } from '../../src/features/library/asyncStorageLibraryAdapter';
 import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
-import { createLibraryRepository } from '../../src/features/library/libraryRepository';
+import { createLibraryRepository, type InventoryDelta } from '../../src/features/library/libraryRepository';
 import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
@@ -115,30 +115,31 @@ export default function FilmCutInputScreen() {
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
 
-  const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now(), remnants = inventory.remnants, completed = false, completedIds: number[] = []) => {
+  const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now(), remnants = inventory.remnants, completed = false, completedIds: number[] = [], preferredJobId?: string) => {
     const normalizedForm = withProductionDefaults(nextForm);
     const request = toRemnantPlanRequest(normalizedForm, remnants);
     const nextPlan = planWithRemnants(request);
     const createdAt = new Date(timestampMs).toISOString();
     const activeGroup = groups.find((group) => group.id === activeGroupId);
     const nextJob = buildSavedCuttingJob({
-      id: createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
+      id: preferredJobId ?? createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
       name: request.productNumber ? `${request.brand} ${request.productNumber} 작업` : `${request.brand} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
       filmName: activeGroup?.filmName,
       materialCostPerM: optionalCost(activeGroup?.materialCostPerM),
       constructionCostPerM2: optionalCost(activeGroup?.constructionCostPerM2),
     });
     const completedAt = completed ? new Date(timestampMs).toISOString() : undefined;
-    const jobWithStatus = { ...nextJob, isCuttingComplete: completed, ...(completedAt ? { cuttingCompletedAt: completedAt } : {}), completedPlacementIds: [...completedIds] };
+    const existing = preferredJobId ? inventory.jobs.find((job) => job.id === preferredJobId) : undefined;
+    const jobWithStatus = { ...nextJob, isCuttingComplete: completed, ...(completedAt ? { cuttingCompletedAt: completedAt } : {}), completedPlacementIds: [...completedIds], ...(existing?.isInventoryConfirmed ? { isInventoryConfirmed: true, inventoryConfirmedAt: existing.inventoryConfirmedAt } : {}) };
     setForm(normalizedForm); setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: normalizedForm, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: normalizedForm } : piece) } : group)); setPlanRequest(request); setPlan(nextPlan); setDraftJob(jobWithStatus); setBatchPlans(null); setConfirmed(false); setCuttingComplete(completed); setManualPlacements(null); setCheckedPlacementIds(completedIds);
     return { request, nextPlan, nextJob: jobWithStatus };
   }, [activeGroupId, activePieceId, groups]);
 
-  const calculate = useCallback(async (nextForm = form, nextUseRemnants = useRemnants, completed = false, completedIds: number[] = []) => {
+  const calculate = useCallback(async (nextForm = form, nextUseRemnants = useRemnants, completed = false, completedIds: number[] = [], preferredJobId?: string) => {
     setBusy(true); setError(null); setNotice(null);
     try {
       const latest = await refreshLibrary();
-      const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : [], completed, completedIds);
+      const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : [], completed, completedIds, preferredJobId);
       await repository.saveJob(computed.nextJob);
       await refreshLibrary();
       setNotice('계산 및 프로젝트 저장이 완료되었습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
@@ -160,14 +161,17 @@ export default function FilmCutInputScreen() {
       const generatedIds = latest.jobs.map((job) => job.id);
       const generatedMergedIds = latest.mergedJobs.map((job) => job.id);
       const sourceJobIds = new Map<string, string>();
+      const savedJobIds: string[] = [];
       const timestamp = Date.now();
       for (const [index, entry] of planned.entries()) {
         const id = createUniqueUiId('job', timestamp + index, generatedIds);
         generatedIds.push(id);
+        savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
         const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         await repository.saveJob(job);
       }
+      const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
       for (const [index, entry] of merged.entries()) {
         const mergedJob: SavedMergedCuttingJob = {
           id: createUniqueUiId('merged-job', timestamp + 1000 + index, generatedMergedIds),
@@ -190,9 +194,9 @@ export default function FilmCutInputScreen() {
         generatedMergedIds.push(mergedJob.id);
         await repository.saveMergedJob(mergedJob);
       }
-      setBatchPlans(planned);
+      setBatchPlans(plannedWithIds);
       setMergedGroupPlans(merged);
-      const active = planned.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? planned[0];
+      const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
       if (active) activateBatchPlan(active);
       await refreshLibrary();
       setNotice(`${planned.length}개 조각의 그룹 통합 배치와 ${merged.length}개 병합 롤을 저장했습니다.`);
@@ -203,7 +207,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request);
     const createdAt = new Date().toISOString();
-    const nextJob = buildSavedCuttingJob({ id: createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
 
@@ -213,17 +217,47 @@ export default function FilmCutInputScreen() {
 
   const confirmJob = async () => {
     if (plan === null || planRequest === null || draftJob === null || confirmed) return;
+    const activeMergeGroupId = groups.find((group) => group.id === activeGroupId)?.mergeGroupId;
+    if (activeMergeGroupId && library.mergedJobs.some((job) => job.mergeGroupId === activeMergeGroupId && job.isCuttingComplete)) {
+      setError('이 그룹은 병합 롤로 이미 재단 완료 처리되었습니다. 개별 조각을 다시 확정할 수 없습니다.');
+      return;
+    }
     setBusy(true); setError(null); setNotice(null);
     try {
       await repository.confirmJob(draftJob, plan.inventoryDelta);
       const latest = await refreshLibrary();
-      setLibrary(latest); setConfirmed(true);
+      const confirmedAt = latest.jobs.find((job) => job.id === draftJob.id)?.inventoryConfirmedAt ?? new Date().toISOString();
+      setLibrary(latest); setDraftJob({ ...draftJob, isInventoryConfirmed: true, inventoryConfirmedAt: confirmedAt }); setConfirmed(true);
       const residualCount = plan.inventoryDelta.add.filter((item) => !plan.inventoryDelta.removeIds.includes(item.id)).length;
       setNotice(`작업을 확정했습니다. 재고 반영 완료 · 저장된 잔여 자투리 ${residualCount}건`);
     } catch (caught) {
       setError(`재고가 변경되어 확정하지 못했습니다. 최신 재고로 다시 계산했습니다. ${messageOf(caught)}`);
       try { const latest = await refreshLibrary(); computeAgainst(form, latest, Date.now(), useRemnants ? latest.remnants : []); }
       catch (refreshError) { setPlan(null); setPlanRequest(null); setDraftJob(null); setError(`최신 재고를 불러오지 못했습니다. ${messageOf(refreshError)}`); }
+    } finally { setBusy(false); }
+  };
+
+  const confirmBatch = async () => {
+    if (!batchPlans || batchPlans.length === 0) return;
+    const ids = batchPlans.map((entry) => entry.savedJobId).filter((id): id is string => Boolean(id));
+    if (ids.length !== batchPlans.length) { setError('그룹 작업 ID가 없어 다시 계산해야 합니다.'); return; }
+    const merged = library.mergedJobs.find((job) => job.isCuttingComplete && job.sourceJobIds.some((id) => ids.includes(id)));
+    if (merged) { setError(`병합 롤 ${merged.name}이 이미 완료되어 순차 자투리 배치를 함께 확정할 수 없습니다.`); return; }
+    const latest = await repository.load();
+    const jobs = ids.map((id) => latest.document.jobs.find((job) => job.id === id));
+    if (jobs.some((job) => job === undefined)) { setError('확정 대상 작업이 변경되어 다시 계산해야 합니다.'); return; }
+    if (jobs.some((job) => job!.isInventoryConfirmed)) { setError('이미 재고 확정된 작업이 포함되어 있습니다.'); return; }
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      const delta = aggregateInventoryDelta(batchPlans);
+      await repository.confirmJobs(jobs as SavedCuttingJob[], delta);
+      await refreshLibrary();
+      const residualCount = delta.add.filter((item) => !delta.removeIds.includes(item.id)).length;
+      setConfirmed(true);
+      setNotice(`${batchPlans.length}개 조각을 하나의 재고 트랜잭션으로 확정했습니다. 저장된 잔여 자투리 ${residualCount}건`);
+    } catch (caught) {
+      setError(`그룹 작업을 함께 확정하지 못했습니다. ${messageOf(caught)}`);
+      await refreshLibrary();
     } finally { setBusy(false); }
   };
 
@@ -252,7 +286,7 @@ export default function FilmCutInputScreen() {
     brand: job.brand, productNumber: job.productNumber, rollWidth: String(FIXED_ROLL_WIDTH_MM),
     pieceWidth: String(job.input.pieceWidthMm), pieceLength: String(job.input.pieceLengthMm), quantity: String(job.input.quantity),
     gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
-  }, useRemnants, Boolean(job.isCuttingComplete), job.completedPlacementIds ?? []);
+  }, useRemnants, Boolean(job.isCuttingComplete), job.completedPlacementIds ?? [], job.id);
   useEffect(() => {
     const id = Array.isArray(routeJobId) ? routeJobId[0] : routeJobId;
     if (!id || routedJobRef.current === id) return;
@@ -324,9 +358,11 @@ export default function FilmCutInputScreen() {
     setBusy(true); setError(null);
     try {
       const now = new Date().toISOString();
+      const stored = library.jobs.find((job) => job.id === draftJob.id);
+      const inventoryStatus = stored?.isInventoryConfirmed ? { isInventoryConfirmed: true, inventoryConfirmedAt: stored.inventoryConfirmedAt } : {};
       const next = cuttingComplete
-        ? { ...draftJob, isCuttingComplete: false, updatedAt: now, cuttingCompletedAt: undefined, completedPlacementIds: [] }
-        : { ...draftJob, isCuttingComplete: true, updatedAt: now, cuttingCompletedAt: now, completedPlacementIds: [...checkedPlacementIds].sort((a, b) => a - b) };
+        ? { ...draftJob, ...inventoryStatus, isCuttingComplete: false, updatedAt: now, cuttingCompletedAt: undefined, completedPlacementIds: [] }
+        : { ...draftJob, ...inventoryStatus, isCuttingComplete: true, updatedAt: now, cuttingCompletedAt: now, completedPlacementIds: [...checkedPlacementIds].sort((a, b) => a - b) };
       await repository.saveJob(next);
       setDraftJob(next); setCuttingComplete(Boolean(next.isCuttingComplete));
       await refreshLibrary();
@@ -337,6 +373,10 @@ export default function FilmCutInputScreen() {
   const toggleMergedComplete = async (id: string) => {
     const current = library.mergedJobs.find((job) => job.id === id);
     if (!current) return;
+    if (!current.isCuttingComplete && current.sourceJobIds.some((sourceId) => library.jobs.some((job) => job.id === sourceId && job.isInventoryConfirmed))) {
+      setError('병합 롤의 원본 조각 중 이미 재고 확정된 작업이 있어 병합 롤을 완료 처리할 수 없습니다.');
+      return;
+    }
     setBusy(true); setError(null);
     try {
       const now = new Date().toISOString();
@@ -435,7 +475,7 @@ export default function FilmCutInputScreen() {
         <View style={styles.resultHeading}><View><Text style={styles.eyebrow}>MATERIAL PLAN</Text><Text style={styles.resultTitle}>원단 사용 계획</Text></View><View style={[styles.statusBadge, { backgroundColor: resultStatus.bg }]}><Text style={[styles.statusText, { color: resultStatus.tone }]}>{resultStatus.title}</Text></View></View>
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
-        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onToggleMergedComplete={(id) => void toggleMergedComplete(id)} />}
+        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onConfirmBatch={() => void confirmBatch()} onToggleMergedComplete={(id) => void toggleMergedComplete(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
         {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
         <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
@@ -494,10 +534,10 @@ function FixedProductionConditions() {
 }
 function PanelHeading({ step, title, subtitle, dark = false }: { step: string; title: string; subtitle: string; dark?: boolean }) { return <View style={styles.panelHeader}><View style={styles.panelHeaderCopy}><Text style={styles.panelTitle}>{title}</Text><Text style={styles.panelSubtitle}>{subtitle}</Text></View><View style={[styles.stepBadge, dark && styles.stepBadgeDark]}><Text style={[styles.stepText, dark && styles.stepTextLight]}>{step}</Text></View></View>; }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) { return <View style={styles.metric}><View style={[styles.metricAccent, { backgroundColor: accent }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
-function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onToggleMergedComplete }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[]; mergedJobs: readonly SavedMergedCuttingJob[]; busy: boolean; onToggleMergedComplete(id: string): void }) {
+function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch, onToggleMergedComplete }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[]; mergedJobs: readonly SavedMergedCuttingJob[]; busy: boolean; onConfirmBatch(): void; onToggleMergedComplete(id: string): void }) {
   const produced = plans.reduce((sum, item) => sum + item.plan.remnantUses.reduce((inner, use) => inner + use.producedQuantity, 0) + (item.plan.newRollResult?.producedQuantity ?? 0), 0);
   const newRollLength = plans.reduce((sum, item) => sum + (item.plan.newRollResult?.usedLengthMm ?? 0), 0);
-  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} job={job} busy={busy} onToggleComplete={job ? () => onToggleMergedComplete(job.id) : undefined} /></View>; })}</View>;
+  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy} onPress={onConfirmBatch} style={[styles.batchConfirmButton, busy && styles.disabled]}><Text style={styles.batchConfirmButtonText}>순차 배치 일괄 확정</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>병합 롤은 별도 새 롤 생산 단위입니다. 병합 롤 완료 후에는 순차 자투리 배치를 일괄 확정할 수 없습니다.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} job={job} busy={busy} onToggleComplete={job ? () => onToggleMergedComplete(job.id) : undefined} /></View>; })}</View>;
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
@@ -510,6 +550,31 @@ function formFromRequest(request: RemnantPlanRequest): CuttingFormState {
 }
 function nextInventory(library: LibraryDocument, useRemnants: boolean): FilmRemnant[] {
   return useRemnants ? library.remnants.map((item) => ({ ...item })) : [];
+}
+function sameRemnant(left: FilmRemnant, right: FilmRemnant): boolean {
+  return left.id === right.id && left.brand === right.brand && left.productNumber === right.productNumber
+    && left.widthMm === right.widthMm && left.lengthMm === right.lengthMm && left.quantity === right.quantity
+    && left.createdAt === right.createdAt && left.updatedAt === right.updatedAt && left.note === right.note;
+}
+function aggregateInventoryDelta(plans: readonly GroupedPiecePlan[]): InventoryDelta {
+  const initial = plans[0]?.inventoryBefore ?? [];
+  const final = plans.at(-1)?.inventoryAfter ?? initial;
+  const initialById = new Map(initial.map((item) => [item.id, item]));
+  const finalById = new Map(final.map((item) => [item.id, item]));
+  const removeIds: string[] = [];
+  const add: FilmRemnant[] = [];
+  const basedOnUpdatedAt: Record<string, string> = {};
+  for (const source of initial) {
+    const replacement = finalById.get(source.id);
+    if (replacement && sameRemnant(source, replacement)) continue;
+    removeIds.push(source.id);
+    basedOnUpdatedAt[source.id] = source.updatedAt;
+    if (replacement) add.push({ ...replacement });
+  }
+  for (const remnant of final) {
+    if (!initialById.has(remnant.id)) add.push({ ...remnant });
+  }
+  return { removeIds, add, basedOnUpdatedAt };
 }
 function optionalCost(value: string | undefined): number | undefined {
   if (!value || value.trim().length === 0) return undefined;
@@ -533,6 +598,6 @@ const styles = StyleSheet.create({
   pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },
   group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, stepHint: { fontSize: 10, fontWeight: '600', color: '#94a3b8' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, minWidth: 36, paddingHorizontal: 7, fontSize: 15, fontWeight: '700', color: '#0f172a', textAlign: 'center' }, unit: { paddingHorizontal: 3, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, stepperButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#e2e8f0' }, stepperText: { fontSize: 20, lineHeight: 22, color: '#334155' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#f0fdfa' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#115e59' }, switchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#0f766e' }, calculateButtonRow: { flexDirection: 'row', gap: 8, marginTop: 16 }, calculateButtonMain: { flex: 1, marginTop: 0 }, batchButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 12, backgroundColor: '#0f766e' }, batchButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
   resultSection: { marginTop: 22, padding: 22, borderRadius: 20, backgroundColor: '#fff', ...shadow }, resultHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, resultTitle: { marginTop: 4, fontSize: 23, fontWeight: '800', color: '#0f172a' }, statusBadge: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }, statusText: { fontSize: 12, fontWeight: '800' }, statusDetail: { marginTop: 8, fontSize: 12, lineHeight: 18, color: '#64748b' },
-  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, batchSummary: { marginTop: 14, padding: 13, borderRadius: 11, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, batchSummaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, batchSummaryTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, batchSummaryMeta: { fontSize: 10, color: '#0f766e' }, batchSummaryLine: { marginTop: 5, fontSize: 10, lineHeight: 15, color: '#475569' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' },
+  metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, batchSummary: { marginTop: 14, padding: 13, borderRadius: 11, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, batchSummaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, batchSummaryTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, batchSummaryMeta: { fontSize: 10, color: '#0f766e' }, batchSummaryLine: { marginTop: 5, fontSize: 10, lineHeight: 15, color: '#475569' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' }, batchConfirmButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 8, backgroundColor: '#0f766e' }, batchConfirmButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, batchWarning: { marginTop: 10, padding: 9, borderRadius: 8, fontSize: 10, lineHeight: 15, color: '#92400e', backgroundColor: '#fffbeb' },
   confirmBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 17, padding: 14, borderRadius: 12, borderWidth: 1 }, tentativeBar: { borderColor: '#fbbf24', backgroundColor: '#fffbeb' }, confirmedBar: { borderColor: '#6ee7b7', backgroundColor: '#ecfdf5' }, completeBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 12, padding: 14, borderRadius: 12, borderWidth: 1 }, completeBarPending: { borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, completeBarDone: { borderColor: '#86efac', backgroundColor: '#f0fdf4' }, confirmCopy: { flex: 1, minWidth: 210 }, confirmTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b' }, confirmMeta: { marginTop: 3, fontSize: 11, lineHeight: 17, color: '#64748b' }, confirmButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#0f172a' }, confirmButtonText: { fontSize: 13, fontWeight: '800', color: '#fff' }, completeButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#047857' }, completeButtonText: { fontSize: 13, fontWeight: '800', color: '#fff' }, exportRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 }, secondaryButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff' }, secondaryButtonText: { fontSize: 12, fontWeight: '800', color: '#334155' }, libraryGrid: { gap: 20, marginTop: 22 }, libraryGridWide: { flexDirection: 'row', alignItems: 'flex-start' },
 });

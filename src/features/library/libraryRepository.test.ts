@@ -228,6 +228,21 @@ describe('library repository', () => {
     expect(jobs.at(-1)!.id).toBe('job-2');
   });
 
+  it('confirms multiple jobs in one inventory transaction and prevents a second confirmation', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const first = job(1, { id: 'batch-job-1' });
+    const second = job(2, { id: 'batch-job-2' });
+    await repository.saveJob(first);
+    await repository.saveJob(second);
+
+    await repository.confirmJobs([first, second], { removeIds: [], add: [], basedOnUpdatedAt: {} });
+
+    const loaded = await repository.load();
+    expect(loaded.document.jobs.find((item) => item.id === 'batch-job-1')).toMatchObject({ isInventoryConfirmed: true });
+    expect(loaded.document.jobs.find((item) => item.id === 'batch-job-2')).toMatchObject({ isInventoryConfirmed: true });
+    await expect(repository.confirmJobs([first, second], { removeIds: [], add: [], basedOnUpdatedAt: {} })).rejects.toThrow('이미 재고 확정');
+  });
+
   it('saves and reloads a mixed-size merged roll as one production record', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     await repository.saveMergedJob(mergedJob());

@@ -43,6 +43,7 @@ export type LibraryRepository = {
   deleteRemnant(id: string): Promise<void>;
   applyInventoryDelta(delta: InventoryDelta): Promise<void>;
   confirmJob(job: SavedCuttingJob, delta: InventoryDelta): Promise<void>;
+  confirmJobs(jobs: readonly SavedCuttingJob[], delta: InventoryDelta): Promise<void>;
 };
 
 type Validator<T> = (value: unknown) => T | undefined;
@@ -226,6 +227,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const result = validateResult(value.result);
   const remnantSummary = value.remnantSummary.map(validateRemnantSummary);
   const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
+  const inventoryConfirmedAt = value.inventoryConfirmedAt === undefined ? undefined : normalizeTimestamp(value.inventoryConfirmedAt);
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
@@ -233,6 +235,8 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   if (value.materialCostPerM !== undefined && !finiteNonnegative(value.materialCostPerM)) return undefined;
   if (value.constructionCostPerM2 !== undefined && !finiteNonnegative(value.constructionCostPerM2)) return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
+  if (value.isInventoryConfirmed !== undefined && typeof value.isInventoryConfirmed !== 'boolean') return undefined;
+  if (value.inventoryConfirmedAt !== undefined && inventoryConfirmedAt === undefined) return undefined;
   if (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id)))) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
@@ -244,6 +248,8 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
     ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
     ...(completedPlacementIds === undefined ? {} : { completedPlacementIds: [...completedPlacementIds] }),
+    ...(value.isInventoryConfirmed === undefined ? {} : { isInventoryConfirmed: value.isInventoryConfirmed }),
+    ...(inventoryConfirmedAt === undefined ? {} : { inventoryConfirmedAt }),
   };
 }
 
@@ -568,8 +574,30 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
     async confirmJob(job, delta): Promise<void> {
       const valid = assertValid(job, validateJob, 'job');
       await mutate((document) => {
+        if (document.jobs.some((stored) => stored.id === valid.id && stored.isInventoryConfirmed)) {
+          throw new Error('이미 재고 확정된 작업입니다.');
+        }
         applyInventoryDeltaToDocument(document, delta);
-        document.jobs = orderJobs(replaceById(document.jobs, valid));
+        const now = new Date().toISOString();
+        document.jobs = orderJobs(replaceById(document.jobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }));
+      });
+    },
+
+    async confirmJobs(jobs, delta): Promise<void> {
+      const validJobs = jobs.map((job) => assertValid(job, validateJob, 'job'));
+      const ids = new Set(validJobs.map((job) => job.id));
+      if (ids.size !== validJobs.length) throw new Error('동일 작업을 여러 번 확정할 수 없습니다.');
+      await mutate((document) => {
+        if (validJobs.some((job) => !document.jobs.some((stored) => stored.id === job.id))) {
+          throw new Error('확정 대상 작업을 찾을 수 없습니다. 다시 계산해 주세요.');
+        }
+        if (validJobs.some((job) => document.jobs.some((stored) => stored.id === job.id && stored.isInventoryConfirmed))) {
+          throw new Error('이미 재고 확정된 작업이 포함되어 있습니다.');
+        }
+        applyInventoryDeltaToDocument(document, delta);
+        const now = new Date().toISOString();
+        const confirmed = new Map(validJobs.map((job) => [job.id, { ...job, isInventoryConfirmed: true, inventoryConfirmedAt: now }]));
+        document.jobs = orderJobs(document.jobs.map((job) => confirmed.get(job.id) ?? clone(job)));
       });
     },
   };
