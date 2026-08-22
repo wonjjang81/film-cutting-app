@@ -70,6 +70,7 @@ export type SavedCuttingJob = {
   /** Physical cutting completion is tracked separately from inventory confirmation. */
   isCuttingComplete?: boolean;
   cuttingCompletedAt?: string;
+  completedPlacementIds?: number[];
 };
 
 export type LibraryDocument = {

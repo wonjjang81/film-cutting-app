@@ -218,15 +218,18 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const result = validateResult(value.result);
   const remnantSummary = value.remnantSummary.map(validateRemnantSummary);
   const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
+  const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
+  if (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id)))) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
     createdAt, updatedAt, input,
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
     ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
     ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
+    ...(completedPlacementIds === undefined ? {} : { completedPlacementIds: [...completedPlacementIds] }),
   };
 }
 
