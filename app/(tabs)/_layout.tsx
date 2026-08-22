@@ -34,6 +34,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="estimate"
+        options={{
+          title: '견적',
+          tabBarIcon: ({ color, size }) => <Ionicons name="receipt-outline" color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
         name="admin"
         options={{
           title: '관리',

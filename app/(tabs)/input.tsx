@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
@@ -14,12 +14,18 @@ import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob } from '
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
+import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
 
 const repository = createLibraryRepository(asyncStorageLibraryAdapter);
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [] };
+const BRAND_OPTIONS = ['영림', '현대', 'Lx', '삼성'] as const;
+const FIXED_ROLL_WIDTH_MM = 1220;
+const DEFAULT_GAP_MM = 0;
+const DEFAULT_SIDE_MARGIN_MM = 5;
+const DEFAULT_START_END_MARGIN_MM = 5;
 const initialForm: CuttingFormState = {
-  brand: '', productNumber: '', rollWidth: '1000', pieceWidth: '250', pieceLength: '500',
-  quantity: '20', gap: '3', sideMargin: '10', startEndMargin: '10', allowRotation: true,
+  brand: BRAND_OPTIONS[0], productNumber: '', rollWidth: String(FIXED_ROLL_WIDTH_MM), pieceWidth: '250', pieceLength: '500',
+  quantity: '20', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -51,14 +57,15 @@ export default function FilmCutInputScreen() {
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
 
   const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now()) => {
-    const request = toRemnantPlanRequest(nextForm, inventory.remnants);
+    const normalizedForm = withProductionDefaults(nextForm);
+    const request = toRemnantPlanRequest(normalizedForm, inventory.remnants);
     const nextPlan = planWithRemnants(request);
     const createdAt = new Date(timestampMs).toISOString();
     const nextJob = buildSavedCuttingJob({
       id: createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
       name: `${request.brand} ${request.productNumber} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
     });
-    setForm(nextForm); setPlanRequest(request); setPlan(nextPlan); setDraftJob(nextJob); setConfirmed(false);
+    setForm(normalizedForm); setPlanRequest(request); setPlan(nextPlan); setDraftJob(nextJob); setConfirmed(false);
     return { request, nextPlan, nextJob };
   }, []);
 
@@ -66,8 +73,10 @@ export default function FilmCutInputScreen() {
     setBusy(true); setError(null); setNotice(null);
     try {
       const latest = await refreshLibrary();
-      computeAgainst(nextForm, latest);
-      setNotice('계산이 완료되었습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
+      const computed = computeAgainst(nextForm, latest);
+      await repository.saveJob(computed.nextJob);
+      await refreshLibrary();
+      setNotice('계산 및 프로젝트 저장이 완료되었습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
     } catch (caught) {
       setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setError(messageOf(caught));
     } finally { setBusy(false); }
@@ -110,18 +119,25 @@ export default function FilmCutInputScreen() {
   };
 
   const loadPreset = (preset: FilmPreset) => void calculate({
-    brand: preset.brand, productNumber: preset.productNumber, rollWidth: String(preset.rollWidthMm),
+    brand: preset.brand, productNumber: preset.productNumber, rollWidth: String(FIXED_ROLL_WIDTH_MM),
     pieceWidth: String(preset.pieceWidthMm), pieceLength: String(preset.pieceLengthMm), quantity: form.quantity,
-    gap: String(preset.gapMm), sideMargin: String(preset.sideMarginMm), startEndMargin: String(preset.startEndMarginMm), allowRotation: preset.allowRotation,
+    gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
   });
   const loadJob = (job: SavedCuttingJob) => void calculate({
-    brand: job.brand, productNumber: job.productNumber, rollWidth: String(job.input.rollWidthMm),
+    brand: job.brand, productNumber: job.productNumber, rollWidth: String(FIXED_ROLL_WIDTH_MM),
     pieceWidth: String(job.input.pieceWidthMm), pieceLength: String(job.input.pieceLengthMm), quantity: String(job.input.quantity),
-    gap: String(job.input.gapMm), sideMargin: String(job.input.sideMarginMm), startEndMargin: String(job.input.startEndMarginMm), allowRotation: job.input.allowRotation,
+    gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
   });
   const deletePreset = async (id: string) => withBusy(async () => { await repository.deletePreset(id); await refreshLibrary(); }, setBusy, setError);
   const deleteJob = async (id: string) => withBusy(async () => { await repository.deleteJob(id); await refreshLibrary(); }, setBusy, setError);
   const renameJob = async (id: string, name: string) => withBusy(async () => { await repository.renameJob(id, name, new Date().toISOString()); await refreshLibrary(); }, setBusy, setError);
+  const saveProject = async () => {
+    if (!draftJob) return;
+    setBusy(true); setError(null);
+    try { await repository.saveJob(draftJob); await refreshLibrary(); setNotice('현재 계산 결과를 프로젝트로 저장했습니다.'); }
+    catch (caught) { setError(`프로젝트를 저장하지 못했습니다. ${messageOf(caught)}`); }
+    finally { setBusy(false); }
+  };
 
   const saveRemnant = async (draft: RemnantDraft) => {
     const brand = form.brand.trim(); const productNumber = form.productNumber.trim();
@@ -192,10 +208,9 @@ export default function FilmCutInputScreen() {
       <View style={[styles.workspace, wide && styles.workspaceWide]}>
         <View style={[styles.panel, wide && styles.inputPanelWide]}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
-          <View style={styles.identityGrid}><TextField label="제품 브랜드" value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호" value={form.productNumber} onChange={(productNumber) => setForm((current) => ({ ...current, productNumber }))} /></View>
-          <FormSection title="원단과 제품" fields={[[ 'rollWidth', '원본 롤 폭', 'mm' ], [ 'pieceWidth', '제품 폭', 'mm' ], [ 'pieceLength', '제품 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={setForm} />
-          <FormSection title="재단 조건" fields={[[ 'gap', '제품 간격', 'mm' ], [ 'sideMargin', '좌우 여백', 'mm' ], [ 'startEndMargin', '시작·끝 여백', 'mm' ]]} form={form} setForm={setForm} />
-          <View style={styles.switchCard}><View style={styles.switchCopy}><Text style={styles.switchTitle}>90도 회전 허용</Text><Text style={styles.switchDescription}>기본·회전·혼합 방향을 비교합니다.</Text></View><Switch accessibilityLabel="90도 회전 허용" value={form.allowRotation} onValueChange={(allowRotation) => setForm((current) => ({ ...current, allowRotation }))} trackColor={{ false: '#cbd5e1', true: '#93c5fd' }} thumbColor={form.allowRotation ? '#2563eb' : '#f8fafc'} /></View>
+          <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => setForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호" value={form.productNumber} onChange={(productNumber) => setForm((current) => ({ ...current, productNumber }))} /></View>
+          <FormSection title="원단과 제품" fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={setForm} />
+          <FixedProductionConditions />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="자투리 우선 자동 배치 계산" disabled={busy} onPress={() => void calculate()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '자투리 우선 자동 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
         <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.'} dark /><FilmLayoutPreview result={preview?.result ?? null} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} /></View>
@@ -207,7 +222,8 @@ export default function FilmCutInputScreen() {
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
         <View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View>
-        <View style={styles.exportRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="CSV 작업지시서 내보내기" disabled={busy} onPress={exportCsv} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>CSV 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="PDF 작업지시서 인쇄 또는 공유" disabled={busy} onPress={exportPdf} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>PDF·인쇄</Text></TouchableOpacity></View>
+        <EstimateSummary job={draftJob} compact />
+        <View style={styles.exportRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="프로젝트 저장" disabled={busy} onPress={() => void saveProject()} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>프로젝트 저장</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="CSV 작업지시서 내보내기" disabled={busy} onPress={exportCsv} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>CSV 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="PDF 작업지시서 인쇄 또는 공유" disabled={busy} onPress={exportPdf} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>PDF·인쇄</Text></TouchableOpacity></View>
       </View>}
 
       <View style={[styles.libraryGrid, libraryWide && styles.libraryGridWide]}>
@@ -224,10 +240,27 @@ function FormSection({ title, fields, form, setForm }: { title: string; fields: 
 }
 function NumericField({ label, unit, value, onChange, integer = false }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean }) { return <View style={styles.field}><Text style={styles.label}>{label}</Text><View style={styles.inputWrap}><TextInput accessibilityLabel={`${label} ${unit}`} inputMode="decimal" keyboardType="numeric" selectTextOnFocus style={styles.input} value={value} onChangeText={(text) => onChange(text.replace(integer ? /[^0-9]/g : /[^0-9.]/g, ''))} /><Text style={styles.unit}>{unit}</Text></View></View>; }
 function TextField({ label, value, onChange }: { label: string; value: string; onChange(value: string): void }) { return <View style={styles.textField}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} autoCapitalize="none" value={value} onChangeText={onChange} style={styles.textInput} placeholder={`${label} 입력`} placeholderTextColor="#94a3b8" /></View>; }
+function BrandSelect({ value, onChange }: { value: string; onChange(value: string): void }) {
+  const [open, setOpen] = useState(false);
+  return <View style={styles.brandField}>
+    <Text style={styles.label}>제품 브랜드</Text>
+    <TouchableOpacity accessibilityRole="combobox" accessibilityLabel="제품 브랜드" accessibilityState={{ expanded: open }} onPress={() => setOpen((current) => !current)} style={styles.selectButton}>
+      <Text style={[styles.selectText, !value && styles.selectPlaceholder]}>{value || '브랜드 선택'}</Text><Text style={styles.selectChevron}>{open ? '⌃' : '⌄'}</Text>
+    </TouchableOpacity>
+    {open && <View style={styles.optionList}>{BRAND_OPTIONS.map((brand) => <TouchableOpacity key={brand} accessibilityRole="button" accessibilityState={{ selected: value === brand }} onPress={() => { onChange(brand); setOpen(false); }} style={[styles.option, value === brand && styles.optionSelected]}><Text style={[styles.optionText, value === brand && styles.optionTextSelected]}>{brand}</Text></TouchableOpacity>)}</View>}
+  </View>;
+}
+function FixedProductionConditions() {
+  return <View style={styles.fixedConditions}><View style={styles.fixedConditionHeader}><Text style={styles.groupTitle}>재단 조건</Text><Text style={styles.fixedBadge}>고정</Text></View><Text style={styles.fixedConditionText}>원본 롤 폭 {FIXED_ROLL_WIDTH_MM.toLocaleString()} mm</Text><Text style={styles.fixedConditionText}>간격 {DEFAULT_GAP_MM} mm · 좌우 여백 {DEFAULT_SIDE_MARGIN_MM} mm · 시작·끝 여백 {DEFAULT_START_END_MARGIN_MM} mm</Text></View>;
+}
 function PanelHeading({ step, title, subtitle, dark = false }: { step: string; title: string; subtitle: string; dark?: boolean }) { return <View style={styles.panelHeader}><View style={styles.panelHeaderCopy}><Text style={styles.panelTitle}>{title}</Text><Text style={styles.panelSubtitle}>{subtitle}</Text></View><View style={[styles.stepBadge, dark && styles.stepBadgeDark]}><Text style={[styles.stepText, dark && styles.stepTextLight]}>{step}</Text></View></View>; }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) { return <View style={styles.metric}><View style={[styles.metricAccent, { backgroundColor: accent }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
+function withProductionDefaults(form: CuttingFormState): CuttingFormState {
+  const brand = BRAND_OPTIONS.includes(form.brand as (typeof BRAND_OPTIONS)[number]) ? form.brand : BRAND_OPTIONS[0];
+  return { ...form, brand, rollWidth: String(FIXED_ROLL_WIDTH_MM), gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true };
+}
 async function withBusy(operation: () => Promise<void>, setBusy: (value: boolean) => void, setError: (value: string | null) => void) { setBusy(true); setError(null); try { await operation(); } catch (caught) { setError(messageOf(caught)); } finally { setBusy(false); } }
 
 const shadow = { shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 3 } as const;
@@ -239,9 +272,8 @@ const styles = StyleSheet.create({
   message: { marginBottom: 18, padding: 13, borderRadius: 10, borderWidth: 1 }, messageInfo: { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, messageError: { borderColor: '#fecaca', backgroundColor: '#fff1f2' }, messageInfoText: { color: '#1e40af' }, messageErrorText: { color: '#991b1b' },
   workspace: { gap: 20 }, workspaceWide: { flexDirection: 'row', alignItems: 'stretch' }, panel: { minWidth: 0, padding: 21, borderRadius: 20, backgroundColor: '#fff', ...shadow }, inputPanelWide: { width: 450, flexShrink: 0 }, previewPanel: { flex: 1, minHeight: 560 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }, panelHeaderCopy: { flex: 1 }, panelTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' }, panelSubtitle: { marginTop: 5, fontSize: 12, lineHeight: 18, color: '#64748b' }, stepBadge: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#eff6ff' }, stepBadgeDark: { backgroundColor: '#0f172a' }, stepText: { fontSize: 12, fontWeight: '800', color: '#2563eb' }, stepTextLight: { color: '#fff' },
-  identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' },
-  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 15, fontWeight: '700', color: '#0f172a' }, unit: { paddingRight: 11, fontSize: 10, fontWeight: '700', color: '#94a3b8' },
-  switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#eff6ff' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#1e3a8a' }, switchDescription: { marginTop: 3, fontSize: 10, color: '#64748b' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
+  identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
+  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, paddingHorizontal: 12, fontSize: 15, fontWeight: '700', color: '#0f172a' }, unit: { paddingRight: 11, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
   resultSection: { marginTop: 22, padding: 22, borderRadius: 20, backgroundColor: '#fff', ...shadow }, resultHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, resultTitle: { marginTop: 4, fontSize: 23, fontWeight: '800', color: '#0f172a' }, statusBadge: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }, statusText: { fontSize: 12, fontWeight: '800' }, statusDetail: { marginTop: 8, fontSize: 12, lineHeight: 18, color: '#64748b' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' },
   confirmBar: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginTop: 17, padding: 14, borderRadius: 12, borderWidth: 1 }, tentativeBar: { borderColor: '#fbbf24', backgroundColor: '#fffbeb' }, confirmedBar: { borderColor: '#6ee7b7', backgroundColor: '#ecfdf5' }, confirmCopy: { flex: 1, minWidth: 210 }, confirmTitle: { fontSize: 14, fontWeight: '800', color: '#1e293b' }, confirmMeta: { marginTop: 3, fontSize: 11, lineHeight: 17, color: '#64748b' }, confirmButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, borderRadius: 10, backgroundColor: '#0f172a' }, confirmButtonText: { fontSize: 13, fontWeight: '800', color: '#fff' }, exportRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 12 }, secondaryButton: { minHeight: 46, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff' }, secondaryButtonText: { fontSize: 12, fontWeight: '800', color: '#334155' }, libraryGrid: { gap: 20, marginTop: 22 }, libraryGridWide: { flexDirection: 'row', alignItems: 'flex-start' },
