@@ -2,7 +2,7 @@ import { asyncStorageLibraryAdapter } from './asyncStorageLibraryAdapter';
 import { createCloudflareLibraryAdapter } from './cloudflareLibraryAdapter';
 import { createLibraryRepository, type LibraryRepository } from './libraryRepository';
 
-function configuredCloudflareUrl(): string | undefined {
+export function configuredCloudflareUrl(): string | undefined {
   const value = typeof process === 'undefined' ? undefined : process.env.EXPO_PUBLIC_CLOUDFLARE_API_URL;
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }

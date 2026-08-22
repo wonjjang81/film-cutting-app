@@ -15,6 +15,7 @@
 - 병합 롤 저장 단위(`SavedMergedCuttingJob`), 그룹별 색상 도면·조각 상세·병합 재단 완료 체크 추가
 - 순차 그룹 배치의 원자적 재고 확정과 병합 롤·자투리 중복 확정 차단
 - Cloudflare Pages Functions·D1 API 골격과 로컬/서버 저장소 전환 어댑터 추가
+- 설정 화면의 Cloudflare API·D1 상태 확인 및 수동/푸시 배포 workflow 추가
 - 그룹별 필름명·원단 단가·시공 단가 저장 및 견적 반영
 - 수동 배치의 5mm 스냅, 경계 제한, 충돌 방지, 90도 회전, 캔버스 드래그 추가
 - 여러 저장 작업을 합산하는 통합 견적과 회사 정보 자동 반영
@@ -39,7 +40,7 @@
 | 회사 정보 | 회사명·담당자·연락처·이메일·주소·메모 저장 및 견적 반영 | 완료 |
 | 설정 | 로컬 프로필, 세션 초기화, 버전·릴리스 확인 | 완료 |
 | 보안 인증 | Cloudflare Access JWT 검증 API 골격 | 배포 환경 설정 필요 |
-| 서버 동기화 | D1 사용자별 라이브러리 저장·ETag 충돌 차단 API | 배포·마이그레이션 필요 |
+| 서버 동기화 | D1 사용자별 라이브러리 저장·ETag 충돌 차단 API·상태 확인 UI | 배포·마이그레이션 필요 |
 
 ## 3. 기술 고도화 내용
 
@@ -96,7 +97,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 검증 기준:
 
 - TypeScript 검사: 통과
-- Vitest: 14개 테스트 파일, 117개 테스트 통과
+- Vitest: 15개 테스트 파일, 119개 테스트 통과
 - Expo Web export: 통과
 - 정적 라우트: 17개 생성
 
@@ -151,6 +152,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `0df1ae97a` 병합 롤 재단 완료 체크 저장
 - `ae7d93c40` 순차 그룹 원자적 확정·중복 확정 방지
 - `3c1cf50a3` Cloudflare Pages Functions·D1 저장 API·서버 어댑터
+- (이번 단계) Cloudflare 상태 확인 UI·Pages 배포 workflow
 
 ## 결론
 
