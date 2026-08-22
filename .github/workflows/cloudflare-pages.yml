@@ -26,9 +26,18 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Validate Cloudflare deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_PROJECT_NAME: ${{ secrets.CLOUDFLARE_PROJECT_NAME }}
+          EXPO_PUBLIC_CLOUDFLARE_API_URL: ${{ vars.CLOUDFLARE_API_URL }}
+        run: pnpm run cloudflare:preflight -- --ci
       - run: pnpm check
       - run: pnpm test
       - run: pnpm build:web
+        env:
+          EXPO_PUBLIC_CLOUDFLARE_API_URL: ${{ vars.CLOUDFLARE_API_URL }}
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:

@@ -8,7 +8,7 @@
 4. Cloudflare Access 애플리케이션을 만든 뒤 `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`를 설정합니다.
 5. Pages Functions의 `/api/health`, `/api/library`를 배포합니다.
 
-`.github/workflows/cloudflare-pages.yml`은 `main` 푸시 또는 수동 실행 시 `cloudflare/wrangler-action@v3`로 Pages를 배포합니다. GitHub 저장소에 다음 Actions secrets를 등록해야 합니다: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PROJECT_NAME`.
+`.github/workflows/cloudflare-pages.yml`은 `main` 푸시 또는 수동 실행 시 설정 preflight를 통과한 뒤 `cloudflare/wrangler-action@v3`로 Pages를 배포합니다. GitHub 저장소에 다음 Actions secrets를 등록해야 합니다: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PROJECT_NAME`. 앱의 서버 저장 모드를 활성화하려면 Repository variable `CLOUDFLARE_API_URL`도 등록해야 합니다. 누락 시 배포를 의도적으로 중단합니다.
 
 `/api/library`는 Access의 `Cf-Access-Jwt-Assertion`을 검증한 뒤 JWT subject별로 문서를 분리합니다. `If-Match`와 D1의 `updated_at` 조건을 함께 사용해 다른 기기의 덮어쓰기를 차단합니다.
 
