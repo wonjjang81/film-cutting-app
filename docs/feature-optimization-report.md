@@ -150,7 +150,7 @@ Cloudflare 전환을 위해 `/api/health`, `/api/library` Pages Functions와 D1 
 - `0d33be1f3` 캔버스 직접 드래그 수동 배치
 - `0df1ae97a` 병합 롤 재단 완료 체크 저장
 - `ae7d93c40` 순차 그룹 원자적 확정·중복 확정 방지
-- (이번 단계) Cloudflare Pages Functions·D1 저장 API·서버 어댑터
+- `3c1cf50a3` Cloudflare Pages Functions·D1 저장 API·서버 어댑터
 
 ## 결론
 
