@@ -7,14 +7,13 @@ import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
-import { asyncStorageLibraryAdapter } from '../../src/features/library/asyncStorageLibraryAdapter';
-import { createLibraryRepository } from '../../src/features/library/libraryRepository';
+import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { SavedCuttingJob } from '../../src/features/library/models';
 import { calculateEstimate, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M } from '../../src/features/estimate/calculateEstimate';
 import { calculateProjectEstimate, type ProjectEstimate } from '../../src/features/estimate/calculateProjectEstimate';
 import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE_KEY, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 
-const repository = createLibraryRepository(asyncStorageLibraryAdapter);
+const repository = createAppLibraryRepository();
 
 export default function EstimateScreen() {
   const { width } = useWindowDimensions();

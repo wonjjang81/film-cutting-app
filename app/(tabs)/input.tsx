@@ -12,9 +12,9 @@ import type { Placement } from '../../src/features/cutting/optimizeContinuousRol
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { createCsv } from '../../src/features/export/createCsv';
 import { createWorkOrderHtml } from '../../src/features/export/createWorkOrderHtml';
-import { asyncStorageLibraryAdapter } from '../../src/features/library/asyncStorageLibraryAdapter';
 import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
-import { createLibraryRepository, type InventoryDelta } from '../../src/features/library/libraryRepository';
+import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
+import type { InventoryDelta } from '../../src/features/library/libraryRepository';
 import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
@@ -22,7 +22,7 @@ import { planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type Groupe
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
 
-const repository = createLibraryRepository(asyncStorageLibraryAdapter);
+const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 const BRAND_OPTIONS = ['영림', '현대', 'Lx', '삼성'] as const;
 const FIXED_ROLL_WIDTH_MM = 1220;

@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { router } from 'expo-router';
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import { asyncStorageLibraryAdapter } from '../../src/features/library/asyncStorageLibraryAdapter';
-import { createLibraryRepository } from '../../src/features/library/libraryRepository';
+import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob } from '../../src/features/library/models';
 
-const repository = createLibraryRepository(asyncStorageLibraryAdapter);
+const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 
 export default function ProjectsScreen() {

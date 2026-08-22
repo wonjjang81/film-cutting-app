@@ -1,0 +1,13 @@
+name = "film-cutting-app"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-08-22"
+
+[vars]
+ALLOWED_ORIGIN = "https://film.example.com"
+ACCESS_TEAM_DOMAIN = "https://YOUR-TEAM.cloudflareaccess.com"
+ACCESS_AUD = "YOUR_ACCESS_APPLICATION_AUDIENCE"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "film-cutting-library"
+database_id = "YOUR_D1_DATABASE_ID"
