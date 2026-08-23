@@ -17,4 +17,14 @@ describe('optimizeMergedRollLayout', () => {
       }
     }
   });
+
+  it('maximizes produced quantity before length when bounded by a remnant rectangle', () => {
+    const result = optimizeMergedRollLayout({ rollWidthMm: 200, maxLengthMm: 100, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, pieces: [
+      { sourceId: 'short-wide', widthMm: 200, lengthMm: 50, quantity: 1, allowRotation: false },
+      { sourceId: 'tall-narrow', widthMm: 100, lengthMm: 100, quantity: 2, allowRotation: false },
+    ] });
+
+    expect(result.producedQuantity).toBe(2);
+    expect(result.usedLengthMm).toBe(100);
+  });
 });

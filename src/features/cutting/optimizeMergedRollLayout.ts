@@ -94,10 +94,14 @@ export function optimizeMergedRollLayout(input: MergedRollInput): MergedRollResu
   ];
   let best: MergedPlacement[] = [];
   let bestLength = Number.POSITIVE_INFINITY;
+  let bestProduced = -1;
   for (const score of strategies) {
     const placements = attempt(input, [...valid].sort((a, b) => score(b) - score(a)));
     const length = placements.length === 0 ? Number.POSITIVE_INFINITY : Math.max(...placements.map((item) => item.y + item.height)) + input.startEndMarginMm;
-    if (length < bestLength) { best = placements; bestLength = length; }
+    const betterBoundedPlan = input.maxLengthMm !== undefined
+      && (placements.length > bestProduced || (placements.length === bestProduced && length < bestLength));
+    const betterUnboundedPlan = input.maxLengthMm === undefined && length < bestLength;
+    if (betterBoundedPlan || betterUnboundedPlan) { best = placements; bestLength = length; bestProduced = placements.length; }
   }
   const area = valid.reduce((sum, piece) => sum + piece.widthMm * piece.lengthMm * Math.floor(piece.quantity), 0);
   const usedArea = input.rollWidthMm * (Number.isFinite(bestLength) ? bestLength : 0);
