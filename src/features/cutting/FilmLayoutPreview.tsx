@@ -53,7 +53,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
     <View style={styles.previewWrap}>
       <View style={styles.legendRow}>
         <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: '#2563eb' }]} /><Text style={styles.legendText}>기본 방향</Text></View>
-        <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: '#14b8a6' }]} /><Text style={styles.legendText}>90도 회전</Text></View>
+        <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: '#14b8a6' }]} /><Text style={styles.legendText}>↻</Text></View>
       </View>
       <View style={styles.zoomRow} accessibilityLabel="자동배치 도면 확대 축소">
         <Text style={styles.zoomLabel}>확대/축소</Text>
@@ -86,7 +86,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
                 fill={item.rotated ? '#ccfbf1' : '#dbeafe'} stroke={item.rotated ? '#0f766e' : '#1d4ed8'} strokeWidth={Math.max(0.8, rollWidthMm / 700)} />
               <SvgText x={item.x + item.width / 2} y={item.y + item.height / 2 + Math.min(item.width, item.height) * 0.08}
                 textAnchor="middle" fontSize={Math.max(16, Math.min(64, Math.min(item.width * 0.34, item.height * 0.42)))} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>
-                {item.id} · {item.rotated ? '90도 회전' : '기본 방향'}
+                {item.id}{item.rotated ? ' ↻' : ''}
               </SvgText>
               {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>
                 <Line x1={item.x + item.width * 0.15} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.85} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />

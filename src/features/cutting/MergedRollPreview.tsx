@@ -13,6 +13,7 @@ type Props = {
   onToggleComplete?(): void;
   onTogglePlacementComplete?(placementId: number): void;
   compact?: boolean;
+  hidePlacementList?: boolean;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -20,7 +21,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -96,20 +97,36 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       </View>}
       {!compact && selected && <View style={styles.detail}>
         <Text style={styles.detailTitle}>제품 {selected.id} 상세</Text>
-        <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm · {selected.rotated ? '90도 회전' : '기본 방향'} · 위치 ({selected.x}, {selected.y})mm</Text>
+        <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm{selected.rotated ? ' · ↻' : ''} · 위치 ({selected.x}, {selected.y})mm</Text>
       </View>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      {!compact && <View style={styles.list}>
-        {result.placements.map((placement) => {
-          const completed = completedPlacementIds.has(placement.id);
-          return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
-            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 제품 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · 90°' : ''}</Text></TouchableOpacity>
-            <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 제품 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
-          </View>;
-        })}
-      </View>}
+      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} onTogglePlacementComplete={onTogglePlacementComplete} />}
     </View>
   );
+}
+
+/**
+ * The merged-roll piece list lives in the material-plan section so it has the
+ * same placement-list position as a single-piece calculation.
+ */
+export function MergedRollPlacementList({ plan, job, busy = false, onTogglePlacementComplete }: Pick<Props, 'plan' | 'job' | 'busy' | 'onTogglePlacementComplete'>) {
+  const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
+  const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  const completedPlacementIds = new Set(job?.completedPlacementIds ?? []);
+  const labelBySource = new Map(sourceIds.map((id, index) => [id, `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
+  return <View style={styles.listSection}>
+    <Text style={styles.listTitle}>배치 목록</Text>
+    <Text style={styles.listSubtitle}>총 {plan.result.placements.length}개 조각 · 병합 롤</Text>
+    <View style={styles.list}>
+      {plan.result.placements.map((placement) => {
+        const completed = completedPlacementIds.has(placement.id);
+        return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 조각 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
+        </View>;
+      })}
+    </View>
+  </View>;
 }
 
 const styles = StyleSheet.create({
@@ -121,6 +138,6 @@ const styles = StyleSheet.create({
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
-  list: { gap: 5, marginTop: 10 }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
+  listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, list: { gap: 5, marginTop: 8 }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
   completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },
 });

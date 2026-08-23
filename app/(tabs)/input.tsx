@@ -7,7 +7,7 @@ import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpa
 import { useLocalSearchParams } from 'expo-router';
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
-import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
+import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { PlacementList } from '../../src/features/cutting/PlacementList';
 import { compareContinuousRollCandidates, type ContinuousRollCandidateComparison, type Placement } from '../../src/features/cutting/optimizeContinuousRollLayout';
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
@@ -38,6 +38,23 @@ const initialForm: CuttingFormState = {
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
 type CuttingGroupDraft = { id: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
+type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
+type SavedPiecePlanView = {
+  plan: RemnantPlan | null;
+  planRequest: RemnantPlanRequest | null;
+  draftJob: SavedCuttingJob | null;
+  manualPlacements: Placement[] | null;
+  checkedPlacementIds: number[];
+  candidateComparison: ContinuousRollCandidateComparison[];
+  confirmed: boolean;
+  cuttingComplete: boolean;
+};
+type SavedGroupPlanView = {
+  pieces: Record<string, SavedPiecePlanView>;
+  batchPlans: GroupedPiecePlan[] | null;
+  mergedGroupPlans: MergedGroupPlan[];
+  pendingBatchSave: PendingBatchSave | null;
+};
 function newPieceDraft(index: number): CuttingPieceDraft {
   return { id: index === 1 ? 'piece-1' : `piece-${Date.now()}-${index}`, name: `조각 ${index}`, form: { ...initialForm } };
 }
@@ -74,7 +91,8 @@ export default function FilmCutInputScreen() {
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
   const [mergedGroupPlans, setMergedGroupPlans] = useState<MergedGroupPlan[]>([]);
   const [autoSaveHistory, setAutoSaveHistory] = useState(false);
-  const [pendingBatchSave, setPendingBatchSave] = useState<{ jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] } | null>(null);
+  const [pendingBatchSave, setPendingBatchSave] = useState<PendingBatchSave | null>(null);
+  const [savedGroupPlanViews, setSavedGroupPlanViews] = useState<Record<string, SavedGroupPlanView>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -106,6 +124,41 @@ export default function FilmCutInputScreen() {
     return materialAreaMm2 > 0 ? Math.round((productAreaMm2 * 1_000_000 / materialAreaMm2) * 1000) / 10 : 0;
   }, [activeMergedPlan, activeMergedUsage]);
 
+  const saveActivePlanView = useCallback(() => {
+    if (!plan && !planRequest && !draftJob && !batchPlans && mergedGroupPlans.length === 0) return;
+    setSavedGroupPlanViews((current) => {
+      const groupView = current[activeGroupId];
+      return {
+        ...current,
+        [activeGroupId]: {
+          pieces: {
+            ...(groupView?.pieces ?? {}),
+            [activePieceId]: { plan, planRequest, draftJob, manualPlacements, checkedPlacementIds: [...checkedPlacementIds], candidateComparison: [...candidateComparison], confirmed, cuttingComplete },
+          },
+          batchPlans,
+          mergedGroupPlans,
+          pendingBatchSave,
+        },
+      };
+    });
+  }, [activeGroupId, activePieceId, batchPlans, candidateComparison, checkedPlacementIds, confirmed, cuttingComplete, draftJob, manualPlacements, mergedGroupPlans, pendingBatchSave, plan, planRequest]);
+
+  const restorePlanView = useCallback((groupId: string, pieceId: string) => {
+    const groupView = savedGroupPlanViews[groupId];
+    const pieceView = groupView?.pieces[pieceId];
+    setPlan(pieceView?.plan ?? null);
+    setPlanRequest(pieceView?.planRequest ?? null);
+    setDraftJob(pieceView?.draftJob ?? null);
+    setManualPlacements(pieceView?.manualPlacements ?? null);
+    setCheckedPlacementIds(pieceView?.checkedPlacementIds ?? []);
+    setCandidateComparison(pieceView?.candidateComparison ?? []);
+    setConfirmed(pieceView?.confirmed ?? false);
+    setCuttingComplete(pieceView?.cuttingComplete ?? false);
+    setBatchPlans(groupView?.batchPlans ?? null);
+    setMergedGroupPlans(groupView?.mergedGroupPlans ?? []);
+    setPendingBatchSave(groupView?.pendingBatchSave ?? null);
+  }, [savedGroupPlanViews]);
+
   const refreshLibrary = useCallback(async (): Promise<LibraryDocument> => {
     const loaded = await repository.load();
     setLibrary(loaded.document);
@@ -120,8 +173,15 @@ export default function FilmCutInputScreen() {
       return next;
     });
   };
-  const selectGroup = (group: CuttingGroupDraft) => { const piece = group.pieces[0]!; setActiveGroupId(group.id); setActivePieceId(piece.id); setForm(piece.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setManualPlacements(null); setBatchPlans(null); setMergedGroupPlans([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); };
-  const selectPiece = (piece: CuttingPieceDraft) => { setActivePieceId(piece.id); setForm(piece.form); setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: piece.form } : item)); setPlan(null); setPlanRequest(null); setDraftJob(null); setManualPlacements(null); setBatchPlans(null); setMergedGroupPlans([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); };
+  const selectGroup = (group: CuttingGroupDraft) => {
+    saveActivePlanView();
+    const piece = group.pieces[0]!;
+    setActiveGroupId(group.id); setActivePieceId(piece.id); setForm(piece.form); restorePlanView(group.id, piece.id);
+  };
+  const selectPiece = (piece: CuttingPieceDraft) => {
+    saveActivePlanView();
+    setActivePieceId(piece.id); setForm(piece.form); setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: piece.form } : item)); restorePlanView(activeGroupId, piece.id);
+  };
   const addPiece = () => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
     const next = newPieceDraft(group.pieces.length + 1);
@@ -152,6 +212,11 @@ export default function FilmCutInputScreen() {
   useEffect(() => {
     void AsyncStorage.getItem(AUTO_SAVE_HISTORY_STORAGE_KEY).then((stored) => setAutoSaveHistory(parseAutoSaveHistory(stored))).catch(() => setAutoSaveHistory(false));
   }, []);
+  // Persist the active calculated view in memory while the operator moves
+  // between groups and pieces; this does not write to project history.
+  useEffect(() => {
+    saveActivePlanView();
+  }, [saveActivePlanView]);
   const toggleAutoSaveHistory = (value: boolean) => {
     setAutoSaveHistory(value);
     void AsyncStorage.setItem(AUTO_SAVE_HISTORY_STORAGE_KEY, String(value));
@@ -270,8 +335,29 @@ export default function FilmCutInputScreen() {
       } else {
         setPendingBatchSave({ jobs: jobsToSave, mergedJobs: mergedJobsToSave });
       }
-      setBatchPlans(confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] })));
+      const nextBatchPlans = confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] }));
+      setBatchPlans(nextBatchPlans);
       setMergedGroupPlans(merged);
+      // Save every calculated piece, not only the piece that remains active,
+      // so moving through a group restores each piece's own preview.
+      setSavedGroupPlanViews((current) => ({
+        ...current,
+        [groupId]: {
+          pieces: Object.fromEntries(plannedWithIds.map((entry, index) => [entry.pieceId, {
+            plan: entry.plan,
+            planRequest: entry.request,
+            draftJob: jobsToSave[index] ?? null,
+            manualPlacements: null,
+            checkedPlacementIds: [],
+            candidateComparison: entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : [],
+            confirmed: false,
+            cuttingComplete: false,
+          }])),
+          batchPlans: nextBatchPlans,
+          mergedGroupPlans: merged,
+          pendingBatchSave: autoSaveHistory ? null : { jobs: jobsToSave, mergedJobs: mergedJobsToSave },
+        },
+      }));
       const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
       if (active) activateBatchPlan(active);
       if (autoSaveHistory) await refreshLibrary();
@@ -289,7 +375,7 @@ export default function FilmCutInputScreen() {
   };
 
   const reset = () => {
-    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
+    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
   };
 
   const confirmJob = async () => {
@@ -609,7 +695,7 @@ export default function FilmCutInputScreen() {
           <View style={styles.historySwitchCard}><View style={styles.switchCopy}><Text style={styles.historySwitchTitle}>작업이력 자동저장</Text><Text style={styles.historySwitchDescription}>{autoSaveHistory ? '계산할 때마다 작업 이력에 자동 저장합니다.' : '기본 OFF: 계산 결과는 임시 상태로만 유지합니다. 프로젝트 저장을 눌러야 이력에 남습니다.'}</Text></View><Switch accessibilityLabel="작업이력 자동저장" value={autoSaveHistory} disabled={busy} onValueChange={toggleAutoSaveHistory} trackColor={{ false: '#cbd5e1', true: '#93c5fd' }} thumbColor={autoSaveHistory ? '#2563eb' : '#f8fafc'} /></View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
-        <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={activeMergedPlan ? '병합 롤 도면과 조각별 재단 완료 상태를 확인합니다.' : (preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.')} dark />{activeMergedPlan ? <MergedRollPreview plan={activeMergedPlan} job={activeMergedJob} busy={busy} onToggleComplete={activeMergedJob ? () => void toggleMergedComplete(activeMergedJob.id) : undefined} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /> : <FilmLayoutPreview result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} completedPlacementIds={checkedPlacementIds} />}</View>
+        <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={activeMergedPlan ? '병합 롤 도면과 조각별 재단 완료 상태를 확인합니다.' : (preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.')} dark />{activeMergedPlan ? <MergedRollPreview plan={activeMergedPlan} job={activeMergedJob} busy={busy} hidePlacementList onToggleComplete={activeMergedJob ? () => void toggleMergedComplete(activeMergedJob.id) : undefined} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /> : <FilmLayoutPreview result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} completedPlacementIds={checkedPlacementIds} />}</View>
       </View>
 
       {plan && draftJob && resultStatus && <View style={styles.resultSection} accessibilityRole="summary">
@@ -619,7 +705,7 @@ export default function FilmCutInputScreen() {
         {candidateComparison.length > 1 && <View style={styles.candidateCard}><View style={styles.candidateHeader}><Text style={styles.candidateTitle}>대규모 입력 배치 후보 비교</Text><Text style={styles.candidateHint}>최적 혼합 결과를 기준으로 방향별 새 롤 절감량을 비교합니다.</Text></View>{candidateComparison.map((candidate) => <View key={candidate.name} style={[styles.candidateRow, candidate.name === '최적 혼합' && styles.candidateRowBest]}><Text style={styles.candidateName}>{candidate.name}</Text><Text style={styles.candidateValue}>{candidate.result.producedQuantity.toLocaleString()}개 · {Math.round(candidate.result.usedLengthMm).toLocaleString()}mm</Text><Text style={[styles.candidateSaving, candidate.name === '최적 혼합' && styles.candidateSavingBest]}>{candidate.name === '최적 혼합' ? '기준 결과' : `혼합 대비 ${Math.round(candidate.savedLengthMm).toLocaleString()}mm 절감`}</Text></View>)}</View>}
         {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={[...library.mergedJobs, ...(pendingBatchSave?.mergedJobs ?? [])]} busy={busy} onConfirmBatch={() => void confirmBatch()} onConfirmMergedInventory={(id) => void confirmMergedInventory(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
-        {activeMergedPlan ? <View style={styles.mergedSourceNotice}><Text style={styles.mergedSourceNoticeTitle}>병합 롤 전체 조각</Text><Text style={styles.mergedSourceNoticeText}>현재 조각은 병합 롤에 포함되어 개별 수동 배치·확정하지 않습니다. 아래 병합 롤 도면에서 전체 재단 완료와 재고 확정을 진행하세요.</Text></View> : <>{previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
+        {activeMergedPlan ? <><MergedRollPlacementList plan={activeMergedPlan} job={activeMergedJob} busy={busy} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /><View style={styles.mergedSourceNotice}><Text style={styles.mergedSourceNoticeTitle}>병합 롤 전체 조각</Text><Text style={styles.mergedSourceNoticeText}>현재 조각은 병합 롤에 포함되어 개별 수동 배치·확정하지 않습니다. 원단 사용 계획의 배치 목록에서 전체 재단 완료와 재고 확정을 진행하세요.</Text></View></> : <>{previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
           <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
           <View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View></>}
         <EstimateSummary job={draftJob} compact discountRateOverride={0} usageOverride={activeMergedUsage} />
