@@ -17,6 +17,7 @@ import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { InventoryDelta } from '../../src/features/library/libraryRepository';
 import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob, SavedProject } from '../../src/features/library/models';
+import { defaultPieceId, nextPieceId, validatePieceId } from '../../src/features/library/pieceIds';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
@@ -55,15 +56,17 @@ type SavedGroupPlanView = {
   mergedGroupPlans: MergedGroupPlan[];
   pendingBatchSave: PendingBatchSave | null;
 };
-function newPieceDraft(index: number): CuttingPieceDraft {
-  return { id: index === 1 ? 'piece-1' : `piece-${Date.now()}-${index}`, name: `조각 ${index}`, form: { ...initialForm } };
+function newPieceDraft(groupName: string, index: number): CuttingPieceDraft {
+  const id = defaultPieceId(groupName, index);
+  return { id, name: id, form: { ...initialForm } };
 }
 function newGroupDraft(index: number): CuttingGroupDraft {
   // The legacy app opened each group with three editable piece rows. Keep
   // those rows available while allowing untouched 0×0 rows to be ignored by
   // calculation, just as the legacy group estimator did.
-  const pieces = [1, 2, 3].map((pieceIndex) => newPieceDraft(pieceIndex));
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: `그룹 ${index}`, form: pieces[0]!.form, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  const groupName = `그룹 ${index}`;
+  const pieces = [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex));
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: groupName, form: pieces[0]!.form, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -193,7 +196,14 @@ export default function FilmCutInputScreen() {
         group = { id: `${project.id}-group-${restoredGroups.length + 1}`, name: groupName, form: formFromSavedJob(job), pieces: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
         groupsByName.set(groupName, group); restoredGroups.push(group);
       }
-      group.pieces.push({ id: job.id, name: pieceName, form: formFromSavedJob(job) });
+      // Saved jobs use a generated storage ID, while the legacy UI exposes
+      // the human-readable piece ID in the job name. Restore that ID so the
+      // batch list and the next calculation keep the same source identity.
+      const restoredPieceId = pieceName || defaultPieceId(groupName, group.pieces.length + 1);
+      const uniquePieceId = group.pieces.some((piece) => piece.id === restoredPieceId)
+        ? `${restoredPieceId}-${group.pieces.length + 1}`
+        : restoredPieceId;
+      group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
       group.form = group.pieces[0]!.form;
     });
     const firstGroup = restoredGroups[0]!;
@@ -220,7 +230,9 @@ export default function FilmCutInputScreen() {
   };
   const addPiece = () => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
-    const next = newPieceDraft(group.pieces.length + 1);
+    const next = newPieceDraft(group.name, group.pieces.length + 1);
+    next.id = nextPieceId(group.pieces, group.name);
+    next.name = next.id;
     setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: next.form, pieces: [...item.pieces, next] } : item));
     setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
   };
@@ -234,7 +246,49 @@ export default function FilmCutInputScreen() {
     const next = newGroupDraft(groups.length + 1);
     setGroups((items) => [...items, next]); setActiveGroupId(next.id); setActivePieceId(next.pieces[0]!.id); setForm(next.form); setPlan(null); setDraftJob(null); setPlanRequest(null); setMergedGroupPlans([]);
   };
-  const renameGroup = (id: string, name: string) => setGroups((items) => items.map((group) => group.id === id ? { ...group, name: name.trim() || group.name } : group));
+  const renamePieceId = (groupId: string, pieceId: string, value: string) => {
+    const group = groups.find((item) => item.id === groupId);
+    if (!group) return;
+    const validation = validatePieceId(group.pieces, pieceId, value);
+    if (validation) { setError(validation); return; }
+    const nextId = value.trim();
+    if (nextId === pieceId) return;
+    setError(null);
+    setNotice('조각 ID가 변경되었습니다. 배치 계산을 다시 실행해 주세요.');
+    setGroups((items) => items.map((item) => item.id === groupId
+      ? { ...item, pieces: item.pieces.map((piece) => piece.id === pieceId ? { ...piece, id: nextId, name: nextId } : piece) }
+      : item));
+    // A source ID is part of every calculated plan. Clear stale results so a
+    // renamed piece can never be confirmed under the previous ID.
+    setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
+    if (activeGroupId === groupId && activePieceId === pieceId) setActivePieceId(nextId);
+  };
+  const renameGroup = (id: string, name: string) => {
+    const nextName = name.trim();
+    if (!nextName) return;
+    const currentGroup = groups.find((group) => group.id === id);
+    const activePiece = currentGroup?.pieces.find((piece) => piece.id === activePieceId);
+    const activePieceAutoPattern = currentGroup ? new RegExp(`^${escapeRegExp(currentGroup.name)}[-_]\\d+$`) : null;
+    const activePieceNextId = activePiece && activePieceAutoPattern?.test(activePiece.id)
+      ? defaultPieceId(nextName, (currentGroup?.pieces.findIndex((piece) => piece.id === activePiece.id) ?? 0) + 1)
+      : activePiece?.id;
+    setGroups((items) => items.map((group) => group.id === id ? {
+      ...group,
+      name: nextName,
+      pieces: group.pieces.map((piece, index) => {
+        // Match the old app's group rename behavior for untouched generated
+        // IDs while preserving explicitly customized IDs.
+        const autoPattern = new RegExp(`^${escapeRegExp(group.name)}[-_]\\d+$`);
+        if (!autoPattern.test(piece.id)) return piece;
+        const nextId = defaultPieceId(nextName, index + 1);
+        return { ...piece, id: nextId, name: nextId };
+      }),
+    } : group));
+    if (id === activeGroupId) {
+      if (activePieceNextId) setActivePieceId(activePieceNextId);
+      setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({});
+    }
+  };
   const deleteGroup = (id: string) => {
     if (groups.length <= 1) return;
     const remaining = groups.filter((group) => group.id !== id);
@@ -318,7 +372,7 @@ export default function FilmCutInputScreen() {
       const targetGroups = groups.filter((group) => group.id === groupId);
       const requests: GroupedPieceRequest[] = targetGroups.flatMap((group) => group.pieces.map((piece) => {
         const normalized = withProductionDefaults(piece.form);
-        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
+        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
         && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
         && Number.isInteger(request.quantity) && request.quantity > 0);
@@ -757,7 +811,7 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectNameCard}><TextField label="프로젝트명" value={projectName} onChange={setProjectName} /><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 프로젝트 시작" onPress={reset} disabled={busy} style={[styles.newProjectButton, busy && styles.disabled]}><Text style={styles.newProjectButtonText}>＋ 새 프로젝트</Text></TouchableOpacity></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={(id, mergeGroupId) => setGroups((items) => items.map((group) => group.id === id ? { ...group, mergeGroupId } : group))} onSettings={(id, patch) => setGroups((items) => items.map((group) => group.id === id ? { ...group, ...patch } : group))} />
-          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} />
+          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} />
           <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => updateActiveForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호 (선택)" value={form.productNumber} onChange={(productNumber) => updateActiveForm((current) => ({ ...current, productNumber }))} /></View>
           <FormSection title={`${groups.find((group) => group.id === activeGroupId)?.name ?? '현재 그룹'} · ${groups.find((group) => group.id === activeGroupId)?.pieces.find((piece) => piece.id === activePieceId)?.name ?? '현재 조각'} 생산 조건`} fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={updateActiveForm} />
           <FixedProductionConditions />
@@ -812,10 +866,26 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRename, onD
     {activeGroup && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}><TextInput accessibilityLabel="그룹 필름명" value={activeGroup.filmName} onChangeText={(value) => onSettings(activeGroup.id, { filmName: value })} placeholder="그룹 필름명" placeholderTextColor="#94a3b8" style={{ flex: 1, minWidth: 120, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 원단 단가" value={activeGroup.materialCostPerM} onChangeText={(value) => onSettings(activeGroup.id, { materialCostPerM: value.replace(/[^0-9]/g, '') })} placeholder="원단 단가 원/m" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 시공 단가" value={activeGroup.constructionCostPerM2} onChangeText={(value) => onSettings(activeGroup.id, { constructionCostPerM2: value.replace(/[^0-9]/g, '') })} placeholder="시공 단가 원/m²" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /></View>}
   </View>;
 }
-function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onDelete }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onDelete(id: string): void }) {
+function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onDelete, onRename }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void }) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [editingError, setEditingError] = useState<string | null>(null);
+  const finishRename = (pieceId: string) => {
+    const nextId = editingValue.trim();
+    if (!nextId) { setEditingError('조각 ID를 입력해 주세요.'); return; }
+    if (group.pieces.some((piece) => piece.id === nextId && piece.id !== pieceId)) { setEditingError('같은 그룹에 이미 사용 중인 ID입니다.'); return; }
+    onRename(pieceId, nextId);
+    setEditingId(null); setEditingError(null);
+  };
   return <View style={styles.pieceInputPanel}>
     <View style={styles.pieceInputHeader}><View><Text style={styles.pieceInputTitle}>{group.name} 조각 입력</Text><Text style={styles.pieceInputHint}>기존 앱처럼 한 그룹에 여러 재단 조각을 추가할 수 있습니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹에 조각 추가" onPress={onAdd} style={styles.addPieceButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></View>
-    <View style={styles.pieceRows}>{group.pieces.map((piece, index) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]}>{piece.name}</Text><Text style={styles.pieceMeta}>{piece.form.pieceWidth || '—'} × {piece.form.pieceLength || '—'} mm · {piece.form.quantity || '—'}개</Text></View></TouchableOpacity>{group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.name} 삭제`} onPress={() => onDelete(piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}</View>)}</View>
+    <View style={styles.pieceRows}>{group.pieces.map((piece, index) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
+      {editingId === piece.id
+        ? <View style={styles.pieceEditRow}><TextInput accessibilityLabel={`${piece.id} ID`} autoFocus value={editingValue} onChangeText={(value) => { setEditingValue(value); setEditingError(null); }} onSubmitEditing={() => finishRename(piece.id)} returnKeyType="done" style={styles.pieceIdInput} /><TouchableOpacity accessibilityLabel={`${piece.id} ID 저장`} onPress={() => finishRename(piece.id)} style={styles.pieceEditAction}><Text style={styles.pieceEditActionText}>저장</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="조각 ID 변경 취소" onPress={() => { setEditingId(null); setEditingError(null); }} style={styles.pieceEditCancel}><Text style={styles.pieceEditCancelText}>취소</Text></TouchableOpacity></View>
+        : <><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${piece.id} 선택`} accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]} numberOfLines={1}>{piece.id}</Text><Text style={styles.pieceMeta}>{piece.form.pieceWidth || '—'} × {piece.form.pieceLength || '—'} mm · {piece.form.quantity || '—'}개</Text></View></TouchableOpacity><TouchableOpacity accessibilityLabel={`${piece.id} ID 변경`} onPress={() => { setEditingId(piece.id); setEditingValue(piece.id); setEditingError(null); }} style={styles.pieceEditButton}><Text style={styles.pieceEditButtonText}>✎ ID</Text></TouchableOpacity></>}
+      {editingError && editingId === piece.id && <Text style={styles.pieceEditError}>{editingError}</Text>}
+      {editingId !== piece.id && group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.id} 삭제`} onPress={() => onDelete(piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}
+    </View>)}</View>
   </View>;
 }
 function NumericField({ label, unit, value, onChange, integer = false, step = 1, min = 0 }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean; step?: number; min?: number }) {
@@ -845,6 +915,7 @@ function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch
   return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{pieceCount}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy || plans.length === 0} onPress={onConfirmBatch} style={[styles.batchConfirmButton, (busy || plans.length === 0) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{plans.length === 0 ? '개별 자투리 없음' : '순차 배치 일괄 확정'}</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>자동·번호 병합 롤은 상단 배치 미리보기에 한 번만 표시합니다. 도면에서 조각별 재단 완료를 체크하고, 아래에서 자투리 재고를 확정하세요.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); const mergeLabel = item.mergeGroupId === AUTO_MERGE_GROUP_ID ? '자동 병합' : `병합 ${item.mergeGroupId}`; return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>{mergeLabel}: {item.groupNames.join(' + ')} · 자투리 {item.remnantUses.length}개 · 새 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · 총 생산 {item.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text>{item.remnantUses.map((use) => <Text key={`${item.mergeGroupId}-${use.remnantId}`} style={styles.batchSummaryLine}>• 자투리 {use.remnantId} · {use.producedQuantity}개 · 새 롤 {Math.round(use.savedNewRollLengthMm).toLocaleString()}mm 절감</Text>)}<TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 ${item.mergeGroupId} 자투리 재고 확정`} disabled={busy || !job || job.isInventoryConfirmed} onPress={() => job && onConfirmMergedInventory(job.id)} style={[styles.batchConfirmButton, (busy || !job || job.isInventoryConfirmed) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{job?.isInventoryConfirmed ? '병합 재고 확정 완료' : '병합 롤 재고 확정'}</Text></TouchableOpacity></View>; })}</View>;
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
+function escapeRegExp(value: string): string { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
 function withProductionDefaults(form: CuttingFormState): CuttingFormState {
   const brand = BRAND_OPTIONS.includes(form.brand as (typeof BRAND_OPTIONS)[number]) ? form.brand : BRAND_OPTIONS[0];
@@ -904,7 +975,7 @@ const styles = StyleSheet.create({
   projectNameCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8, marginTop: 12, marginBottom: 6, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#eff6ff' }, projectNameField: { flex: 1 }, newProjectButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#93c5fd' }, newProjectButtonText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
   mergeControl: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#dbeafe' }, mergeControlLabel: { fontSize: 10, fontWeight: '800', color: '#475569' }, mergeControlButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, mergeControlButtonActive: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, mergeControlText: { fontSize: 11, fontWeight: '800', color: '#64748b' }, mergeControlTextActive: { color: '#fff' }, mergeControlHint: { flex: 1, minWidth: 150, fontSize: 10, color: '#64748b' },
   groupInputPanel: { marginBottom: 17, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fbff' }, groupInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, groupInputTitle: { fontSize: 14, fontWeight: '800', color: '#1e3a8a' }, groupInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addGroupButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#2563eb' }, addGroupButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, groupChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 }, groupChip: { minHeight: 48, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupChipActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupChipMain: { minWidth: 120, maxWidth: 190, minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 9, paddingRight: 4 }, groupChipIndex: { width: 19, height: 19, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 19, fontWeight: '800', color: '#475569' }, groupChipIndexActive: { backgroundColor: '#2563eb', color: '#fff' }, groupChipCopy: { flex: 1, minWidth: 0 }, groupChipText: { flexShrink: 1, fontSize: 11, fontWeight: '700', color: '#475569' }, groupChipTextActive: { color: '#1d4ed8' }, groupChipMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, groupChipAction: { width: 24, height: 43, alignItems: 'center', justifyContent: 'center' }, groupDeleteText: { fontSize: 17, color: '#ef4444' }, groupNameInput: { minWidth: 86, height: 30, paddingHorizontal: 5, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 5, fontSize: 11, backgroundColor: '#fff' },
-  pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },
+  pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceEditButton: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 7 }, pieceEditButtonText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, pieceEditRow: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7 }, pieceIdInput: { flex: 1, minWidth: 80, minHeight: 34, paddingHorizontal: 8, borderWidth: 1, borderColor: '#5eead4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, color: '#0f172a' }, pieceEditAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#0f766e' }, pieceEditActionText: { fontSize: 10, fontWeight: '800', color: '#fff' }, pieceEditCancel: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 5 }, pieceEditCancelText: { fontSize: 10, color: '#64748b' }, pieceEditError: { width: '100%', paddingHorizontal: 9, paddingBottom: 6, fontSize: 10, color: '#b91c1c' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },
   group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, stepHint: { fontSize: 10, fontWeight: '600', color: '#94a3b8' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, minWidth: 36, paddingHorizontal: 7, fontSize: 15, fontWeight: '700', color: '#0f172a', textAlign: 'center' }, unit: { paddingHorizontal: 3, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, stepperButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#e2e8f0' }, stepperText: { fontSize: 20, lineHeight: 22, color: '#334155' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#f0fdfa' }, historySwitchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 10, padding: 14, borderRadius: 12, backgroundColor: '#eff6ff' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#115e59' }, switchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#0f766e' }, historySwitchTitle: { fontSize: 13, fontWeight: '800', color: '#1e3a8a' }, historySwitchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#1d4ed8' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
   resultSection: { marginTop: 22, padding: 22, borderRadius: 20, backgroundColor: '#fff', ...shadow }, resultHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, resultTitle: { marginTop: 4, fontSize: 23, fontWeight: '800', color: '#0f172a' }, statusBadge: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }, statusText: { fontSize: 12, fontWeight: '800' }, statusDetail: { marginTop: 8, fontSize: 12, lineHeight: 18, color: '#64748b' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, batchSummary: { marginTop: 14, padding: 13, borderRadius: 11, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, batchSummaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, batchSummaryTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, batchSummaryMeta: { fontSize: 10, color: '#0f766e' }, batchSummaryLine: { marginTop: 5, fontSize: 10, lineHeight: 15, color: '#475569' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' }, batchConfirmButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 8, backgroundColor: '#0f766e' }, batchConfirmButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, batchWarning: { marginTop: 10, padding: 9, borderRadius: 8, fontSize: 10, lineHeight: 15, color: '#92400e', backgroundColor: '#fffbeb' },
