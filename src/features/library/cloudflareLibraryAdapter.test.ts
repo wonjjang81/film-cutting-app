@@ -12,7 +12,7 @@ describe('Cloudflare library adapter', () => {
     await expect(adapter.get('film-cutting-library-v1')).resolves.toBe('{"version":1}');
     await adapter.set('film-cutting-library-v1', '{"version":1,"jobs":[]}');
 
-    expect(fetchImpl).toHaveBeenNthCalledWith(1, 'https://film.example.com/api/library', expect.objectContaining({ credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, redirect: 'error', signal: expect.any(AbortSignal) }));
+    expect(fetchImpl).toHaveBeenNthCalledWith(1, expect.stringMatching(/^https:\/\/film\.example\.com\/api\/library\?v=\d+-\d+$/), expect.objectContaining({ credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' }, redirect: 'error', signal: expect.any(AbortSignal) }));
     expect(fetchImpl).toHaveBeenNthCalledWith(2, 'https://film.example.com/api/library', expect.objectContaining({
       credentials: 'include',
       cache: 'no-store',

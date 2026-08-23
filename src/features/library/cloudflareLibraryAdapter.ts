@@ -39,7 +39,10 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
   return {
     async get(): Promise<string | null> {
       const sequence = ++requestSequence;
-      const response = await request(endpoint(baseUrl), { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' } });
+      // Also vary the URL because an edge may ignore request cache directives
+      // for a previously cached GET response.
+      const readEndpoint = `${endpoint(baseUrl)}?v=${Date.now()}-${sequence}`;
+      const response = await request(readEndpoint, { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' } });
       if (response.status === 404) {
         if (sequence >= latestEtagSequence) {
           latestEtagSequence = sequence;
