@@ -31,14 +31,14 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }:
       <View style={styles.heading}>
         <View style={styles.copy}>
           <Text style={styles.title}>병합 롤 도면</Text>
-          <Text style={styles.meta}>폭 1,220mm · 길이 {Math.round(result.usedLengthMm).toLocaleString()}mm · {result.producedQuantity}개</Text>
+          <Text style={styles.meta}>새 롤 폭 1,220mm · 길이 {Math.round(result.usedLengthMm).toLocaleString()}mm · 총 생산 {plan.producedQuantity}개 (새 롤 {result.producedQuantity}개)</Text>
         </View>
         <Text style={styles.badge}>수율 {result.utilizationPercent}%</Text>
       </View>
       <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>
-      <ScrollView horizontal style={styles.canvasScroll} contentContainerStyle={styles.canvasContent}>
+      {result.placements.length > 0 ? <ScrollView horizontal style={styles.canvasScroll} contentContainerStyle={styles.canvasContent}>
         <View style={[styles.canvas, { height }]}>
           <Svg width="100%" height="100%" viewBox={`0 0 1220 ${Math.max(result.usedLengthMm, 1)}`} accessibilityLabel="병합 롤 배치 도면">
             <Rect x={0} y={0} width={1220} height={Math.max(result.usedLengthMm, 1)} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
@@ -53,7 +53,23 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }:
             })}
           </Svg>
         </View>
-      </ScrollView>
+      </ScrollView> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
+      {plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
+        <Text style={styles.remnantTitle}>자투리 롤 사용 도면</Text>
+        {plan.remnantUses.map((use) => {
+          const remnantHeight = Math.max(180, Math.min(460, (use.lengthMm / Math.max(use.widthMm, 1)) * 320));
+          return <View key={use.remnantId} style={styles.remnantCard}>
+            <Text style={styles.remnantMeta}>{use.remnantId} · 실제 {use.widthMm}×{use.lengthMm}mm · {use.producedQuantity}개 · 새 롤 {Math.round(use.savedNewRollLengthMm).toLocaleString()}mm 절감</Text>
+            <Svg width="100%" height={remnantHeight} viewBox={`0 0 ${Math.max(use.widthMm, 1)} ${Math.max(use.result.usedLengthMm, 1)}`} accessibilityLabel={`${use.remnantId} 자투리 배치 도면`}>
+              <Rect x={0} y={0} width={use.widthMm} height={Math.max(use.result.usedLengthMm, 1)} fill="#f0fdfa" stroke="#0f766e" strokeWidth={2} rx={4} />
+              {use.placements.map((placement) => <G key={placement.id}>
+                <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds)}22`} stroke={colorFor(placement.sourceId, sourceIds)} strokeWidth={2} />
+                <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={colorFor(placement.sourceId, sourceIds)}>{placement.id}</SvgText>
+              </G>)}
+            </Svg>
+          </View>;
+        })}
+      </View>}
       {selected && <View style={styles.detail}>
         <Text style={styles.detailTitle}>제품 {selected.id} 상세</Text>
         <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm · {selected.rotated ? '90도 회전' : '기본 방향'} · 위치 ({selected.x}, {selected.y})mm</Text>
@@ -72,7 +88,9 @@ const styles = StyleSheet.create({
   copy: { flex: 1 }, title: { fontSize: 12, fontWeight: '800', color: '#115e59' }, meta: { marginTop: 3, fontSize: 10, color: '#64748b' }, badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   canvasScroll: { marginTop: 11, maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasContent: { minWidth: '100%' }, canvas: { width: '100%', minWidth: 320, overflow: 'hidden', borderRadius: 9 },
+  noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
+  remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
   list: { gap: 5, marginTop: 10 }, item: { minHeight: 34, flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#f8fafc' }, itemActive: { backgroundColor: '#e0f2fe' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' },
   completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },
 });

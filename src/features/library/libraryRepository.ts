@@ -44,6 +44,7 @@ export type LibraryRepository = {
   applyInventoryDelta(delta: InventoryDelta): Promise<void>;
   confirmJob(job: SavedCuttingJob, delta: InventoryDelta): Promise<void>;
   confirmJobs(jobs: readonly SavedCuttingJob[], delta: InventoryDelta): Promise<void>;
+  confirmMergedJob(job: SavedMergedCuttingJob, delta: InventoryDelta): Promise<void>;
 };
 
 type Validator<T> = (value: unknown) => T | undefined;
@@ -282,10 +283,19 @@ function validateMergedJob(value: unknown): SavedMergedCuttingJob | undefined {
     || !Array.isArray(value.placements)) return undefined;
   const placements = value.placements.map(validateMergedPlacement);
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
+  const inventoryConfirmedAt = value.inventoryConfirmedAt === undefined ? undefined : normalizeTimestamp(value.inventoryConfirmedAt);
+  const remnantIds = value.remnantIds === undefined ? undefined : value.remnantIds;
+  const remnantSummary = value.remnantSummary === undefined
+    ? undefined
+    : Array.isArray(value.remnantSummary) ? value.remnantSummary.map(validateRemnantSummary) : null;
   if (placements.some((item) => item === undefined)
     || (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean')
     || (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined)
-    || (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id))))) return undefined;
+    || (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id))))
+    || (value.isInventoryConfirmed !== undefined && typeof value.isInventoryConfirmed !== 'boolean')
+    || (value.inventoryConfirmedAt !== undefined && inventoryConfirmedAt === undefined)
+    || (remnantIds !== undefined && (!Array.isArray(remnantIds) || !remnantIds.every(validId)))
+    || (remnantSummary === null || (remnantSummary !== undefined && remnantSummary.some((item) => item === undefined)))) return undefined;
   return {
     id: value.id, name: value.name, mergeGroupId: value.mergeGroupId,
     groupNames: [...value.groupNames], sourceJobIds: [...value.sourceJobIds], createdAt, updatedAt,
@@ -295,6 +305,10 @@ function validateMergedJob(value: unknown): SavedMergedCuttingJob | undefined {
     ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
     ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
     ...(completedPlacementIds === undefined ? {} : { completedPlacementIds: [...completedPlacementIds] }),
+    ...(remnantIds === undefined ? {} : { remnantIds: [...remnantIds] }),
+    ...(remnantSummary === undefined ? {} : { remnantSummary: remnantSummary as SavedRemnantSummary[] }),
+    ...(value.isInventoryConfirmed === undefined ? {} : { isInventoryConfirmed: value.isInventoryConfirmed }),
+    ...(inventoryConfirmedAt === undefined ? {} : { inventoryConfirmedAt }),
   };
 }
 
@@ -598,6 +612,21 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         const now = new Date().toISOString();
         const confirmed = new Map(validJobs.map((job) => [job.id, { ...job, isInventoryConfirmed: true, inventoryConfirmedAt: now }]));
         document.jobs = orderJobs(document.jobs.map((job) => confirmed.get(job.id) ?? clone(job)));
+      });
+    },
+
+    async confirmMergedJob(job, delta): Promise<void> {
+      const valid = assertValid(job, validateMergedJob, 'merged cutting job');
+      await mutate((document) => {
+        const stored = document.mergedJobs.find((candidate) => candidate.id === valid.id);
+        if (stored === undefined) throw new Error('확정 대상 병합 롤을 찾을 수 없습니다. 다시 계산해 주세요.');
+        if (stored.isInventoryConfirmed) throw new Error('이미 재고 확정된 병합 롤입니다.');
+        if (valid.sourceJobIds.some((sourceId) => document.jobs.some((source) => source.id === sourceId && source.isInventoryConfirmed))) {
+          throw new Error('병합 롤의 원본 조각이 이미 재고 확정되었습니다.');
+        }
+        applyInventoryDeltaToDocument(document, delta);
+        const now = new Date().toISOString();
+        document.mergedJobs = orderMergedJobs(replaceById(document.mergedJobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }));
       });
     },
   };

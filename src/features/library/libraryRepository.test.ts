@@ -257,6 +257,21 @@ describe('library repository', () => {
     });
   });
 
+  it('confirms a merged roll inventory delta atomically', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const source = remnant({ id: 'merged-remnant', widthMm: 180, lengthMm: 220 });
+    const merged = mergedJob(1, { remnantIds: [source.id], remnantSummary: [{ id: source.id, widthMm: source.widthMm, lengthMm: source.lengthMm, quantity: 1 }] });
+    await repository.saveRemnant(source);
+    await repository.saveMergedJob(merged);
+
+    await repository.confirmMergedJob(merged, { removeIds: [source.id], add: [], basedOnUpdatedAt: { [source.id]: source.updatedAt } });
+
+    const loaded = await repository.load();
+    expect(loaded.document.remnants).toEqual([]);
+    expect(loaded.document.mergedJobs[0]).toMatchObject({ id: merged.id, isInventoryConfirmed: true });
+    await expect(repository.confirmMergedJob(merged, { removeIds: [], add: [], basedOnUpdatedAt: {} })).rejects.toThrow('이미 재고 확정');
+  });
+
   it('renames and deletes a saved job while rejecting a blank name', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     await repository.saveJob(job(1));

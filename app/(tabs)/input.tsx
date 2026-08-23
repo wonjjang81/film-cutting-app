@@ -156,8 +156,24 @@ export default function FilmCutInputScreen() {
         const normalized = withProductionDefaults(piece.form);
         return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       }));
-      const planned = planGroupedPieces(requests, nextInventory(latest, useRemnants));
-      const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM);
+      const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM, nextInventory(latest, useRemnants), useRemnants);
+      const mergedSourceIds = new Set(merged.flatMap((entry) => entry.sourceIds));
+      const mergedInventory = nextInventory(latest, useRemnants);
+      const mergedConsumedIds = new Set(merged.flatMap((entry) => entry.inventoryDelta.removeIds));
+      // Keep independent pieces from consuming merged-roll residuals before
+      // the merged physical roll is confirmed. They can be planned on a later
+      // calculation after those residuals are persisted.
+      const independentInventory = mergedInventory.filter((item) => !mergedConsumedIds.has(item.id));
+      // A merged source is saved as a normal job for history/estimates, but its
+      // inventory is reserved by the merged-roll plan, never by the per-piece
+      // confirmation transaction.
+      const independentRequests = requests.filter((entry) => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`));
+      const mergedSourceRequests = requests.filter((entry) => mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`));
+      const independentPlans = planGroupedPieces(independentRequests, independentInventory);
+      const mergedSourcePlans = planGroupedPieces(mergedSourceRequests, []);
+      const plansBySourceId = new Map([...independentPlans, ...mergedSourcePlans].map((entry) => [`${entry.groupId}-${entry.pieceId}`, entry]));
+      const planned = requests.map((entry) => plansBySourceId.get(`${entry.groupId}-${entry.pieceId}`)).filter((entry): entry is GroupedPiecePlan => entry !== undefined);
+      const confirmablePlans = planned.filter((entry) => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`));
       const generatedIds = latest.jobs.map((job) => job.id);
       const generatedMergedIds = latest.mergedJobs.map((job) => job.id);
       const sourceJobIds = new Map<string, string>();
@@ -186,20 +202,22 @@ export default function FilmCutInputScreen() {
           updatedAt: new Date(timestamp + 1000 + index).toISOString(),
           rollWidthMm: FIXED_ROLL_WIDTH_MM,
           usedLengthMm: entry.result.usedLengthMm,
-          producedQuantity: entry.result.producedQuantity,
+          producedQuantity: entry.producedQuantity,
           utilizationPercent: entry.result.utilizationPercent,
           wastePercent: entry.result.wastePercent,
           placements: entry.result.placements.map((placement) => ({ ...placement })),
+          remnantIds: entry.remnantUses.map((use) => use.remnantId),
+          remnantSummary: entry.remnantUses.map((use) => ({ id: use.remnantId, widthMm: use.widthMm, lengthMm: use.lengthMm, quantity: 1 })),
         };
         generatedMergedIds.push(mergedJob.id);
         await repository.saveMergedJob(mergedJob);
       }
-      setBatchPlans(plannedWithIds);
+      setBatchPlans(confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] })));
       setMergedGroupPlans(merged);
       const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
       if (active) activateBatchPlan(active);
       await refreshLibrary();
-      setNotice(`${planned.length}개 조각의 그룹 통합 배치와 ${merged.length}개 병합 롤을 저장했습니다.`);
+      setNotice(`${planned.length}개 조각의 그룹 통합 배치와 ${merged.length}개 병합 롤을 저장했습니다.${merged.some((entry) => entry.remnantUses.length > 0) ? ' 병합 롤 자투리 사용 계획도 반영했습니다.' : ''}`);
     } catch (caught) { setError(`그룹 통합 배치를 계산하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
@@ -389,6 +407,20 @@ export default function FilmCutInputScreen() {
     } catch (caught) { setError(`병합 롤 완료 상태를 저장하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
+  const confirmMergedInventory = async (id: string) => {
+    const current = library.mergedJobs.find((job) => job.id === id);
+    const planned = mergedGroupPlans.find((item) => item.mergeGroupId === current?.mergeGroupId);
+    if (!current || !planned || current.isInventoryConfirmed) return;
+    setBusy(true); setError(null); setNotice(null);
+    try {
+      await repository.confirmMergedJob(current, planned.inventoryDelta);
+      await refreshLibrary();
+      setNotice(`병합 롤 재고를 확정했습니다. 자투리 ${planned.remnantUses.length}개를 반영했습니다.`);
+    } catch (caught) {
+      setError(`병합 롤 재고를 확정하지 못했습니다. ${messageOf(caught)}`);
+      await refreshLibrary();
+    } finally { setBusy(false); }
+  };
 
   const saveRemnant = async (draft: RemnantDraft) => {
     const brand = form.brand.trim(); const productNumber = form.productNumber.trim();
@@ -475,7 +507,7 @@ export default function FilmCutInputScreen() {
         <View style={styles.resultHeading}><View><Text style={styles.eyebrow}>MATERIAL PLAN</Text><Text style={styles.resultTitle}>원단 사용 계획</Text></View><View style={[styles.statusBadge, { backgroundColor: resultStatus.bg }]}><Text style={[styles.statusText, { color: resultStatus.tone }]}>{resultStatus.title}</Text></View></View>
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${plan.remnantUses.length}개`} accent="#0f766e" /><Metric label="새 롤 필요 수량" value={`${plan.newRollQuantity}개`} accent="#2563eb" /><Metric label="새 롤 사용 길이" value={`${(plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${draftJob.result.utilizationPercent}%`} accent="#059669" /></View>
-        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onConfirmBatch={() => void confirmBatch()} onToggleMergedComplete={(id) => void toggleMergedComplete(id)} />}
+        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onConfirmBatch={() => void confirmBatch()} onToggleMergedComplete={(id) => void toggleMergedComplete(id)} onConfirmMergedInventory={(id) => void confirmMergedInventory(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
         {previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
         <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
@@ -534,10 +566,10 @@ function FixedProductionConditions() {
 }
 function PanelHeading({ step, title, subtitle, dark = false }: { step: string; title: string; subtitle: string; dark?: boolean }) { return <View style={styles.panelHeader}><View style={styles.panelHeaderCopy}><Text style={styles.panelTitle}>{title}</Text><Text style={styles.panelSubtitle}>{subtitle}</Text></View><View style={[styles.stepBadge, dark && styles.stepBadgeDark]}><Text style={[styles.stepText, dark && styles.stepTextLight]}>{step}</Text></View></View>; }
 function Metric({ label, value, accent }: { label: string; value: string; accent: string }) { return <View style={styles.metric}><View style={[styles.metricAccent, { backgroundColor: accent }]} /><Text style={styles.metricLabel}>{label}</Text><Text style={styles.metricValue}>{value}</Text></View>; }
-function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch, onToggleMergedComplete }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[]; mergedJobs: readonly SavedMergedCuttingJob[]; busy: boolean; onConfirmBatch(): void; onToggleMergedComplete(id: string): void }) {
+function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch, onToggleMergedComplete, onConfirmMergedInventory }: { plans: readonly GroupedPiecePlan[]; mergedPlans: readonly MergedGroupPlan[]; mergedJobs: readonly SavedMergedCuttingJob[]; busy: boolean; onConfirmBatch(): void; onToggleMergedComplete(id: string): void; onConfirmMergedInventory(id: string): void }) {
   const produced = plans.reduce((sum, item) => sum + item.plan.remnantUses.reduce((inner, use) => inner + use.producedQuantity, 0) + (item.plan.newRollResult?.producedQuantity ?? 0), 0);
   const newRollLength = plans.reduce((sum, item) => sum + (item.plan.newRollResult?.usedLengthMm ?? 0), 0);
-  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy} onPress={onConfirmBatch} style={[styles.batchConfirmButton, busy && styles.disabled]}><Text style={styles.batchConfirmButtonText}>순차 배치 일괄 확정</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>병합 롤은 별도 새 롤 생산 단위입니다. 병합 롤 완료 후에는 순차 자투리 배치를 일괄 확정할 수 없습니다.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 혼합 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · {item.result.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text><MergedRollPreview plan={item} job={job} busy={busy} onToggleComplete={job ? () => onToggleMergedComplete(job.id) : undefined} /></View>; })}</View>;
+  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{plans.length}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy || plans.length === 0} onPress={onConfirmBatch} style={[styles.batchConfirmButton, (busy || plans.length === 0) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{plans.length === 0 ? '개별 자투리 없음' : '순차 배치 일괄 확정'}</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>혼합 병합 롤은 개별 조각과 별도로 자투리 재고를 확정합니다.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>병합 {item.mergeGroupId}: {item.groupNames.join(' + ')} · 자투리 {item.remnantUses.length}개 · 새 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · 총 생산 {item.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text>{item.remnantUses.map((use) => <Text key={`${item.mergeGroupId}-${use.remnantId}`} style={styles.batchSummaryLine}>• 자투리 {use.remnantId} · {use.producedQuantity}개 · 새 롤 {Math.round(use.savedNewRollLengthMm).toLocaleString()}mm 절감</Text>)}<TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 ${item.mergeGroupId} 자투리 재고 확정`} disabled={busy || !job || job.isInventoryConfirmed} onPress={() => job && onConfirmMergedInventory(job.id)} style={[styles.batchConfirmButton, (busy || !job || job.isInventoryConfirmed) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{job?.isInventoryConfirmed ? '병합 재고 확정 완료' : '병합 롤 재고 확정'}</Text></TouchableOpacity><MergedRollPreview plan={item} job={job} busy={busy} onToggleComplete={job ? () => onToggleMergedComplete(job.id) : undefined} /></View>; })}</View>;
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }

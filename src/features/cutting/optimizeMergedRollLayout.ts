@@ -19,6 +19,8 @@ export type MergedPlacement = {
 
 export type MergedRollInput = {
   rollWidthMm: number;
+  /** Optional finite rectangle length when planning against a remnant. */
+  maxLengthMm?: number;
   gapMm: number;
   sideMarginMm: number;
   startEndMarginMm: number;
@@ -43,6 +45,7 @@ function overlaps(a: { x: number; y: number; width: number; height: number }, b:
 function attempt(input: MergedRollInput, order: readonly MergedRollPiece[]): MergedPlacement[] {
   const placements: MergedPlacement[] = [];
   const usableWidth = input.rollWidthMm - input.sideMarginMm * 2;
+  const usableLength = input.maxLengthMm === undefined ? Number.POSITIVE_INFINITY : input.maxLengthMm - input.startEndMarginMm;
   let nextId = 1;
   for (const source of order) {
     for (let instanceIndex = 0; instanceIndex < Math.max(0, Math.floor(source.quantity)); instanceIndex += 1) {
@@ -61,6 +64,7 @@ function attempt(input: MergedRollInput, order: readonly MergedRollPiece[]): Mer
           const y = Math.max(input.startEndMarginMm, snap(point.y));
           const next = { x, y, width: candidate.width, height: candidate.height };
           if (x + candidate.width > input.rollWidthMm - input.sideMarginMm) continue;
+          if (y + candidate.height > usableLength) continue;
           if (placements.some((placed) => overlaps(next, placed))) continue;
           const touch = placements.reduce((sum, placed) => {
             const vertical = (x === placed.x + placed.width || x + candidate.width === placed.x) ? Math.max(0, Math.min(y + candidate.height, placed.y + placed.height) - Math.max(y, placed.y)) : 0;
@@ -81,6 +85,7 @@ function attempt(input: MergedRollInput, order: readonly MergedRollPiece[]): Mer
 
 export function optimizeMergedRollLayout(input: MergedRollInput): MergedRollResult {
   if (!Number.isFinite(input.rollWidthMm) || input.rollWidthMm <= 0) throw new Error('롤 폭은 0보다 커야 합니다.');
+  if (input.maxLengthMm !== undefined && (!Number.isFinite(input.maxLengthMm) || input.maxLengthMm <= 0)) throw new Error('최대 길이는 0보다 커야 합니다.');
   const valid = input.pieces.filter((piece) => piece.widthMm > 0 && piece.lengthMm > 0 && piece.quantity > 0);
   const strategies = [
     (piece: MergedRollPiece) => piece.widthMm * piece.lengthMm,

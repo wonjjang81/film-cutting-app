@@ -105,9 +105,14 @@ export type SavedMergedCuttingJob = {
   utilizationPercent: number;
   wastePercent: number;
   placements: SavedMergedPlacement[];
+  /** Physical remnants reserved by this mixed-roll plan, if any. */
+  remnantIds?: string[];
+  remnantSummary?: SavedRemnantSummary[];
   isCuttingComplete?: boolean;
   cuttingCompletedAt?: string;
   completedPlacementIds?: number[];
+  isInventoryConfirmed?: boolean;
+  inventoryConfirmedAt?: string;
 };
 
 export type LibraryDocument = {
