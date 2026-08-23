@@ -59,4 +59,13 @@ describe('planGroupedPieces', () => {
     expect(plan?.inventoryDelta).toEqual({ removeIds: [], add: [], basedOnUpdatedAt: {} });
     expect(plan?.newRollQuantity).toBeGreaterThan(0);
   });
+
+  it('reports which group piece is invalid before partial planning', () => {
+    const requests: GroupedPieceRequest[] = [
+      { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', request: { brand: '영림', productNumber: '', remnants: [], ...base } },
+      { groupId: 'g2', groupName: '그룹 2', pieceId: 'p2', pieceName: '조각 2', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 0 } },
+    ];
+
+    expect(() => planMergedGroups(requests, 1220, [], false)).toThrow('그룹 2 · 조각 2');
+  });
 });

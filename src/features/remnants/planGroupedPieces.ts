@@ -50,6 +50,17 @@ export type MergedRemnantUse = {
 export const AUTO_MERGE_GROUP_ID = 'auto';
 export const DISABLED_MERGE_GROUP_ID = 'none';
 
+function validateGroupedRequest(entry: GroupedPieceRequest): void {
+  const { request } = entry;
+  const label = `${entry.groupName} · ${entry.pieceName}`;
+  if (!Number.isFinite(request.pieceWidthMm) || request.pieceWidthMm <= 0) throw new Error(`${label}: 재단 폭은 0보다 커야 합니다.`);
+  if (!Number.isFinite(request.pieceLengthMm) || request.pieceLengthMm <= 0) throw new Error(`${label}: 재단 길이는 0보다 커야 합니다.`);
+  if (!Number.isInteger(request.quantity) || request.quantity <= 0) throw new Error(`${label}: 필요 수량은 1개 이상의 정수여야 합니다.`);
+  if (!Number.isFinite(request.gapMm) || request.gapMm < 0) throw new Error(`${label}: 재단 간격을 확인해 주세요.`);
+  if (!Number.isFinite(request.sideMarginMm) || request.sideMarginMm < 0) throw new Error(`${label}: 좌우 여백을 확인해 주세요.`);
+  if (!Number.isFinite(request.startEndMarginMm) || request.startEndMarginMm < 0) throw new Error(`${label}: 시작·끝 여백을 확인해 주세요.`);
+}
+
 function applyDelta(inventory: readonly FilmRemnant[], plan: RemnantPlan): FilmRemnant[] {
   const removed = new Set(plan.inventoryDelta.removeIds);
   return [...inventory.filter((item) => !removed.has(item.id)), ...plan.inventoryDelta.add.map((item) => ({ ...item }))];
@@ -57,6 +68,7 @@ function applyDelta(inventory: readonly FilmRemnant[], plan: RemnantPlan): FilmR
 
 /** Plans every piece in group order, carrying remnant inventory forward between pieces. */
 export function planGroupedPieces(requests: readonly GroupedPieceRequest[], inventory: readonly FilmRemnant[]): GroupedPiecePlan[] {
+  requests.forEach(validateGroupedRequest);
   let working = inventory.map((item) => ({ ...item }));
   return requests.map((entry) => {
     const before = working.map((item) => ({ ...item }));
@@ -73,6 +85,7 @@ export function planMergedGroups(
   inventory: readonly FilmRemnant[] = [],
   useRemnants = false,
 ): MergedGroupPlan[] {
+  requests.forEach(validateGroupedRequest);
   const buckets = new Map<string, GroupedPieceRequest[]>();
   for (const request of requests) {
     const mergeGroupId = request.mergeGroupId ?? AUTO_MERGE_GROUP_ID;

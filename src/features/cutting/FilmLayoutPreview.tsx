@@ -1,5 +1,6 @@
 import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import * as React from 'react';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
 
@@ -16,6 +17,8 @@ type Props = {
 };
 
 export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [] }: Props) {
+  const [viewportWidth, setViewportWidth] = React.useState(640);
+  const [zoom, setZoom] = React.useState(1);
   if (!result) {
     return (
       <View style={styles.empty}>
@@ -38,7 +41,10 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
     && displayLengthMm - verticalMarginMm * 2 > 0;
   if (!validSize) return null;
   const fontSize = Math.max(8, Math.min(18, Math.min(rollWidthMm, displayLengthMm) / 22));
-  const drawingHeight = Math.max(300, Math.min(2400, (displayLengthMm / rollWidthMm) * 600));
+  const baseHeight = Math.max(300, (displayLengthMm / rollWidthMm) * viewportWidth);
+  const drawingHeight = baseHeight * zoom;
+  const viewBoxWidth = rollWidthMm / zoom;
+  const viewBoxX = (rollWidthMm - viewBoxWidth) / 2;
   const rowSeparators = continuous
     ? (result as ContinuousRollResult).rowSequence.map((row) => ({ label: row.pattern, y: row.endY }))
     : [];
@@ -49,9 +55,20 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
         <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: '#2563eb' }]} /><Text style={styles.legendText}>기본 방향</Text></View>
         <View style={styles.legendItem}><View style={[styles.dot, { backgroundColor: '#14b8a6' }]} /><Text style={styles.legendText}>90도 회전</Text></View>
       </View>
-      <ScrollView style={styles.canvasScroll} contentContainerStyle={styles.canvasScrollContent} nestedScrollEnabled>
-        <View style={[styles.canvas, { height: drawingHeight }]}>
-        <Svg width="100%" height="100%" viewBox={`0 0 ${rollWidthMm} ${displayLengthMm}`} accessibilityLabel="필름 자동배치 도면">
+      <View style={styles.zoomRow} accessibilityLabel="자동배치 도면 확대 축소">
+        <Text style={styles.zoomLabel}>확대/축소</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 축소" onPress={() => setZoom((value) => Math.max(0.75, Math.round((value - 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
+        <Text style={styles.zoomValue}>{Math.round(zoom * 100)}%</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 확대" onPress={() => setZoom((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 화면 폭 맞춤" onPress={() => setZoom(1)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
+      </View>
+      <View style={styles.canvasFrame} onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        if (nextWidth > 0 && Math.abs(nextWidth - viewportWidth) > 1) setViewportWidth(nextWidth);
+      }}>
+        <ScrollView style={styles.canvasScroll} contentContainerStyle={styles.canvasScrollContent} nestedScrollEnabled showsVerticalScrollIndicator>
+        <View style={[styles.canvas, { height: drawingHeight, width: viewportWidth }]}>
+        <Svg width={viewportWidth} height={drawingHeight} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${displayLengthMm}`} accessibilityLabel="필름 자동배치 도면">
           <Rect x={0} y={0} width={rollWidthMm} height={displayLengthMm} fill="#f8fafc" stroke="#334155" strokeWidth={Math.max(1, rollWidthMm / 350)} rx={4} />
           {(horizontalMarginMm > 0 || verticalMarginMm > 0) && (
             <Rect x={horizontalMarginMm} y={verticalMarginMm} width={rollWidthMm - horizontalMarginMm * 2} height={displayLengthMm - verticalMarginMm * 2}
@@ -79,7 +96,8 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           ))}
         </Svg>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </View>
       <Text style={styles.caption}>{continuous ? '연속 롤 기준 · 구분선은 행 패턴 경계입니다.' : '첫 번째 원단 기준 · 숫자는 재단 순번입니다.'}</Text>
     </View>
   );
@@ -95,8 +113,8 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 10, height: 10, borderRadius: 5 },
   legendText: { fontSize: 13, color: '#475569' },
-  canvasScroll: { flex: 1, maxHeight: 620, borderRadius: 12, backgroundColor: '#f8fafc' },
-  canvasScrollContent: { flexGrow: 1 },
+  zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }, zoomLabel: { marginRight: 2, fontSize: 11, fontWeight: '800', color: '#475569' }, zoomButton: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 19, lineHeight: 21, color: '#0f172a' }, zoomValue: { minWidth: 44, textAlign: 'center', fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, zoomFitButton: { minHeight: 32, paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, backgroundColor: '#eff6ff' }, zoomFitText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, canvasFrame: { width: '100%', overflow: 'hidden', borderRadius: 12, backgroundColor: '#f8fafc' }, canvasScroll: { width: '100%', maxHeight: 620, borderRadius: 12, backgroundColor: '#f8fafc' },
+  canvasScrollContent: { flexGrow: 1, alignItems: 'center' },
   canvas: { minHeight: 300, overflow: 'hidden', borderRadius: 12, backgroundColor: '#f8fafc' },
   caption: { marginTop: 10, textAlign: 'center', fontSize: 12, color: '#64748b' },
 });

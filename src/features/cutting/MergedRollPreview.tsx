@@ -24,13 +24,19 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  const [viewportWidth, setViewportWidth] = React.useState(640);
+  const [zoom, setZoom] = React.useState(1);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
-  const height = Math.max(240, Math.min(700, (result.usedLengthMm / 1220) * 520));
+  const safeLength = Math.max(result.usedLengthMm, 1);
+  const baseHeight = Math.max(240, (viewportWidth / 1220) * safeLength);
+  const height = baseHeight * zoom;
+  const viewBoxWidth = 1220 / zoom;
+  const viewBoxX = (1220 - viewBoxWidth) / 2;
   const completedPlacementIds = new Set(job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
-  const renderCanvas = () => <View style={[styles.canvas, { height, width: 1220 }]}>
-    <Svg width={1220} height={height} viewBox={`0 0 1220 ${Math.max(result.usedLengthMm, 1)}`} accessibilityLabel="병합 롤 배치 도면">
-      <Rect x={0} y={0} width={1220} height={Math.max(result.usedLengthMm, 1)} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
+  const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
+    <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
+      <Rect x={0} y={0} width={1220} height={safeLength} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
         const active = selectedId === placement.id;
@@ -55,7 +61,23 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>
-      {result.placements.length > 0 ? <ScrollView nestedScrollEnabled style={styles.canvasVerticalScroll} contentContainerStyle={styles.canvasVerticalContent} showsVerticalScrollIndicator={!compact}><ScrollView horizontal nestedScrollEnabled style={styles.canvasScroll} contentContainerStyle={styles.canvasContent} showsHorizontalScrollIndicator><View>{renderCanvas()}</View></ScrollView></ScrollView> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
+      {result.placements.length > 0 ? <>
+        <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
+          <Text style={styles.zoomLabel}>확대/축소</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 축소" onPress={() => setZoom((value) => Math.max(0.75, Math.round((value - 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
+          <Text style={styles.zoomValue}>{Math.round(zoom * 100)}%</Text>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 확대" onPress={() => setZoom((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 화면 폭 맞춤" onPress={() => setZoom(1)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
+        </View>
+        <View style={styles.canvasFrame} onLayout={(event) => {
+          const nextWidth = event.nativeEvent.layout.width;
+          if (nextWidth > 0 && Math.abs(nextWidth - viewportWidth) > 1) setViewportWidth(nextWidth);
+        }}>
+          <ScrollView nestedScrollEnabled style={styles.canvasVerticalScroll} contentContainerStyle={styles.canvasVerticalContent} showsVerticalScrollIndicator>
+            {renderCanvas()}
+          </ScrollView>
+        </View>
+      </> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
       {!compact && plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
         <Text style={styles.remnantTitle}>자투리 롤 사용 도면</Text>
         {plan.remnantUses.map((use) => {
@@ -95,7 +117,7 @@ const styles = StyleSheet.create({
   heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   copy: { flex: 1 }, title: { fontSize: 12, fontWeight: '800', color: '#115e59' }, meta: { marginTop: 3, fontSize: 10, color: '#64748b' }, badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
-  canvasVerticalScroll: { marginTop: 11, maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240 }, canvasScroll: { minWidth: '100%', borderRadius: 9 }, canvasContent: { minWidth: '100%' }, canvas: { overflow: 'hidden', borderRadius: 9 },
+  zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
