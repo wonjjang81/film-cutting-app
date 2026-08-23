@@ -13,4 +13,18 @@ describe('calculateProjectEstimate', () => {
     expect(result.discountRate).toBe(0.15);
     expect(result.total).toBe(153000);
   });
+
+  it('uses one physical merged-roll length instead of summing source jobs', () => {
+    const sources = [job('source-a', 510), job('source-b', 310)];
+    const [merged] = [{
+      id: 'merged-1', name: '병합 1', mergeGroupId: 'auto', groupNames: ['그룹 1', '그룹 2'], sourceJobIds: ['source-a', 'source-b'],
+      createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', rollWidthMm: 1220, usedLengthMm: 710,
+      producedQuantity: 2, utilizationPercent: 54.3, wastePercent: 45.7, placements: [],
+    }];
+    const result = calculateProjectEstimate(sources, 10_000, 15_000, undefined, [merged]);
+    expect(result.jobCount).toBe(1);
+    expect(result.materialLengthM).toBe(0.71);
+    expect(result.materialCost).toBe(7_100);
+    expect(result.productAreaM2).toBe(10);
+  });
 });

@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View } from 'react-native';
 
 import type { SavedCuttingJob } from '../library/models';
-import { calculateEstimate, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M } from './calculateEstimate';
+import { calculateEstimate, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M, type EstimateUsageOverride } from './calculateEstimate';
 
-export function EstimateSummary({ job, compact = false, materialCostPerM, constructionCostPerM2, discountRateOverride }: { job: SavedCuttingJob; compact?: boolean; materialCostPerM?: number; constructionCostPerM2?: number; discountRateOverride?: number }) {
-  const estimate = calculateEstimate(job, materialCostPerM, constructionCostPerM2, discountRateOverride);
+export function EstimateSummary({ job, compact = false, materialCostPerM, constructionCostPerM2, discountRateOverride, usageOverride }: { job: SavedCuttingJob; compact?: boolean; materialCostPerM?: number; constructionCostPerM2?: number; discountRateOverride?: number; usageOverride?: EstimateUsageOverride }) {
+  const estimate = calculateEstimate(job, materialCostPerM, constructionCostPerM2, discountRateOverride, usageOverride);
   const materialRate = materialCostPerM ?? job.materialCostPerM ?? DEFAULT_MATERIAL_COST_PER_M;
   const constructionRate = constructionCostPerM2 ?? job.constructionCostPerM2 ?? DEFAULT_CONSTRUCTION_COST_PER_M2;
   return <View style={[styles.card, compact && styles.compactCard]} accessibilityLabel="자동 견적 결과">

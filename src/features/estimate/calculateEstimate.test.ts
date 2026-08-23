@@ -26,4 +26,15 @@ describe('calculateEstimate', () => {
   it('uses group-specific saved prices when the default rates are requested', () => {
     expect(calculateEstimate({ ...job, materialCostPerM: 12_000, constructionCostPerM2: 20_000 })).toMatchObject({ materialCost: 24_000, constructionCost: 50_000 });
   });
+
+  it('uses the merged physical total length and area when supplied', () => {
+    expect(calculateEstimate(job, 10_000, 15_000, undefined, { materialLengthMm: 710, productAreaM2: 0.47 })).toMatchObject({
+      materialLengthM: 0.71,
+      materialCost: 7_100,
+      productAreaM2: 0.47,
+      constructionCost: 7_050,
+      subtotal: 14_150,
+      total: 14_150,
+    });
+  });
 });

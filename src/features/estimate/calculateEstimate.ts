@@ -14,6 +14,13 @@ export type Estimate = {
   total: number;
 };
 
+export type EstimateUsageOverride = {
+  /** Total physical new-roll length already calculated by the merged layout. */
+  materialLengthMm: number;
+  /** Product area for every piece represented by the merged layout. */
+  productAreaM2: number;
+};
+
 function roundWon(value: number): number {
   return Math.max(0, Math.round(value));
 }
@@ -24,11 +31,14 @@ export function calculateEstimate(
   materialCostPerM = DEFAULT_MATERIAL_COST_PER_M,
   constructionCostPerM2 = DEFAULT_CONSTRUCTION_COST_PER_M2,
   discountRateOverride?: number,
+  usageOverride?: EstimateUsageOverride,
 ): Estimate {
   const effectiveMaterialCost = materialCostPerM === DEFAULT_MATERIAL_COST_PER_M && job.materialCostPerM !== undefined ? job.materialCostPerM : materialCostPerM;
   const effectiveConstructionCost = constructionCostPerM2 === DEFAULT_CONSTRUCTION_COST_PER_M2 && job.constructionCostPerM2 !== undefined ? job.constructionCostPerM2 : constructionCostPerM2;
-  const materialLengthM = Math.max(0, job.result.newRollLengthMm) / 1000;
-  const productAreaM2 = Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * job.input.quantity) / 1_000_000;
+  const materialLengthM = Math.max(0, usageOverride?.materialLengthMm ?? job.result.newRollLengthMm) / 1000;
+  const productAreaM2 = usageOverride === undefined
+    ? Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * job.input.quantity) / 1_000_000
+    : Math.max(0, usageOverride.productAreaM2);
   const materialCost = roundWon(materialLengthM * Math.max(0, effectiveMaterialCost));
   const constructionCost = roundWon(productAreaM2 * Math.max(0, effectiveConstructionCost));
   const subtotal = materialCost + constructionCost;
