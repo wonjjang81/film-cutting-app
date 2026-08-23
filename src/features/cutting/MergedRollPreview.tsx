@@ -25,7 +25,22 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, c
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
   const height = Math.max(240, Math.min(700, (result.usedLengthMm / 1220) * 520));
+  const compactHeight = Math.min(height, 360);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
+  const renderCanvas = (canvasHeight: number) => <View style={[styles.canvas, { height: canvasHeight }]}>
+    <Svg width="100%" height="100%" viewBox={`0 0 1220 ${Math.max(result.usedLengthMm, 1)}`} accessibilityLabel="병합 롤 배치 도면">
+      <Rect x={0} y={0} width={1220} height={Math.max(result.usedLengthMm, 1)} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
+      {result.placements.map((placement) => {
+        const color = colorFor(placement.sourceId, sourceIds);
+        const active = selectedId === placement.id;
+        return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
+          <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
+          <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={color}>{placement.id}</SvgText>
+          {job?.isCuttingComplete && <G><Rect x={placement.x + placement.width * 0.18} y={placement.y + placement.height * 0.18} width={placement.width * 0.64} height={placement.height * 0.64} fill="none" stroke="#dc2626" strokeWidth={Math.max(3, placement.width / 45)} transform={`rotate(0 ${placement.x + placement.width / 2} ${placement.y + placement.height / 2})`} /><SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2} textAnchor="middle" fontSize={Math.max(12, Math.min(32, placement.width / 10))} fontWeight="900" fill="#dc2626">×</SvgText></G>}
+        </G>;
+      })}
+    </Svg>
+  </View>;
 
   return (
     <View style={styles.wrap} accessibilityLabel={`병합 ${plan.mergeGroupId} 롤 미리보기`}>
@@ -39,22 +54,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, c
       <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>
-      {result.placements.length > 0 ? <ScrollView horizontal style={styles.canvasScroll} contentContainerStyle={styles.canvasContent}>
-        <View style={[styles.canvas, { height }]}>
-          <Svg width="100%" height="100%" viewBox={`0 0 1220 ${Math.max(result.usedLengthMm, 1)}`} accessibilityLabel="병합 롤 배치 도면">
-            <Rect x={0} y={0} width={1220} height={Math.max(result.usedLengthMm, 1)} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
-            {result.placements.map((placement) => {
-              const color = colorFor(placement.sourceId, sourceIds);
-              const active = selectedId === placement.id;
-              return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
-                <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
-                <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={color}>{placement.id}</SvgText>
-                {job?.isCuttingComplete && <G><Rect x={placement.x + placement.width * 0.18} y={placement.y + placement.height * 0.18} width={placement.width * 0.64} height={placement.height * 0.64} fill="none" stroke="#dc2626" strokeWidth={Math.max(3, placement.width / 45)} transform={`rotate(0 ${placement.x + placement.width / 2} ${placement.y + placement.height / 2})`} /><SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2} textAnchor="middle" fontSize={Math.max(12, Math.min(32, placement.width / 10))} fontWeight="900" fill="#dc2626">×</SvgText></G>}
-              </G>;
-            })}
-          </Svg>
-        </View>
-      </ScrollView> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
+      {result.placements.length > 0 ? compact ? <View style={[styles.canvasViewport, { height: compactHeight }]}>{renderCanvas(compactHeight)}</View> : <ScrollView horizontal nestedScrollEnabled style={styles.canvasScroll} contentContainerStyle={styles.canvasContent}>{renderCanvas(height)}</ScrollView> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
       {!compact && plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
         <Text style={styles.remnantTitle}>자투리 롤 사용 도면</Text>
         {plan.remnantUses.map((use) => {
@@ -88,7 +88,7 @@ const styles = StyleSheet.create({
   heading: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 },
   copy: { flex: 1 }, title: { fontSize: 12, fontWeight: '800', color: '#115e59' }, meta: { marginTop: 3, fontSize: 10, color: '#64748b' }, badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
-  canvasScroll: { marginTop: 11, maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasContent: { minWidth: '100%' }, canvas: { width: '100%', minWidth: 320, overflow: 'hidden', borderRadius: 9 },
+  canvasViewport: { marginTop: 11, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasScroll: { marginTop: 11, maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasContent: { minWidth: '100%' }, canvas: { width: '100%', minWidth: 320, overflow: 'hidden', borderRadius: 9 },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
