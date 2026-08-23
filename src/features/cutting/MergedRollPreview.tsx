@@ -11,6 +11,7 @@ type Props = {
   job?: SavedMergedCuttingJob;
   busy?: boolean;
   onToggleComplete?(): void;
+  compact?: boolean;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -18,7 +19,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, compact = false }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -54,7 +55,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }:
           </Svg>
         </View>
       </ScrollView> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
-      {plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
+      {!compact && plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
         <Text style={styles.remnantTitle}>자투리 롤 사용 도면</Text>
         {plan.remnantUses.map((use) => {
           const remnantHeight = Math.max(180, Math.min(460, (use.lengthMm / Math.max(use.widthMm, 1)) * 320));
@@ -70,14 +71,14 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete }:
           </View>;
         })}
       </View>}
-      {selected && <View style={styles.detail}>
+      {!compact && selected && <View style={styles.detail}>
         <Text style={styles.detailTitle}>제품 {selected.id} 상세</Text>
         <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm · {selected.rotated ? '90도 회전' : '기본 방향'} · 위치 ({selected.x}, {selected.y})mm</Text>
       </View>}
-      {onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      <View style={styles.list}>
+      {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
+      {!compact && <View style={styles.list}>
         {result.placements.map((placement) => <TouchableOpacity key={placement.id} accessibilityRole="button" accessibilityLabel={`병합 제품 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={[styles.item, selectedId === placement.id && styles.itemActive]}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · 90°' : ''}</Text></TouchableOpacity>)}
-      </View>
+      </View>}
     </View>
   );
 }
