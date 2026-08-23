@@ -40,4 +40,33 @@ describe('Cloudflare library adapter', () => {
 
     await expect(adapter.get('key')).rejects.toThrow('Cloudflare 프로젝트 요청 시간이 초과되었습니다');
   });
+
+  it('does not let a stale concurrent GET overwrite the ETag after a successful PUT', async () => {
+    let version = 'v1';
+    let getCount = 0;
+    let releaseStaleRead: ((response: Response) => void) | undefined;
+    const staleRead = new Promise<Response>((resolve) => { releaseStaleRead = resolve; });
+    const fetchImpl = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        const expected = new Headers(init.headers).get('If-Match')?.replace(/^"|"$/g, '');
+        if (expected !== version) return Promise.resolve(new Response('{}', { status: 409 }));
+        version = 'v2';
+        return Promise.resolve(new Response('{}', { status: 200, headers: { ETag: '"v2"' } }));
+      }
+      getCount += 1;
+      if (getCount === 2) return staleRead;
+      return Promise.resolve(new Response('{}', { status: 200, headers: { ETag: `"${version}"` } }));
+    });
+    const adapter = createCloudflareLibraryAdapter({ baseUrl: 'https://film.example.com', fetchImpl });
+
+    await adapter.get('key');
+    const pendingRead = adapter.get('key');
+    await adapter.set('key', '{}');
+    releaseStaleRead!(new Response('{}', { status: 200, headers: { ETag: '"v1"' } }));
+    await pendingRead;
+    await expect(adapter.set('key', '{}')).resolves.toBeUndefined();
+
+    const putCalls = fetchImpl.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(new Headers(putCalls[1]?.[1]?.headers).get('If-Match')).toBe('"v2"');
+  });
 });

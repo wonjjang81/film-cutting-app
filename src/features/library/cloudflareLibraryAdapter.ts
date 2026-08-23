@@ -16,6 +16,12 @@ function endpoint(baseUrl: string): string {
 /** KeyValueAdapter bridge for the Pages Functions /api/library endpoint. */
 export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, timeoutMs = DEFAULT_TIMEOUT_MS }: CloudflareLibraryAdapterOptions): KeyValueAdapter {
   let etag: string | null = null;
+  // Reads and writes can overlap (for example, a refresh while a mutation is
+  // saving). Reserve a monotonically increasing sequence for each request so
+  // a response that started earlier cannot replace metadata established by a
+  // later write.
+  let requestSequence = 0;
+  let latestEtagSequence = 0;
   const request = async (input: RequestInfo | URL, init: RequestInit): Promise<Response> => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -32,19 +38,33 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
   };
   return {
     async get(): Promise<string | null> {
+      const sequence = ++requestSequence;
       const response = await request(endpoint(baseUrl), { credentials: 'include', headers: { Accept: 'application/json' } });
-      if (response.status === 404) { etag = null; return null; }
+      if (response.status === 404) {
+        if (sequence >= latestEtagSequence) {
+          latestEtagSequence = sequence;
+          etag = null;
+        }
+        return null;
+      }
       if (!response.ok) throw new Error(`Cloudflare 프로젝트 조회 실패 (${response.status}).`);
-      etag = response.headers.get('ETag');
+      if (sequence >= latestEtagSequence) {
+        latestEtagSequence = sequence;
+        etag = response.headers.get('ETag');
+      }
       return response.text();
     },
     async set(_key, value): Promise<void> {
+      const sequence = ++requestSequence;
+      // Reserve this sequence before awaiting the PUT. Any GET already in
+      // flight is now stale and must not overwrite the ETag returned by it.
+      latestEtagSequence = sequence;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (etag) headers['If-Match'] = etag;
       const response = await request(endpoint(baseUrl), { credentials: 'include', method: 'PUT', headers, body: value });
       if (response.status === 409) throw new Error('다른 기기에서 프로젝트가 변경되었습니다. 최신 데이터를 불러온 후 다시 시도해 주세요.');
       if (!response.ok) throw new Error(`Cloudflare 프로젝트 저장 실패 (${response.status}).`);
-      etag = response.headers.get('ETag');
+      if (sequence === latestEtagSequence) etag = response.headers.get('ETag');
     },
   };
 }
