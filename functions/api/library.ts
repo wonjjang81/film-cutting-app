@@ -18,6 +18,8 @@ function corsHeaders(request: Request, env: CloudflareEnv): Record<string, strin
     'Access-Control-Allow-Origin': allowedOrigin,
     'Access-Control-Allow-Headers': 'Content-Type, If-Match',
     'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+    'Cache-Control': 'no-store, no-cache, must-revalidate',
+    Pragma: 'no-cache',
     Vary: 'Origin',
   };
   if (allowedOrigin !== '*') headers['Access-Control-Allow-Credentials'] = 'true';

@@ -39,7 +39,7 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
   return {
     async get(): Promise<string | null> {
       const sequence = ++requestSequence;
-      const response = await request(endpoint(baseUrl), { credentials: 'include', headers: { Accept: 'application/json' } });
+      const response = await request(endpoint(baseUrl), { credentials: 'include', cache: 'no-store', headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' } });
       if (response.status === 404) {
         if (sequence >= latestEtagSequence) {
           latestEtagSequence = sequence;
@@ -61,7 +61,7 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
       latestEtagSequence = sequence;
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (etag) headers['If-Match'] = etag;
-      const response = await request(endpoint(baseUrl), { credentials: 'include', method: 'PUT', headers, body: value });
+      const response = await request(endpoint(baseUrl), { credentials: 'include', cache: 'no-store', method: 'PUT', headers: { ...headers, 'Cache-Control': 'no-cache' }, body: value });
       if (response.status === 409) throw new Error('다른 기기에서 프로젝트가 변경되었습니다. 최신 데이터를 불러온 후 다시 시도해 주세요.');
       if (!response.ok) throw new Error(`Cloudflare 프로젝트 저장 실패 (${response.status}).`);
       if (sequence === latestEtagSequence) etag = response.headers.get('ETag');
