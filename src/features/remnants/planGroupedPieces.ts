@@ -46,6 +46,10 @@ export type MergedRemnantUse = {
   result: MergedRollResult;
 };
 
+/** Group IDs used by the input screen. Unassigned pieces share the automatic bucket. */
+export const AUTO_MERGE_GROUP_ID = 'auto';
+export const DISABLED_MERGE_GROUP_ID = 'none';
+
 function applyDelta(inventory: readonly FilmRemnant[], plan: RemnantPlan): FilmRemnant[] {
   const removed = new Set(plan.inventoryDelta.removeIds);
   return [...inventory.filter((item) => !removed.has(item.id)), ...plan.inventoryDelta.add.map((item) => ({ ...item }))];
@@ -71,10 +75,11 @@ export function planMergedGroups(
 ): MergedGroupPlan[] {
   const buckets = new Map<string, GroupedPieceRequest[]>();
   for (const request of requests) {
-    if (!request.mergeGroupId) continue;
-    const bucket = buckets.get(request.mergeGroupId) ?? [];
+    const mergeGroupId = request.mergeGroupId ?? AUTO_MERGE_GROUP_ID;
+    if (mergeGroupId === DISABLED_MERGE_GROUP_ID) continue;
+    const bucket = buckets.get(mergeGroupId) ?? [];
     bucket.push(request);
-    buckets.set(request.mergeGroupId, bucket);
+    buckets.set(mergeGroupId, bucket);
   }
   let working = inventory.map((item) => ({ ...item }));
   return [...buckets.entries()].filter(([, entries]) => entries.length > 1).map(([mergeGroupId, entries]) => {

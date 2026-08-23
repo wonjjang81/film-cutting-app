@@ -34,6 +34,20 @@ describe('planGroupedPieces', () => {
     ]));
   });
 
+  it('combines unassigned groups on one new roll without requiring product numbers', () => {
+    const requests: GroupedPieceRequest[] = [
+      { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 100, pieceLengthMm: 100 } },
+      { groupId: 'g2', groupName: '그룹 2', pieceId: 'p2', pieceName: '조각 2', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 120, pieceLengthMm: 80 } },
+    ];
+
+    const [plan] = planMergedGroups(requests, 1220, [], false);
+
+    expect(plan?.sourceIds).toEqual(['g1-p1', 'g2-p2']);
+    expect(plan?.result.placements).toHaveLength(2);
+    expect(plan?.result.usedLengthMm).toBe(110);
+    expect(plan?.newRollQuantity).toBe(2);
+  });
+
   it('does not use a remnant from another brand or product in a merged group', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', mergeGroupId: '1', request: { brand: '영림', productNumber: 'P1', remnants: [], ...base } },
