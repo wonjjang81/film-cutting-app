@@ -5,6 +5,7 @@ import {
   type FilmRemnant,
   type SavedCuttingJob,
   type SavedMergedCuttingJob,
+  type SavedProject,
 } from './models';
 import { createLibraryRepository, type KeyValueAdapter } from './libraryRepository';
 
@@ -238,6 +239,21 @@ describe('library repository', () => {
     const loaded = await repository.load();
     expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-2', 'job-1']);
     expect(loaded.document.mergedJobs).toHaveLength(1);
+  });
+
+  it('saves a project bundle as one replaceable project and removes its old records', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const first = job(1, { name: '그룹 1 · 조각 1 작업' });
+    const second = job(2, { name: '그룹 1 · 조각 2 작업' });
+    const project: SavedProject = { id: 'project-1', name: '현장 A', jobIds: [first.id, second.id], mergedJobIds: [], materialCostPerM: 10_000, constructionCostPerM2: 15_000, createdAt: timestamp, updatedAt: timestamp };
+    await repository.saveProjectBundle(project, [first, second], []);
+
+    const replacement = job(3, { name: '그룹 1 · 조각 1 작업' });
+    await repository.saveProjectBundle({ ...project, jobIds: [replacement.id], updatedAt: '2026-08-16T00:01:00.000Z' }, [replacement], []);
+
+    const loaded = await repository.load();
+    expect(loaded.document.projects).toEqual([expect.objectContaining({ id: 'project-1', name: '현장 A', jobIds: ['job-3'] })]);
+    expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-3']);
   });
 
   it('replays a mutation once after an optimistic concurrency conflict', async () => {

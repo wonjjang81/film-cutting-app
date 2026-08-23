@@ -16,7 +16,7 @@ import { createWorkOrderHtml } from '../../src/features/export/createWorkOrderHt
 import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { InventoryDelta } from '../../src/features/library/libraryRepository';
-import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
+import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob, SavedProject } from '../../src/features/library/models';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
@@ -72,13 +72,16 @@ const statusCopy = {
 } as const;
 
 export default function FilmCutInputScreen() {
-  const { jobId: routeJobId } = useLocalSearchParams<{ jobId?: string }>();
+  const { jobId: routeJobId, projectId: routeProjectId, newProject: routeNewProject } = useLocalSearchParams<{ jobId?: string; projectId?: string; newProject?: string }>();
   const routedJobRef = useRef<string | null>(null);
+  const routedProjectRef = useRef<string | null>(null);
   const { width } = useWindowDimensions();
   const wide = width >= 1000;
   const libraryWide = width >= 1160;
   const [form, setForm] = useState<CuttingFormState>(initialForm);
   const [groups, setGroups] = useState<CuttingGroupDraft[]>(() => [newGroupDraft(1)]);
+  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState('새 프로젝트');
   const [activeGroupId, setActiveGroupId] = useState('group-1');
   const [activePieceId, setActivePieceId] = useState('piece-1');
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
@@ -169,6 +172,31 @@ export default function FilmCutInputScreen() {
     return loaded.document;
   }, []);
 
+  const restoreProject = useCallback((project: SavedProject, document: LibraryDocument) => {
+    const savedJobs = project.jobIds
+      .map((id) => document.jobs.find((job) => job.id === id))
+      .filter((job): job is SavedCuttingJob => Boolean(job));
+    if (savedJobs.length === 0) return;
+    const restoredGroups: CuttingGroupDraft[] = [];
+    const groupsByName = new Map<string, CuttingGroupDraft>();
+    savedJobs.forEach((job, index) => {
+      const [groupLabel, ...pieceLabel] = job.name.split(' · ');
+      const groupName = groupLabel?.trim() || `그룹 ${index + 1}`;
+      const pieceName = pieceLabel.join(' · ').replace(/ 작업$/, '').trim() || `조각 ${index + 1}`;
+      let group = groupsByName.get(groupName);
+      if (!group) {
+        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, name: groupName, form: formFromSavedJob(job), pieces: [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
+        groupsByName.set(groupName, group); restoredGroups.push(group);
+      }
+      group.pieces.push({ id: job.id, name: pieceName, form: formFromSavedJob(job) });
+      group.form = group.pieces[0]!.form;
+    });
+    const firstGroup = restoredGroups[0]!;
+    const firstPiece = firstGroup.pieces[0]!;
+    setProjectId(project.id); setProjectName(project.name); setGroups(restoredGroups); setActiveGroupId(firstGroup.id); setActivePieceId(firstPiece.id); setForm(firstPiece.form);
+    setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
+  }, []);
+
   const updateActiveForm: React.Dispatch<React.SetStateAction<CuttingFormState>> = (updater) => {
     setForm((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
@@ -209,6 +237,20 @@ export default function FilmCutInputScreen() {
     if (id === activeGroupId) selectGroup(remaining[0]!);
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
+  useEffect(() => {
+    const id = Array.isArray(routeProjectId) ? routeProjectId[0] : routeProjectId;
+    if (!id || routedProjectRef.current === id || library.projects === undefined) return;
+    const project = library.projects.find((item) => item.id === id);
+    if (!project) return;
+    routedProjectRef.current = id;
+    restoreProject(project, library);
+  }, [library, restoreProject, routeProjectId]);
+  useEffect(() => {
+    if (routeNewProject !== '1' || routedProjectRef.current === 'new') return;
+    routedProjectRef.current = 'new';
+    const fresh = newGroupDraft(1);
+    setProjectId(null); setProjectName('새 프로젝트'); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
+  }, [routeNewProject]);
   useEffect(() => {
     void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups)));
   }, [groups]);
@@ -381,7 +423,7 @@ export default function FilmCutInputScreen() {
   };
 
   const reset = () => {
-    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
+    const fresh = newGroupDraft(1); setProjectId(null); setProjectName('새 프로젝트'); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
   };
 
   const confirmJob = async () => {
@@ -476,16 +518,32 @@ export default function FilmCutInputScreen() {
     if (!draftJob && !pendingBatchSave) return;
     setBusy(true); setError(null);
     try {
-      if (pendingBatchSave) {
-        await repository.saveBatchJobs(pendingBatchSave.jobs, pendingBatchSave.mergedJobs);
-        setPendingBatchSave(null);
-        await refreshLibrary();
-        setNotice('계산된 전체 그룹 작업 이력을 저장했습니다.');
-      } else if (draftJob) {
-        await repository.saveJob(draftJob);
-        await refreshLibrary();
-        setNotice('현재 계산 결과를 프로젝트로 저장했습니다.');
-      }
+      const latest = await repository.load();
+      const name = projectName.trim() || '새 프로젝트';
+      const existingByName = latest.document.projects?.find((project) => project.name.trim() === name);
+      const nowMs = Date.now();
+      const id = projectId ?? existingByName?.id ?? createUniqueUiId('project', nowMs, (latest.document.projects ?? []).map((project) => project.id));
+      const existing = (latest.document.projects ?? []).find((project) => project.id === id);
+      const jobs = pendingBatchSave?.jobs ?? (draftJob ? [draftJob] : []);
+      const mergedJobs = pendingBatchSave?.mergedJobs ?? [];
+      const preservedJobs = existing
+        ? latest.document.jobs.filter((job) => existing.jobIds.includes(job.id) && !jobs.some((item) => item.id === job.id || item.name === job.name))
+        : [];
+      const preservedMergedJobs = existing
+        ? latest.document.mergedJobs.filter((job) => existing.mergedJobIds.includes(job.id) && !mergedJobs.some((item) => item.id === job.id || item.name === job.name))
+        : [];
+      const allJobs = [...preservedJobs, ...jobs];
+      const allMergedJobs = [...preservedMergedJobs, ...mergedJobs];
+      const project: SavedProject = {
+        id, name, jobIds: allJobs.map((job) => job.id), mergedJobIds: allMergedJobs.map((job) => job.id),
+        materialCostPerM: optionalCost(groups[0]?.materialCostPerM) ?? 10_000,
+        constructionCostPerM2: optionalCost(groups[0]?.constructionCostPerM2) ?? 15_000,
+        createdAt: existing?.createdAt ?? new Date(nowMs).toISOString(), updatedAt: new Date(nowMs).toISOString(),
+      };
+      await repository.saveProjectBundle(project, allJobs, allMergedJobs);
+      setProjectId(id); setProjectName(name); setPendingBatchSave(null);
+      await refreshLibrary();
+      setNotice(`"${name}" 프로젝트를 저장했습니다.`);
     }
     catch (caught) { setError(`프로젝트를 저장하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
@@ -690,8 +748,9 @@ export default function FilmCutInputScreen() {
       {(error || notice) && <View accessibilityLiveRegion="polite" style={[styles.message, error ? styles.messageError : styles.messageInfo]}><Text style={error ? styles.messageErrorText : styles.messageInfoText}>{error ?? notice}</Text></View>}
 
       <View style={[styles.workspace, wide && styles.workspaceWide]}>
-        <View style={[styles.panel, wide && styles.inputPanelWide]}>
+          <View style={[styles.panel, wide && styles.inputPanelWide]}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
+          <View style={styles.projectNameCard}><TextField label="프로젝트명" value={projectName} onChange={setProjectName} /><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 프로젝트 시작" onPress={reset} disabled={busy} style={[styles.newProjectButton, busy && styles.disabled]}><Text style={styles.newProjectButtonText}>＋ 새 프로젝트</Text></TouchableOpacity></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={(id, mergeGroupId) => setGroups((items) => items.map((group) => group.id === id ? { ...group, mergeGroupId } : group))} onSettings={(id, patch) => setGroups((items) => items.map((group) => group.id === id ? { ...group, ...patch } : group))} />
           <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} />
           <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => updateActiveForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호 (선택)" value={form.productNumber} onChange={(productNumber) => updateActiveForm((current) => ({ ...current, productNumber }))} /></View>
@@ -789,6 +848,9 @@ function withProductionDefaults(form: CuttingFormState): CuttingFormState {
 function formFromRequest(request: RemnantPlanRequest): CuttingFormState {
   return withProductionDefaults({ brand: request.brand, productNumber: request.productNumber, rollWidth: String(request.rollWidthMm), pieceWidth: String(request.pieceWidthMm), pieceLength: String(request.pieceLengthMm), quantity: String(request.quantity), gap: String(request.gapMm), sideMargin: String(request.sideMarginMm), startEndMargin: String(request.startEndMarginMm), allowRotation: request.allowRotation });
 }
+function formFromSavedJob(job: SavedCuttingJob): CuttingFormState {
+  return formFromRequest({ brand: job.brand, productNumber: job.productNumber, rollWidthMm: job.input.rollWidthMm, pieceWidthMm: job.input.pieceWidthMm, pieceLengthMm: job.input.pieceLengthMm, quantity: job.input.quantity, gapMm: job.input.gapMm, sideMarginMm: job.input.sideMarginMm, startEndMarginMm: job.input.startEndMarginMm, allowRotation: job.input.allowRotation, remnants: [] });
+}
 function nextInventory(library: LibraryDocument, useRemnants: boolean): FilmRemnant[] {
   return useRemnants ? library.remnants.map((item) => ({ ...item })) : [];
 }
@@ -834,7 +896,7 @@ const styles = StyleSheet.create({
   message: { marginBottom: 18, padding: 13, borderRadius: 10, borderWidth: 1 }, messageInfo: { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, messageError: { borderColor: '#fecaca', backgroundColor: '#fff1f2' }, messageInfoText: { color: '#1e40af' }, messageErrorText: { color: '#991b1b' },
   workspace: { gap: 20 }, workspaceWide: { flexDirection: 'row', alignItems: 'stretch' }, panel: { minWidth: 0, padding: 21, borderRadius: 20, backgroundColor: '#fff', ...shadow }, inputPanelWide: { width: 450, flexShrink: 0 }, previewPanel: { flex: 1, minHeight: 560 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }, panelHeaderCopy: { flex: 1 }, panelTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' }, panelSubtitle: { marginTop: 5, fontSize: 12, lineHeight: 18, color: '#64748b' }, stepBadge: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#eff6ff' }, stepBadgeDark: { backgroundColor: '#0f172a' }, stepText: { fontSize: 12, fontWeight: '800', color: '#2563eb' }, stepTextLight: { color: '#fff' },
-  identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
+  projectNameCard: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', gap: 8, marginTop: 12, marginBottom: 6, padding: 10, borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#eff6ff' }, projectNameField: { flex: 1 }, newProjectButton: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 11, borderRadius: 8, backgroundColor: '#fff', borderWidth: 1, borderColor: '#93c5fd' }, newProjectButtonText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
   mergeControl: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#dbeafe' }, mergeControlLabel: { fontSize: 10, fontWeight: '800', color: '#475569' }, mergeControlButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, mergeControlButtonActive: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, mergeControlText: { fontSize: 11, fontWeight: '800', color: '#64748b' }, mergeControlTextActive: { color: '#fff' }, mergeControlHint: { flex: 1, minWidth: 150, fontSize: 10, color: '#64748b' },
   groupInputPanel: { marginBottom: 17, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fbff' }, groupInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, groupInputTitle: { fontSize: 14, fontWeight: '800', color: '#1e3a8a' }, groupInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addGroupButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#2563eb' }, addGroupButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, groupChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 }, groupChip: { minHeight: 48, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupChipActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupChipMain: { minWidth: 120, maxWidth: 190, minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 9, paddingRight: 4 }, groupChipIndex: { width: 19, height: 19, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 19, fontWeight: '800', color: '#475569' }, groupChipIndexActive: { backgroundColor: '#2563eb', color: '#fff' }, groupChipCopy: { flex: 1, minWidth: 0 }, groupChipText: { flexShrink: 1, fontSize: 11, fontWeight: '700', color: '#475569' }, groupChipTextActive: { color: '#1d4ed8' }, groupChipMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, groupChipAction: { width: 24, height: 43, alignItems: 'center', justifyContent: 'center' }, groupDeleteText: { fontSize: 17, color: '#ef4444' }, groupNameInput: { minWidth: 86, height: 30, paddingHorizontal: 5, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 5, fontSize: 11, backgroundColor: '#fff' },
   pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },

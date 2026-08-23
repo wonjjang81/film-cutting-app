@@ -117,12 +117,25 @@ export type SavedMergedCuttingJob = {
   inventoryConfirmedAt?: string;
 };
 
+/** A legacy-style project header that groups the saved piece jobs into one work item. */
+export type SavedProject = {
+  id: string;
+  name: string;
+  jobIds: string[];
+  mergedJobIds: string[];
+  materialCostPerM: number;
+  constructionCostPerM2: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type LibraryDocument = {
   version: 1;
   presets: FilmPreset[];
   jobs: SavedCuttingJob[];
   remnants: FilmRemnant[];
   mergedJobs: SavedMergedCuttingJob[];
+  projects?: SavedProject[];
 };
 
 export type LibraryLoadResult = {
