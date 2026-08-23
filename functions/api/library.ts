@@ -59,6 +59,12 @@ function responseForDocument(document: unknown, updatedAt: string, request: Requ
   return jsonResponse(document, 200, { ETag: `"${updatedAt}"`, ...corsHeaders(request, env) });
 }
 
+function versionToken(value: string | null): string | undefined {
+  if (value === null) return undefined;
+  const token = value.trim().replace(/^W\//i, '').replace(/^"|"$/g, '');
+  return token.length > 0 ? token : undefined;
+}
+
 export async function onRequestOptions({ request, env }: PagesContext<CloudflareEnv>): Promise<Response> {
   return new Response(null, { status: 204, headers: corsHeaders(request, env) });
 }
@@ -88,7 +94,7 @@ export async function onRequestPut({ request, env }: PagesContext<CloudflareEnv>
     const document = typeof body === 'object' && body !== null && 'document' in body ? (body as { document: unknown }).document : body;
     if (!validDocument(document)) throw new ApiError(400, '프로젝트 문서 구조가 올바르지 않습니다.');
     const current = await readRow(db, identity);
-    const expected = request.headers.get('If-Match')?.replace(/^"|"$/g, '');
+    const expected = versionToken(request.headers.get('If-Match'));
     if (current && expected && expected !== current.updated_at) throw new ApiError(409, '다른 기기에서 프로젝트가 변경되었습니다. 다시 불러온 후 저장해 주세요.');
     const now = new Date().toISOString();
     const documentJson = JSON.stringify(document);
