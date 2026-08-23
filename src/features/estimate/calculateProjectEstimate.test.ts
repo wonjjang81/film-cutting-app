@@ -23,6 +23,8 @@ describe('calculateProjectEstimate', () => {
     }];
     const result = calculateProjectEstimate(sources, 10_000, 15_000, undefined, [merged]);
     expect(result.jobCount).toBe(1);
+    expect(result.jobs).toHaveLength(0);
+    expect(result.mergedJobs).toHaveLength(1);
     expect(result.materialLengthM).toBe(0.71);
     expect(result.materialCost).toBe(7_100);
     expect(result.productAreaM2).toBe(10);
