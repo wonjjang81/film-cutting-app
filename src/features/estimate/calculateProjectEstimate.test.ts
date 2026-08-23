@@ -8,6 +8,7 @@ describe('calculateProjectEstimate', () => {
   it('sums jobs and applies one project discount', () => {
     const result = calculateProjectEstimate([job('a', 1000), job('b', 2000)], 10000, 15000);
     expect(result.jobCount).toBe(2);
+    expect(result.inputPieceCount).toBe(40);
     expect(result.materialLengthM).toBe(3);
     expect(result.materialAreaM2).toBeCloseTo(3.66, 5);
     expect(result.subtotal).toBe(84_900);
@@ -25,6 +26,7 @@ describe('calculateProjectEstimate', () => {
     }];
     const result = calculateProjectEstimate(sources, 10_000, 15_000, undefined, [merged]);
     expect(result.jobCount).toBe(1);
+    expect(result.inputPieceCount).toBe(40);
     expect(result.jobs).toHaveLength(0);
     expect(result.mergedJobs).toHaveLength(1);
     expect(result.materialLengthM).toBe(0.71);

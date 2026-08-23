@@ -9,7 +9,16 @@ export type ProjectEstimateLine<TJob> = {
   rates: EstimateRateSummary;
   sourceDetails?: { job: SavedCuttingJob; estimate: Estimate; rates: EstimateRateSummary }[];
 };
-export type ProjectEstimate = Estimate & { jobCount: number; jobs: ProjectEstimateLine<SavedCuttingJob>[]; mergedJobs: ProjectEstimateLine<SavedMergedCuttingJob>[]; constructionCostRange: { min: number; max: number }; totalRange: { min: number; max: number } };
+export type ProjectEstimate = Estimate & {
+  /** Number of pieces entered by the user, including quantities on merged sources. */
+  inputPieceCount: number;
+  /** Number of invoice lines (ordinary jobs plus merged rolls). */
+  jobCount: number;
+  jobs: ProjectEstimateLine<SavedCuttingJob>[];
+  mergedJobs: ProjectEstimateLine<SavedMergedCuttingJob>[];
+  constructionCostRange: { min: number; max: number };
+  totalRange: { min: number; max: number };
+};
 
 type RateOptions = { rateMode?: EstimateRateMode };
 
@@ -51,6 +60,10 @@ export function calculateProjectEstimate(
   options: RateOptions = {},
 ): ProjectEstimate {
   const rateMode = options.rateMode ?? 'group';
+  const inputPieceCount = jobs.reduce((sum, job) => {
+    const quantity = Number.isFinite(job.input.quantity) ? Math.max(0, Math.floor(job.input.quantity)) : 0;
+    return sum + quantity;
+  }, 0);
   const mergedSourceIds = new Set(mergedJobs.flatMap((mergedJob) => mergedJob.sourceJobIds));
   const details = jobs.filter((job) => !mergedSourceIds.has(job.id)).map((job) => {
     const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode);
@@ -100,5 +113,5 @@ export function calculateProjectEstimate(
     min: Math.max(0, Math.round((materialCost + constructionCostRange.min) * (1 - discountRate))),
     max: Math.max(0, Math.round((materialCost + constructionCostRange.max) * (1 - discountRate))),
   };
-  return { materialLengthM, materialAreaM2, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount, jobCount: allDetails.length, jobs: details, mergedJobs: mergedDetails, constructionCostRange, totalRange };
+  return { inputPieceCount, materialLengthM, materialAreaM2, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount, jobCount: allDetails.length, jobs: details, mergedJobs: mergedDetails, constructionCostRange, totalRange };
 }
