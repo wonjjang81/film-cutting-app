@@ -228,6 +228,18 @@ describe('library repository', () => {
     expect(jobs.at(-1)!.id).toBe('job-2');
   });
 
+  it('persists a whole group calculation in one storage mutation', async () => {
+    const adapter = trackedAdapter();
+    const repository = createLibraryRepository(adapter);
+
+    await repository.saveBatchJobs([job(1), job(2)], [mergedJob()]);
+
+    expect(adapter.writes).toBe(1);
+    const loaded = await repository.load();
+    expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-2', 'job-1']);
+    expect(loaded.document.mergedJobs).toHaveLength(1);
+  });
+
   it('confirms multiple jobs in one inventory transaction and prevents a second confirmation', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     const first = job(1, { id: 'batch-job-1' });

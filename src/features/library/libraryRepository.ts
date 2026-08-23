@@ -35,6 +35,8 @@ export type LibraryRepository = {
   savePreset(preset: FilmPreset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   saveJob(job: SavedCuttingJob): Promise<void>;
+  /** Saves a complete group-calculation result in one read-modify-write transaction. */
+  saveBatchJobs(jobs: readonly SavedCuttingJob[], mergedJobs: readonly SavedMergedCuttingJob[]): Promise<void>;
   renameJob(id: string, name: string, updatedAt: string): Promise<void>;
   deleteJob(id: string): Promise<void>;
   saveMergedJob(job: SavedMergedCuttingJob): Promise<void>;
@@ -529,6 +531,17 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       const valid = assertValid(job, validateJob, 'job');
       await mutate((document) => {
         document.jobs = orderJobs(replaceById(document.jobs, valid));
+      });
+    },
+
+    async saveBatchJobs(jobs, mergedJobs): Promise<void> {
+      const validJobs = jobs.map((job) => assertValid(job, validateJob, 'job'));
+      const validMergedJobs = mergedJobs.map((job) => assertValid(job, validateMergedJob, 'merged cutting job'));
+      const allIds = [...validJobs.map((job) => job.id), ...validMergedJobs.map((job) => job.id)];
+      if (new Set(allIds).size !== allIds.length) throw new Error('동일 작업을 여러 번 저장할 수 없습니다.');
+      await mutate((document) => {
+        document.jobs = orderJobs(validJobs.reduce((items, job) => replaceById(items, job), document.jobs));
+        document.mergedJobs = orderMergedJobs(validMergedJobs.reduce((items, job) => replaceById(items, job), document.mergedJobs));
       });
     },
 

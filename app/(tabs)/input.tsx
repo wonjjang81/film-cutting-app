@@ -181,15 +181,17 @@ export default function FilmCutInputScreen() {
       const sourceJobIds = new Map<string, string>();
       const savedJobIds: string[] = [];
       const timestamp = Date.now();
+      const jobsToSave: SavedCuttingJob[] = [];
       for (const [index, entry] of planned.entries()) {
         const id = createUniqueUiId('job', timestamp + index, generatedIds);
         generatedIds.push(id);
         savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
         const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
-        await repository.saveJob(job);
+        jobsToSave.push(job);
       }
       const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
+      const mergedJobsToSave: SavedMergedCuttingJob[] = [];
       for (const [index, entry] of merged.entries()) {
         const mergedJob: SavedMergedCuttingJob = {
           id: createUniqueUiId('merged-job', timestamp + 1000 + index, generatedMergedIds),
@@ -212,8 +214,9 @@ export default function FilmCutInputScreen() {
           remnantSummary: entry.remnantUses.map((use) => ({ id: use.remnantId, widthMm: use.widthMm, lengthMm: use.lengthMm, quantity: 1 })),
         };
         generatedMergedIds.push(mergedJob.id);
-        await repository.saveMergedJob(mergedJob);
+        mergedJobsToSave.push(mergedJob);
       }
+      await repository.saveBatchJobs(jobsToSave, mergedJobsToSave);
       setBatchPlans(confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] })));
       setMergedGroupPlans(merged);
       const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
