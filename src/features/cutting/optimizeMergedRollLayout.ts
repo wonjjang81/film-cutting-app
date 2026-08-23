@@ -87,10 +87,15 @@ export function optimizeMergedRollLayout(input: MergedRollInput): MergedRollResu
   if (!Number.isFinite(input.rollWidthMm) || input.rollWidthMm <= 0) throw new Error('롤 폭은 0보다 커야 합니다.');
   if (input.maxLengthMm !== undefined && (!Number.isFinite(input.maxLengthMm) || input.maxLengthMm <= 0)) throw new Error('최대 길이는 0보다 커야 합니다.');
   const valid = input.pieces.filter((piece) => piece.widthMm > 0 && piece.lengthMm > 0 && piece.quantity > 0);
+  // Keep the legacy app's deterministic candidate order. The old planner
+  // tried the same placement heuristic four times, ordering pieces by area,
+  // height, width, then longest edge. This matters for equal-length layouts:
+  // the first candidate becomes the visible cut order and row pattern.
   const strategies = [
     (piece: MergedRollPiece) => piece.widthMm * piece.lengthMm,
-    (piece: MergedRollPiece) => Math.max(piece.widthMm, piece.lengthMm),
     (piece: MergedRollPiece) => piece.lengthMm,
+    (piece: MergedRollPiece) => piece.widthMm,
+    (piece: MergedRollPiece) => Math.max(piece.widthMm, piece.lengthMm),
   ];
   let best: MergedPlacement[] = [];
   let bestLength = Number.POSITIVE_INFINITY;

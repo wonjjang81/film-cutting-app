@@ -27,4 +27,20 @@ describe('optimizeMergedRollLayout', () => {
     expect(result.producedQuantity).toBe(2);
     expect(result.usedLengthMm).toBe(100);
   });
+
+  it('keeps the legacy four-order search deterministic for equal mixed-roll lengths', () => {
+    const input = { rollWidthMm: 1_220, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, pieces: [
+      { sourceId: 'wide-short', widthMm: 600, lengthMm: 300, quantity: 1, allowRotation: false },
+      { sourceId: 'narrow-tall', widthMm: 300, lengthMm: 600, quantity: 1, allowRotation: false },
+      { sourceId: 'square', widthMm: 300, lengthMm: 300, quantity: 2, allowRotation: false },
+    ] } as const;
+    const first = optimizeMergedRollLayout(input);
+    const second = optimizeMergedRollLayout(input);
+    expect(first).toEqual(second);
+    expect(first.producedQuantity).toBe(4);
+    expect(first.usedLengthMm).toBe(610);
+    expect(first.placements.map((placement) => placement.sourceId)).toEqual([
+      'wide-short', 'narrow-tall', 'square', 'square',
+    ]);
+  });
 });

@@ -59,8 +59,11 @@ function newPieceDraft(index: number): CuttingPieceDraft {
   return { id: index === 1 ? 'piece-1' : `piece-${Date.now()}-${index}`, name: `조각 ${index}`, form: { ...initialForm } };
 }
 function newGroupDraft(index: number): CuttingGroupDraft {
-  const piece = newPieceDraft(1);
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: `그룹 ${index}`, form: piece.form, pieces: [piece], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  // The legacy app opened each group with three editable piece rows. Keep
+  // those rows available while allowing untouched 0×0 rows to be ignored by
+  // calculation, just as the legacy group estimator did.
+  const pieces = [1, 2, 3].map((pieceIndex) => newPieceDraft(pieceIndex));
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, name: `그룹 ${index}`, form: pieces[0]!.form, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -269,7 +272,10 @@ export default function FilmCutInputScreen() {
       const requests: GroupedPieceRequest[] = targetGroups.flatMap((group) => group.pieces.map((piece) => {
         const normalized = withProductionDefaults(piece.form);
         return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.name, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
-      }));
+      })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
+        && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
+        && Number.isInteger(request.quantity) && request.quantity > 0);
+      if (requests.length === 0) throw new Error('재단 폭·길이·수량이 입력된 조각이 없습니다.');
       const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM, nextInventory(latest, useRemnants), useRemnants);
       const mergedSourceIds = new Set(merged.flatMap((entry) => entry.sourceIds));
       const mergedInventory = nextInventory(latest, useRemnants);
