@@ -177,6 +177,11 @@ export default function FilmCutInputScreen() {
       .map((id) => document.jobs.find((job) => job.id === id))
       .filter((job): job is SavedCuttingJob => Boolean(job));
     if (savedJobs.length === 0) return;
+    const mergeGroupByName = new Map<string, string>();
+    project.mergedJobIds.forEach((id) => {
+      const merged = document.mergedJobs.find((job) => job.id === id);
+      merged?.groupNames.forEach((name) => mergeGroupByName.set(name, merged.mergeGroupId));
+    });
     const restoredGroups: CuttingGroupDraft[] = [];
     const groupsByName = new Map<string, CuttingGroupDraft>();
     savedJobs.forEach((job, index) => {
@@ -185,7 +190,7 @@ export default function FilmCutInputScreen() {
       const pieceName = pieceLabel.join(' · ').replace(/ 작업$/, '').trim() || `조각 ${index + 1}`;
       let group = groupsByName.get(groupName);
       if (!group) {
-        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, name: groupName, form: formFromSavedJob(job), pieces: [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
+        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, name: groupName, form: formFromSavedJob(job), pieces: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
         groupsByName.set(groupName, group); restoredGroups.push(group);
       }
       group.pieces.push({ id: job.id, name: pieceName, form: formFromSavedJob(job) });
