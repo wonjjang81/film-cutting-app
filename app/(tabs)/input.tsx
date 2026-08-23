@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
@@ -16,6 +17,7 @@ import { LibraryDrawer } from '../../src/features/library/LibraryDrawer';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { InventoryDelta } from '../../src/features/library/libraryRepository';
 import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
+import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
 import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
@@ -70,6 +72,8 @@ export default function FilmCutInputScreen() {
   const [candidateComparison, setCandidateComparison] = useState<ContinuousRollCandidateComparison[]>([]);
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
   const [mergedGroupPlans, setMergedGroupPlans] = useState<MergedGroupPlan[]>([]);
+  const [autoSaveHistory, setAutoSaveHistory] = useState(false);
+  const [pendingBatchSave, setPendingBatchSave] = useState<{ jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -81,9 +85,9 @@ export default function FilmCutInputScreen() {
   );
   const activeMergedJob = useMemo(
     () => activeMergedPlan
-      ? library.mergedJobs.find((job) => job.mergeGroupId === activeMergedPlan.mergeGroupId && job.sourceJobIds.includes(draftJob?.id ?? ''))
+      ? [...library.mergedJobs, ...(pendingBatchSave?.mergedJobs ?? [])].find((job) => job.mergeGroupId === activeMergedPlan.mergeGroupId && job.sourceJobIds.includes(draftJob?.id ?? ''))
       : undefined,
-    [activeMergedPlan, draftJob?.id, library.mergedJobs],
+    [activeMergedPlan, draftJob?.id, library.mergedJobs, pendingBatchSave],
   );
   const activeMergedUsage = useMemo(() => {
     if (!activeMergedPlan) return undefined;
@@ -141,6 +145,13 @@ export default function FilmCutInputScreen() {
     if (id === activeGroupId) selectGroup(remaining[0]!);
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
+  useEffect(() => {
+    void AsyncStorage.getItem(AUTO_SAVE_HISTORY_STORAGE_KEY).then((stored) => setAutoSaveHistory(parseAutoSaveHistory(stored))).catch(() => setAutoSaveHistory(false));
+  }, []);
+  const toggleAutoSaveHistory = (value: boolean) => {
+    setAutoSaveHistory(value);
+    void AsyncStorage.setItem(AUTO_SAVE_HISTORY_STORAGE_KEY, String(value));
+  };
 
   const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now(), remnants = inventory.remnants, completed = false, completedIds: number[] = [], preferredJobId?: string) => {
     const normalizedForm = withProductionDefaults(nextForm);
@@ -168,13 +179,18 @@ export default function FilmCutInputScreen() {
     try {
       const latest = await refreshLibrary();
       const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : [], completed, completedIds, preferredJobId);
-      await repository.saveJob(computed.nextJob);
-      await refreshLibrary();
-      setNotice('계산 및 프로젝트 저장이 완료되었습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
+      setPendingBatchSave(null);
+      if (autoSaveHistory) {
+        await repository.saveJob(computed.nextJob);
+        await refreshLibrary();
+        setNotice('계산 결과를 작업 이력에 자동 저장했습니다. 작업 확정 전까지 재고는 변경되지 않습니다.');
+      } else {
+        setNotice('계산이 완료되었습니다. 작업 이력에는 저장하지 않았습니다. 필요하면 프로젝트 저장을 눌러 주세요.');
+      }
     } catch (caught) {
       setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(messageOf(caught));
     } finally { setBusy(false); }
-  }, [computeAgainst, form, refreshLibrary, useRemnants]);
+  }, [autoSaveHistory, computeAgainst, form, refreshLibrary, useRemnants]);
 
   const calculateAllGroups = async () => {
     setBusy(true); setError(null); setNotice(null);
@@ -242,13 +258,18 @@ export default function FilmCutInputScreen() {
         generatedMergedIds.push(mergedJob.id);
         mergedJobsToSave.push(mergedJob);
       }
-      await repository.saveBatchJobs(jobsToSave, mergedJobsToSave);
+      if (autoSaveHistory) {
+        await repository.saveBatchJobs(jobsToSave, mergedJobsToSave);
+        setPendingBatchSave(null);
+      } else {
+        setPendingBatchSave({ jobs: jobsToSave, mergedJobs: mergedJobsToSave });
+      }
       setBatchPlans(confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] })));
       setMergedGroupPlans(merged);
       const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
       if (active) activateBatchPlan(active);
-      await refreshLibrary();
-      setNotice(`${planned.length}개 조각의 그룹 통합 배치와 ${merged.length}개 병합 롤을 저장했습니다.${merged.some((entry) => entry.remnantUses.length > 0) ? ' 병합 롤 자투리 사용 계획도 반영했습니다.' : ''}`);
+      if (autoSaveHistory) await refreshLibrary();
+      setNotice(`${planned.length}개 조각의 그룹 통합 배치 계산이 완료되었습니다.${autoSaveHistory ? ' 작업 이력에 자동 저장했습니다.' : ' 작업 이력에는 저장하지 않았습니다. 프로젝트 저장을 눌러 보관할 수 있습니다.'}${merged.some((entry) => entry.remnantUses.length > 0) ? ' 병합 롤 자투리 사용 계획도 반영했습니다.' : ''}`);
     } catch (caught) { setError(`그룹 통합 배치를 계산하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
@@ -262,7 +283,7 @@ export default function FilmCutInputScreen() {
   };
 
   const reset = () => {
-    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
+    const fresh = newGroupDraft(1); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setUseRemnants(false); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); setError(null); setNotice(null);
   };
 
   const confirmJob = async () => {
@@ -290,14 +311,16 @@ export default function FilmCutInputScreen() {
     if (!batchPlans || batchPlans.length === 0) return;
     const ids = batchPlans.map((entry) => entry.savedJobId).filter((id): id is string => Boolean(id));
     if (ids.length !== batchPlans.length) { setError('그룹 작업 ID가 없어 다시 계산해야 합니다.'); return; }
-    const merged = library.mergedJobs.find((job) => job.isCuttingComplete && job.sourceJobIds.some((id) => ids.includes(id)));
-    if (merged) { setError(`병합 롤 ${merged.name}이 이미 완료되어 순차 자투리 배치를 함께 확정할 수 없습니다.`); return; }
-    const latest = await repository.load();
-    const jobs = ids.map((id) => latest.document.jobs.find((job) => job.id === id));
-    if (jobs.some((job) => job === undefined)) { setError('확정 대상 작업이 변경되어 다시 계산해야 합니다.'); return; }
-    if (jobs.some((job) => job!.isInventoryConfirmed)) { setError('이미 재고 확정된 작업이 포함되어 있습니다.'); return; }
     setBusy(true); setError(null); setNotice(null);
     try {
+      // 자동저장 OFF 상태에서는 계산 결과가 임시 상태이므로, 명시적인
+      // 재고 확정 시점에만 저장한 뒤 동일한 최신 문서를 기준으로 검증한다.
+      const source = pendingBatchSave ? await ensurePendingBatchSaved() : (await repository.load()).document;
+      const merged = source.mergedJobs.find((job) => job.isCuttingComplete && job.sourceJobIds.some((id) => ids.includes(id)));
+      if (merged) { setError(`병합 롤 ${merged.name}이 이미 완료되어 순차 자투리 배치를 함께 확정할 수 없습니다.`); return; }
+      const jobs = ids.map((id) => source.jobs.find((job) => job.id === id));
+      if (jobs.some((job) => job === undefined)) { setError('확정 대상 작업이 변경되어 다시 계산해야 합니다.'); return; }
+      if (jobs.some((job) => job!.isInventoryConfirmed)) { setError('이미 재고 확정된 작업이 포함되어 있습니다.'); return; }
       const delta = aggregateInventoryDelta(batchPlans);
       await repository.confirmJobs(jobs as SavedCuttingJob[], delta);
       await refreshLibrary();
@@ -347,10 +370,27 @@ export default function FilmCutInputScreen() {
   const deletePreset = async (id: string) => withBusy(async () => { await repository.deletePreset(id); await refreshLibrary(); }, setBusy, setError);
   const deleteJob = async (id: string) => withBusy(async () => { await repository.deleteJob(id); await refreshLibrary(); }, setBusy, setError);
   const renameJob = async (id: string, name: string) => withBusy(async () => { await repository.renameJob(id, name, new Date().toISOString()); await refreshLibrary(); }, setBusy, setError);
+  const ensurePendingBatchSaved = async (): Promise<LibraryDocument> => {
+    if (!pendingBatchSave) return library;
+    await repository.saveBatchJobs(pendingBatchSave.jobs, pendingBatchSave.mergedJobs);
+    setPendingBatchSave(null);
+    return refreshLibrary();
+  };
   const saveProject = async () => {
-    if (!draftJob) return;
+    if (!draftJob && !pendingBatchSave) return;
     setBusy(true); setError(null);
-    try { await repository.saveJob(draftJob); await refreshLibrary(); setNotice('현재 계산 결과를 프로젝트로 저장했습니다.'); }
+    try {
+      if (pendingBatchSave) {
+        await repository.saveBatchJobs(pendingBatchSave.jobs, pendingBatchSave.mergedJobs);
+        setPendingBatchSave(null);
+        await refreshLibrary();
+        setNotice('계산된 전체 그룹 작업 이력을 저장했습니다.');
+      } else if (draftJob) {
+        await repository.saveJob(draftJob);
+        await refreshLibrary();
+        setNotice('현재 계산 결과를 프로젝트로 저장했습니다.');
+      }
+    }
     catch (caught) { setError(`프로젝트를 저장하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
@@ -424,14 +464,15 @@ export default function FilmCutInputScreen() {
     finally { setBusy(false); }
   };
   const toggleMergedComplete = async (id: string) => {
-    const current = library.mergedJobs.find((job) => job.id === id);
-    if (!current) return;
-    if (!current.isCuttingComplete && current.sourceJobIds.some((sourceId) => library.jobs.some((job) => job.id === sourceId && job.isInventoryConfirmed))) {
-      setError('병합 롤의 원본 조각 중 이미 재고 확정된 작업이 있어 병합 롤을 완료 처리할 수 없습니다.');
-      return;
-    }
     setBusy(true); setError(null);
     try {
+      const source = pendingBatchSave ? await ensurePendingBatchSaved() : library;
+      const current = source.mergedJobs.find((job) => job.id === id);
+      if (!current) return;
+      if (!current.isCuttingComplete && current.sourceJobIds.some((sourceId) => source.jobs.some((job) => job.id === sourceId && job.isInventoryConfirmed))) {
+        setError('병합 롤의 원본 조각 중 이미 재고 확정된 작업이 있어 병합 롤을 완료 처리할 수 없습니다.');
+        return;
+      }
       const now = new Date().toISOString();
       const next = current.isCuttingComplete
         ? { ...current, isCuttingComplete: false, updatedAt: now, cuttingCompletedAt: undefined, completedPlacementIds: [] }
@@ -443,19 +484,20 @@ export default function FilmCutInputScreen() {
     finally { setBusy(false); }
   };
   const toggleMergedPlacementComplete = async (jobId: string, placementId: number) => {
-    const current = library.mergedJobs.find((job) => job.id === jobId);
-    if (!current) return;
-    const completedIds = new Set(current.completedPlacementIds ?? []);
-    if (completedIds.has(placementId)) completedIds.delete(placementId);
-    else completedIds.add(placementId);
-    const nextCompletedPlacementIds = [...completedIds].sort((left, right) => left - right);
-    const isComplete = current.placements.length > 0 && nextCompletedPlacementIds.length === current.placements.length;
-    if (isComplete && !current.isCuttingComplete && current.sourceJobIds.some((sourceId) => library.jobs.some((job) => job.id === sourceId && job.isInventoryConfirmed))) {
-      setError('병합 롤의 원본 조각 중 이미 재고 확정된 작업이 있어 병합 롤을 완료 처리할 수 없습니다.');
-      return;
-    }
     setBusy(true); setError(null);
     try {
+      const source = pendingBatchSave ? await ensurePendingBatchSaved() : library;
+      const current = source.mergedJobs.find((job) => job.id === jobId);
+      if (!current) return;
+      const completedIds = new Set(current.completedPlacementIds ?? []);
+      if (completedIds.has(placementId)) completedIds.delete(placementId);
+      else completedIds.add(placementId);
+      const nextCompletedPlacementIds = [...completedIds].sort((left, right) => left - right);
+      const isComplete = current.placements.length > 0 && nextCompletedPlacementIds.length === current.placements.length;
+      if (isComplete && !current.isCuttingComplete && current.sourceJobIds.some((sourceId) => source.jobs.some((job) => job.id === sourceId && job.isInventoryConfirmed))) {
+        setError('병합 롤의 원본 조각 중 이미 재고 확정된 작업이 있어 병합 롤을 완료 처리할 수 없습니다.');
+        return;
+      }
       const now = new Date().toISOString();
       const next = { ...current, isCuttingComplete: isComplete, updatedAt: now, cuttingCompletedAt: isComplete ? now : undefined, completedPlacementIds: nextCompletedPlacementIds };
       await repository.saveMergedJob(next);
@@ -465,11 +507,12 @@ export default function FilmCutInputScreen() {
     finally { setBusy(false); }
   };
   const confirmMergedInventory = async (id: string) => {
-    const current = library.mergedJobs.find((job) => job.id === id);
-    const planned = mergedGroupPlans.find((item) => item.mergeGroupId === current?.mergeGroupId);
-    if (!current || !planned || current.isInventoryConfirmed) return;
     setBusy(true); setError(null); setNotice(null);
     try {
+      const source = pendingBatchSave ? await ensurePendingBatchSaved() : library;
+      const current = source.mergedJobs.find((job) => job.id === id);
+      const planned = mergedGroupPlans.find((item) => item.mergeGroupId === current?.mergeGroupId);
+      if (!current || !planned || current.isInventoryConfirmed) return;
       await repository.confirmMergedJob(current, planned.inventoryDelta);
       await refreshLibrary();
       setNotice(`병합 롤 재고를 확정했습니다. 자투리 ${planned.remnantUses.length}개를 반영했습니다.`);
@@ -559,6 +602,7 @@ export default function FilmCutInputScreen() {
           <FormSection title={`${groups.find((group) => group.id === activeGroupId)?.name ?? '현재 그룹'} · ${groups.find((group) => group.id === activeGroupId)?.pieces.find((piece) => piece.id === activePieceId)?.name ?? '현재 조각'} 생산 조건`} fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={updateActiveForm} />
           <FixedProductionConditions />
           <View style={styles.switchCard}><View style={styles.switchCopy}><Text style={styles.switchTitle}>자투리 사용</Text><Text style={styles.switchDescription}>{useRemnants ? '브랜드 기준으로 사용 가능한 자투리를 먼저 배치합니다.' : '새 원본 롤만 계산합니다. 필요할 때 켜 주세요.'}</Text></View><Switch accessibilityLabel="자투리 사용" value={useRemnants} disabled={busy} onValueChange={(value) => { setUseRemnants(value); void calculate(form, value); }} trackColor={{ false: '#cbd5e1', true: '#99f6e4' }} thumbColor={useRemnants ? '#0f766e' : '#f8fafc'} /></View>
+          <View style={styles.historySwitchCard}><View style={styles.switchCopy}><Text style={styles.historySwitchTitle}>작업이력 자동저장</Text><Text style={styles.historySwitchDescription}>{autoSaveHistory ? '계산할 때마다 작업 이력에 자동 저장합니다.' : '기본 OFF: 계산 결과는 임시 상태로만 유지합니다. 프로젝트 저장을 눌러야 이력에 남습니다.'}</Text></View><Switch accessibilityLabel="작업이력 자동저장" value={autoSaveHistory} disabled={busy} onValueChange={toggleAutoSaveHistory} trackColor={{ false: '#cbd5e1', true: '#93c5fd' }} thumbColor={autoSaveHistory ? '#2563eb' : '#f8fafc'} /></View>
           <View style={styles.calculateButtonRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 조각 자투리 우선 자동 배치 계산" disabled={busy} onPress={() => void calculate()} style={[styles.primaryButton, styles.calculateButtonMain, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="전체 그룹 통합 배치 계산" disabled={busy} onPress={() => void calculateAllGroups()} style={[styles.batchButton, busy && styles.disabled]}><Text style={styles.batchButtonText}>전체 그룹 계산</Text></TouchableOpacity></View>
         </View>
         <View style={[styles.panel, styles.previewPanel]}><PanelHeading step="02" title="배치 미리보기" subtitle={activeMergedPlan ? '병합 롤 도면과 조각별 재단 완료 상태를 확인합니다.' : (preview?.title ?? '계산 후 연속 롤 도면을 표시합니다.')} dark />{activeMergedPlan ? <MergedRollPreview plan={activeMergedPlan} job={activeMergedJob} busy={busy} onToggleComplete={activeMergedJob ? () => void toggleMergedComplete(activeMergedJob.id) : undefined} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /> : <FilmLayoutPreview result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} completedPlacementIds={checkedPlacementIds} />}</View>
@@ -569,7 +613,7 @@ export default function FilmCutInputScreen() {
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
         <View style={styles.metrics}><Metric label="자투리 사용" value={`${displayedRemnantCount}개`} accent="#0f766e" /><Metric label="새 롤 재단 수량" value={`${displayedNewRollQuantity}개`} accent="#2563eb" /><Metric label="총 새 롤 사용 길이" value={`${displayedNewRollLengthMm.toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${displayedUtilizationPercent}%`} accent="#059669" />{plan.newRollResult?.optimizationStatus === 'approximate' && <Metric label="물리 하한과 차이" value={`${Math.round(plan.newRollResult.optimalityGapMm).toLocaleString()} mm`} accent="#f59e0b" />}</View>
         {candidateComparison.length > 1 && <View style={styles.candidateCard}><View style={styles.candidateHeader}><Text style={styles.candidateTitle}>대규모 입력 배치 후보 비교</Text><Text style={styles.candidateHint}>최적 혼합 결과를 기준으로 방향별 새 롤 절감량을 비교합니다.</Text></View>{candidateComparison.map((candidate) => <View key={candidate.name} style={[styles.candidateRow, candidate.name === '최적 혼합' && styles.candidateRowBest]}><Text style={styles.candidateName}>{candidate.name}</Text><Text style={styles.candidateValue}>{candidate.result.producedQuantity.toLocaleString()}개 · {Math.round(candidate.result.usedLengthMm).toLocaleString()}mm</Text><Text style={[styles.candidateSaving, candidate.name === '최적 혼합' && styles.candidateSavingBest]}>{candidate.name === '최적 혼합' ? '기준 결과' : `혼합 대비 ${Math.round(candidate.savedLengthMm).toLocaleString()}mm 절감`}</Text></View>)}</View>}
-        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={library.mergedJobs} busy={busy} onConfirmBatch={() => void confirmBatch()} onConfirmMergedInventory={(id) => void confirmMergedInventory(id)} />}
+        {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={[...library.mergedJobs, ...(pendingBatchSave?.mergedJobs ?? [])]} busy={busy} onConfirmBatch={() => void confirmBatch()} onConfirmMergedInventory={(id) => void confirmMergedInventory(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
         {activeMergedPlan ? <View style={styles.mergedSourceNotice}><Text style={styles.mergedSourceNoticeTitle}>병합 롤 전체 조각</Text><Text style={styles.mergedSourceNoticeText}>현재 조각은 병합 롤에 포함되어 개별 수동 배치·확정하지 않습니다. 아래 병합 롤 도면에서 전체 재단 완료와 재고 확정을 진행하세요.</Text></View> : <>{previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
           <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
@@ -698,7 +742,7 @@ const styles = StyleSheet.create({
   mergeControl: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#dbeafe' }, mergeControlLabel: { fontSize: 10, fontWeight: '800', color: '#475569' }, mergeControlButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, mergeControlButtonActive: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, mergeControlText: { fontSize: 11, fontWeight: '800', color: '#64748b' }, mergeControlTextActive: { color: '#fff' }, mergeControlHint: { flex: 1, minWidth: 150, fontSize: 10, color: '#64748b' },
   groupInputPanel: { marginBottom: 17, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fbff' }, groupInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, groupInputTitle: { fontSize: 14, fontWeight: '800', color: '#1e3a8a' }, groupInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addGroupButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#2563eb' }, addGroupButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, groupChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 }, groupChip: { minHeight: 48, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupChipActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupChipMain: { minWidth: 120, maxWidth: 190, minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 9, paddingRight: 4 }, groupChipIndex: { width: 19, height: 19, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 19, fontWeight: '800', color: '#475569' }, groupChipIndexActive: { backgroundColor: '#2563eb', color: '#fff' }, groupChipCopy: { flex: 1, minWidth: 0 }, groupChipText: { flexShrink: 1, fontSize: 11, fontWeight: '700', color: '#475569' }, groupChipTextActive: { color: '#1d4ed8' }, groupChipMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, groupChipAction: { width: 24, height: 43, alignItems: 'center', justifyContent: 'center' }, groupDeleteText: { fontSize: 17, color: '#ef4444' }, groupNameInput: { minWidth: 86, height: 30, paddingHorizontal: 5, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 5, fontSize: 11, backgroundColor: '#fff' },
   pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },
-  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, stepHint: { fontSize: 10, fontWeight: '600', color: '#94a3b8' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, minWidth: 36, paddingHorizontal: 7, fontSize: 15, fontWeight: '700', color: '#0f172a', textAlign: 'center' }, unit: { paddingHorizontal: 3, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, stepperButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#e2e8f0' }, stepperText: { fontSize: 20, lineHeight: 22, color: '#334155' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#f0fdfa' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#115e59' }, switchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#0f766e' }, calculateButtonRow: { flexDirection: 'row', gap: 8, marginTop: 16 }, calculateButtonMain: { flex: 1, marginTop: 0 }, batchButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 12, backgroundColor: '#0f766e' }, batchButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
+  group: { marginTop: 18, paddingTop: 17, borderTopWidth: 1, borderTopColor: '#e2e8f0' }, groupTitle: { marginBottom: 11, fontSize: 14, fontWeight: '800', color: '#1e293b' }, stepHint: { fontSize: 10, fontWeight: '600', color: '#94a3b8' }, fieldGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, field: { minWidth: 130, flexGrow: 1, flexBasis: '46%' }, inputWrap: { minHeight: 46, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, input: { flex: 1, minHeight: 44, minWidth: 36, paddingHorizontal: 7, fontSize: 15, fontWeight: '700', color: '#0f172a', textAlign: 'center' }, unit: { paddingHorizontal: 3, fontSize: 10, fontWeight: '700', color: '#94a3b8' }, stepperButton: { width: 34, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: '#e2e8f0' }, stepperText: { fontSize: 20, lineHeight: 22, color: '#334155' }, fixedConditions: { marginTop: 18, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, fixedConditionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, fixedBadge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, backgroundColor: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: '800' }, fixedConditionText: { marginTop: 5, fontSize: 11, color: '#1e40af' }, switchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 15, padding: 14, borderRadius: 12, backgroundColor: '#f0fdfa' }, historySwitchCard: { minHeight: 66, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 13, marginTop: 10, padding: 14, borderRadius: 12, backgroundColor: '#eff6ff' }, switchCopy: { flex: 1 }, switchTitle: { fontSize: 13, fontWeight: '800', color: '#115e59' }, switchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#0f766e' }, historySwitchTitle: { fontSize: 13, fontWeight: '800', color: '#1e3a8a' }, historySwitchDescription: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#1d4ed8' }, calculateButtonRow: { flexDirection: 'row', gap: 8, marginTop: 16 }, calculateButtonMain: { flex: 1, marginTop: 0 }, batchButton: { minHeight: 52, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 12, backgroundColor: '#0f766e' }, batchButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, primaryButton: { minHeight: 52, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, marginTop: 16, borderRadius: 12, backgroundColor: '#2563eb' }, primaryButtonText: { fontSize: 14, fontWeight: '800', color: '#fff' }, arrow: { fontSize: 19, color: '#bfdbfe' }, disabled: { opacity: 0.45 },
   resultSection: { marginTop: 22, padding: 22, borderRadius: 20, backgroundColor: '#fff', ...shadow }, resultHeading: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }, resultTitle: { marginTop: 4, fontSize: 23, fontWeight: '800', color: '#0f172a' }, statusBadge: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 }, statusText: { fontSize: 12, fontWeight: '800' }, statusDetail: { marginTop: 8, fontSize: 12, lineHeight: 18, color: '#64748b' },
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 18 }, metric: { minWidth: 170, flex: 1, padding: 15, overflow: 'hidden', borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricAccent: { position: 'absolute', top: 0, bottom: 0, left: 0, width: 4 }, metricLabel: { marginLeft: 3, fontSize: 11, color: '#64748b' }, metricValue: { marginTop: 6, marginLeft: 3, fontSize: 19, fontWeight: '800', color: '#0f172a' }, batchSummary: { marginTop: 14, padding: 13, borderRadius: 11, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, batchSummaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, batchSummaryTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, batchSummaryMeta: { fontSize: 10, color: '#0f766e' }, batchSummaryLine: { marginTop: 5, fontSize: 10, lineHeight: 15, color: '#475569' }, useList: { marginTop: 14, gap: 5 }, useLine: { fontSize: 11, lineHeight: 17, color: '#475569' }, batchConfirmButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 11, borderRadius: 8, backgroundColor: '#0f766e' }, batchConfirmButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, batchWarning: { marginTop: 10, padding: 9, borderRadius: 8, fontSize: 10, lineHeight: 15, color: '#92400e', backgroundColor: '#fffbeb' },
   candidateCard: { marginTop: 14, padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#fde68a', backgroundColor: '#fffbeb' }, candidateHeader: { marginBottom: 8 }, candidateTitle: { fontSize: 12, fontWeight: '800', color: '#92400e' }, candidateHint: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#a16207' }, candidateRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, marginTop: 6, padding: 9, borderRadius: 8, backgroundColor: '#fff' }, candidateRowBest: { borderWidth: 1, borderColor: '#f59e0b', backgroundColor: '#fef3c7' }, candidateName: { minWidth: 70, fontSize: 11, fontWeight: '800', color: '#78350f' }, candidateValue: { flex: 1, minWidth: 150, fontSize: 10, color: '#57534e' }, candidateSaving: { fontSize: 10, fontWeight: '700', color: '#b45309' }, candidateSavingBest: { color: '#92400e' },
