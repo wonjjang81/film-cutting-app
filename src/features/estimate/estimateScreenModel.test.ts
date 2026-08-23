@@ -7,7 +7,4 @@ describe('getEstimatePanelVisibility', () => {
     expect(getEstimatePanelVisibility(true)).toEqual({ showProjectSummary: true, showDetailSummary: false });
   });
 
-  it('shows the same summary when a direct estimate is available without a project', () => {
-    expect(getEstimatePanelVisibility(false, true)).toEqual({ showProjectSummary: true, showDetailSummary: false });
-  });
 });

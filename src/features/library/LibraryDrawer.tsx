@@ -1,19 +1,15 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-import type { FilmPreset, SavedCuttingJob } from './models';
+import type { FilmPreset } from './models';
 
 type Props = {
   presets: readonly FilmPreset[];
-  jobs: readonly SavedCuttingJob[];
   identifiersReady: boolean;
   busy: boolean;
   onSavePreset(): void;
   onLoadPreset(preset: FilmPreset): void;
   onDeletePreset(id: string): void;
-  onLoadJob(job: SavedCuttingJob): void;
-  onRenameJob(id: string, name: string): void;
-  onDeleteJob(id: string): void;
 };
 
 function includesQuery(values: readonly string[], query: string): boolean {
@@ -23,47 +19,24 @@ function includesQuery(values: readonly string[], query: string): boolean {
 
 export function LibraryDrawer({
   presets,
-  jobs,
   identifiersReady,
   busy,
   onSavePreset,
   onLoadPreset,
   onDeletePreset,
-  onLoadJob,
-  onRenameJob,
-  onDeleteJob,
 }: Props) {
   const [query, setQuery] = useState('');
-  const [renameId, setRenameId] = useState<string | null>(null);
-  const [renameValue, setRenameValue] = useState('');
   const filteredPresets = useMemo(
     () => presets.filter((preset) => includesQuery([preset.brand, preset.productNumber], query)),
     [presets, query],
   );
-  const filteredJobs = useMemo(
-    () => jobs.filter((job) => includesQuery([job.name, job.brand, job.productNumber], query)),
-    [jobs, query],
-  );
-
-  const beginRename = (job: SavedCuttingJob) => {
-    setRenameId(job.id);
-    setRenameValue(job.name);
-  };
-
-  const submitRename = () => {
-    if (renameId === null || renameValue.trim().length === 0) return;
-    onRenameJob(renameId, renameValue.trim());
-    setRenameId(null);
-    setRenameValue('');
-  };
-
   return (
-    <View style={styles.panel} accessibilityLabel="프리셋과 작업 이력">
+    <View style={styles.panel} accessibilityLabel="규격 프리셋">
       <View style={styles.headingRow}>
         <View style={styles.headingCopy}>
           <Text style={styles.eyebrow}>LIBRARY</Text>
           <Text style={styles.title} accessibilityRole="header">작업 라이브러리</Text>
-          <Text style={styles.subtitle}>규격 프리셋과 확정 작업을 한곳에서 관리합니다.</Text>
+          <Text style={styles.subtitle}>자주 사용하는 규격 프리셋만 관리합니다.</Text>
         </View>
         <TouchableOpacity
           accessibilityRole="button"
@@ -77,8 +50,8 @@ export function LibraryDrawer({
       </View>
 
       <TextInput
-        accessibilityLabel="프리셋과 작업 이력 검색"
-        placeholder="브랜드, 제품 번호, 작업명 검색"
+        accessibilityLabel="규격 프리셋 검색"
+        placeholder="브랜드, 제품 번호 검색"
         placeholderTextColor="#94a3b8"
         value={query}
         onChangeText={setQuery}
@@ -103,41 +76,6 @@ export function LibraryDrawer({
         </View>
       ))}
 
-      <SectionTitle title="확정 작업 이력" count={filteredJobs.length} />
-      {filteredJobs.length === 0 ? (
-        <Text style={styles.empty}>확정된 작업 이력이 없습니다.</Text>
-      ) : filteredJobs.map((job) => (
-        <View key={job.id} style={styles.item}>
-          {renameId === job.id ? (
-            <View style={styles.renameBox}>
-              <TextInput
-                accessibilityLabel="새 작업명"
-                autoFocus
-                value={renameValue}
-                onChangeText={setRenameValue}
-                onSubmitEditing={submitRename}
-                style={styles.renameInput}
-              />
-              <View style={styles.actions}>
-                <Action label="저장" accessibilityLabel="작업명 저장" busy={busy || renameValue.trim().length === 0} onPress={submitRename} />
-                <Action label="취소" accessibilityLabel="작업명 변경 취소" busy={busy} onPress={() => setRenameId(null)} />
-              </View>
-            </View>
-          ) : (
-            <>
-              <View style={styles.itemCopy}>
-                <Text style={styles.itemTitle}>{job.name}</Text>
-                <Text style={styles.itemMeta}>{job.brand} · {job.productNumber} · {new Date(job.updatedAt).toLocaleString('ko-KR')}</Text>
-              </View>
-              <View style={styles.actions}>
-                <Action label="불러오기" accessibilityLabel={`${job.name} 현재 재고로 다시 계산`} busy={busy} onPress={() => onLoadJob(job)} />
-                <Action label="이름 변경" accessibilityLabel={`${job.name} 이름 변경`} busy={busy} onPress={() => beginRename(job)} />
-                <Action label="삭제" accessibilityLabel={`${job.name} 작업 삭제`} busy={busy} danger onPress={() => onDeleteJob(job.id)} />
-              </View>
-            </>
-          )}
-        </View>
-      ))}
     </View>
   );
 }

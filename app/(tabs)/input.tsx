@@ -23,7 +23,7 @@ import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../
 import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
-import { DIRECT_ESTIMATE_INPUT_STORAGE_KEY } from '../../src/features/estimate/directEstimate';
+import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -116,7 +116,6 @@ export default function FilmCutInputScreen() {
   const updateActiveForm: React.Dispatch<React.SetStateAction<CuttingFormState>> = (updater) => {
     setForm((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
-      void AsyncStorage.setItem(DIRECT_ESTIMATE_INPUT_STORAGE_KEY, JSON.stringify({ pieceWidthMm: Number(next.pieceWidth), pieceLengthMm: Number(next.pieceLength), quantity: Number(next.quantity) }));
       setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: next, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: next } : piece) } : group));
       return next;
     });
@@ -147,6 +146,9 @@ export default function FilmCutInputScreen() {
     if (id === activeGroupId) selectGroup(remaining[0]!);
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
+  useEffect(() => {
+    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups)));
+  }, [groups]);
   useEffect(() => {
     void AsyncStorage.getItem(AUTO_SAVE_HISTORY_STORAGE_KEY).then((stored) => setAutoSaveHistory(parseAutoSaveHistory(stored))).catch(() => setAutoSaveHistory(false));
   }, []);
@@ -181,7 +183,6 @@ export default function FilmCutInputScreen() {
     try {
       const latest = await refreshLibrary();
       const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : [], completed, completedIds, preferredJobId);
-      void AsyncStorage.setItem(DIRECT_ESTIMATE_INPUT_STORAGE_KEY, JSON.stringify({ pieceWidthMm: computed.request.pieceWidthMm, pieceLengthMm: computed.request.pieceLengthMm, quantity: computed.request.quantity }));
       setPendingBatchSave(null);
       if (autoSaveHistory) {
         await repository.saveJob(computed.nextJob);
@@ -371,8 +372,6 @@ export default function FilmCutInputScreen() {
     loadJob(job);
   }, [library.jobs, loadJob, routeJobId]);
   const deletePreset = async (id: string) => withBusy(async () => { await repository.deletePreset(id); await refreshLibrary(); }, setBusy, setError);
-  const deleteJob = async (id: string) => withBusy(async () => { await repository.deleteJob(id); await refreshLibrary(); }, setBusy, setError);
-  const renameJob = async (id: string, name: string) => withBusy(async () => { await repository.renameJob(id, name, new Date().toISOString()); await refreshLibrary(); }, setBusy, setError);
   const ensurePendingBatchSaved = async (): Promise<LibraryDocument> => {
     if (!pendingBatchSave) return library;
     await repository.saveBatchJobs(pendingBatchSave.jobs, pendingBatchSave.mergedJobs);
@@ -627,7 +626,7 @@ export default function FilmCutInputScreen() {
 
       <View style={[styles.libraryGrid, libraryWide && styles.libraryGridWide]}>
         <RemnantInventoryPanel brand={form.brand} productNumber={form.productNumber} remnants={library.remnants} plannedUses={plannedUses} identifiersReady={identifiersReady} busy={busy} onSave={saveRemnant} onDelete={deleteRemnant} />
-        <LibraryDrawer presets={library.presets} jobs={library.jobs} identifiersReady={identifiersReady} busy={busy} onSavePreset={() => void savePreset()} onLoadPreset={loadPreset} onDeletePreset={(id) => void deletePreset(id)} onLoadJob={loadJob} onRenameJob={(id, name) => void renameJob(id, name)} onDeleteJob={(id) => void deleteJob(id)} />
+        <LibraryDrawer presets={library.presets} identifiersReady={identifiersReady} busy={busy} onSavePreset={() => void savePreset()} onLoadPreset={loadPreset} onDeletePreset={(id) => void deletePreset(id)} />
       </View>
     </ScrollView>
   );

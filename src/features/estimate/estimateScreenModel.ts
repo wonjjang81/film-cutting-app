@@ -4,6 +4,6 @@ export type EstimatePanelVisibility = {
 };
 
 /** Keeps the estimate screen focused on one authoritative project total. */
-export function getEstimatePanelVisibility(hasSavedJobs: boolean, hasDirectEstimate = false): EstimatePanelVisibility {
-  return { showProjectSummary: hasSavedJobs || hasDirectEstimate, showDetailSummary: false };
+export function getEstimatePanelVisibility(hasCurrentEstimate: boolean): EstimatePanelVisibility {
+  return { showProjectSummary: hasCurrentEstimate, showDetailSummary: false };
 }
