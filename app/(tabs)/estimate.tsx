@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, useWindowDimensions, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import * as Print from 'expo-print';
@@ -10,6 +10,7 @@ import { createAppLibraryRepository } from '../../src/features/library/libraryRe
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import { CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MIN, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M } from '../../src/features/estimate/calculateEstimate';
 import { calculateProjectEstimate, type ProjectEstimate } from '../../src/features/estimate/calculateProjectEstimate';
+import { createDirectEstimateJob, DIRECT_ESTIMATE_INPUT_STORAGE_KEY, DIRECT_ESTIMATE_ROLL_WIDTH_MM, parseDirectEstimateInput } from '../../src/features/estimate/directEstimate';
 import { getEstimatePanelVisibility } from '../../src/features/estimate/estimateScreenModel';
 import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE_KEY, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 
@@ -17,7 +18,6 @@ const repository = createAppLibraryRepository();
 
 export default function EstimateScreen() {
   const { width } = useWindowDimensions();
-  const [job, setJob] = useState<SavedCuttingJob | null>(null);
   const [jobs, setJobs] = useState<SavedCuttingJob[]>([]);
   const [mergedJobs, setMergedJobs] = useState<SavedMergedCuttingJob[]>([]);
   const [company, setCompany] = useState<CompanyInfo>(emptyCompanyInfo);
@@ -27,14 +27,23 @@ export default function EstimateScreen() {
   const [constructionCostText, setConstructionCostText] = useState(String(DEFAULT_CONSTRUCTION_COST_PER_M2));
   const [discountEnabled, setDiscountEnabled] = useState(false);
   const [discountText, setDiscountText] = useState('');
+  const [pieceWidthText, setPieceWidthText] = useState('0');
+  const [pieceLengthText, setPieceLengthText] = useState('0');
+  const [quantityText, setQuantityText] = useState('1');
   const hasFocusedOnce = useRef(false);
+
+  const loadRecentDirectInput = useCallback(async () => {
+    const raw = await AsyncStorage.getItem(DIRECT_ESTIMATE_INPUT_STORAGE_KEY);
+    const recent = parseDirectEstimateInput(raw);
+    if (!recent) return;
+    setPieceWidthText(String(recent.pieceWidthMm)); setPieceLengthText(String(recent.pieceLengthMm)); setQuantityText(String(recent.quantity));
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
       const loaded = await repository.load();
       const nextJob = loaded.document.jobs[0] ?? null;
-      setJob(nextJob);
       setJobs(loaded.document.jobs);
       setMergedJobs(loaded.document.mergedJobs);
       const companyRaw = await AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY); const legacyCompany = companyRaw ? null : await AsyncStorage.getItem(LEGACY_COMPANY_NAME_STORAGE_KEY); setCompany(parseCompanyInfo(companyRaw ?? (legacyCompany ? JSON.stringify(legacyCompany) : null)));
@@ -47,27 +56,38 @@ export default function EstimateScreen() {
   const materialCost = positiveNumber(materialCostText, DEFAULT_MATERIAL_COST_PER_M);
   const constructionCost = positiveNumber(constructionCostText, DEFAULT_CONSTRUCTION_COST_PER_M2);
   const discountOverride = discountEnabled ? Math.min(100, Math.max(0, Number(discountText) || 0)) / 100 : 0;
-  const projectEstimate = calculateProjectEstimate(jobs, materialCost, constructionCost, discountOverride, mergedJobs);
-  const estimatePanels = getEstimatePanelVisibility(jobs.length > 0);
+  const directEstimateJob = useMemo(() => {
+    const pieceWidthMm = Number(pieceWidthText);
+    const pieceLengthMm = Number(pieceLengthText);
+    const quantity = Number(quantityText);
+    if (!Number.isFinite(pieceWidthMm) || !Number.isFinite(pieceLengthMm) || !Number.isFinite(quantity) || pieceWidthMm <= 0 || pieceLengthMm <= 0 || quantity <= 0 || !Number.isInteger(quantity)) return null;
+    try { return createDirectEstimateJob({ pieceWidthMm, pieceLengthMm, quantity }); } catch { return null; }
+  }, [pieceLengthText, pieceWidthText, quantityText]);
+  const estimateJobs = jobs.length > 0 ? jobs : directEstimateJob ? [directEstimateJob] : [];
+  const estimateMergedJobs = jobs.length > 0 ? mergedJobs : [];
+  const projectEstimate = calculateProjectEstimate(estimateJobs, materialCost, constructionCost, discountOverride, estimateMergedJobs);
+  const estimatePanels = getEstimatePanelVisibility(jobs.length > 0, Boolean(directEstimateJob));
+  const hasSavedProject = jobs.length > 0;
   const exportEstimatePdf = async () => {
-    if (jobs.length === 0) return;
+    if (estimateJobs.length === 0) return;
     const html = createEstimateHtml(projectEstimate, materialCost, constructionCost, company);
     if (Platform.OS === 'web') await Print.printAsync({ html });
     else { const file = await Print.printToFileAsync({ html }); if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: '견적서 PDF 공유' }); }
   };
-  const copyEstimate = async () => { if (jobs.length === 0) return; await Clipboard.setStringAsync(createEstimateText(projectEstimate, company)); };
+  const copyEstimate = async () => { if (estimateJobs.length === 0) return; await Clipboard.setStringAsync(createEstimateText(projectEstimate, company)); };
   // Deep links on web can render before Expo Router emits its first focus event.
   // Load on mount as well so a direct /estimate visit never remains in a spinner.
   useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => { void loadRecentDirectInput().catch(() => undefined); }, [loadRecentDirectInput]);
   useFocusEffect(useCallback(() => {
-    if (hasFocusedOnce.current) void refresh();
+    if (hasFocusedOnce.current) { void refresh(); void loadRecentDirectInput().catch(() => undefined); }
     hasFocusedOnce.current = true;
-  }, [refresh]));
+  }, [loadRecentDirectInput, refresh]));
 
   return <ScrollView style={styles.page} contentContainerStyle={[styles.content, width < 420 && styles.contentSmall]}>
     <View style={styles.header}><View><Text style={styles.eyebrow}>ESTIMATE WORKSPACE</Text><Text style={styles.title}>자동 견적</Text><Text style={styles.description}>최근 저장된 프로젝트의 원단·시공 비용을 자동 계산합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="견적 새로고침" onPress={() => void refresh()} style={styles.refresh}><Text style={styles.refreshText}>새로고침</Text></TouchableOpacity></View>
     {error && <Text style={styles.error}>{error}</Text>}
-    {loading ? <Text style={styles.empty}>견적을 불러오는 중입니다…</Text> : job ? <><View style={styles.controls}><Text style={styles.controlsTitle}>견적 조건</Text><View style={styles.controlGrid}><EstimateInput label="원단 단가" unit="원/m" value={materialCostText} onChangeText={setMaterialCostText} /><EstimateInput label="시공 단가" unit="원/m²" value={constructionCostText} onChangeText={setConstructionCostText} /></View><PricePresetRow value={constructionCost} onChange={setConstructionCostText} /><View style={styles.discountRow}><View style={styles.discountCopy}><Text style={styles.controlLabel}>할인 적용</Text><Text style={styles.controlHint}>{discountEnabled ? '입력한 할인율을 적용합니다.' : '할인 미적용 상태입니다.'}</Text></View><Switch accessibilityLabel="할인 적용" value={discountEnabled} onValueChange={setDiscountEnabled} /><TextInput accessibilityLabel="할인율 퍼센트" editable={discountEnabled} value={discountText} onChangeText={(value) => setDiscountText(value.replace(/[^0-9.]/g, ''))} placeholder="0" keyboardType="numeric" style={[styles.discountInput, !discountEnabled && styles.disabledInput]} /><Text style={styles.percent}>%</Text></View><View style={projectStyles.estimateActions}><TouchableOpacity accessibilityRole="button" onPress={() => void exportEstimatePdf()} style={styles.pdfButton}><Text style={styles.pdfButtonText}>통합 견적 PDF·인쇄</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" onPress={() => void copyEstimate()} style={projectStyles.copyButton}><Text style={projectStyles.copyButtonText}>견적 요약 복사</Text></TouchableOpacity></View></View>{estimatePanels.showProjectSummary && <><ProjectEstimateSummary estimate={projectEstimate} jobCount={projectEstimate.jobCount} company={company} /><ProjectEstimateBreakdown estimate={projectEstimate} /></>}</> : <View style={styles.emptyCard}><Text style={styles.emptyTitle}>저장된 프로젝트가 없습니다.</Text><Text style={styles.emptyDescription}>재단 계산 탭에서 조건을 계산하면 프로젝트와 견적이 자동 저장됩니다.</Text></View>}
+    {loading ? <Text style={styles.empty}>견적을 불러오는 중입니다…</Text> : <><View style={styles.directCard}><View style={styles.directHeader}><View><Text style={styles.directEyebrow}>QUICK ESTIMATE</Text><Text style={styles.directTitle}>프로젝트 없이 자동견적</Text><Text style={styles.directDescription}>재단 규격만 입력하면 저장 없이 원단 사용량과 견적을 바로 계산합니다.</Text></View><Text style={styles.rollBadge}>원본롤 폭 {DIRECT_ESTIMATE_ROLL_WIDTH_MM.toLocaleString()}mm</Text></View><View style={styles.controlGrid}><EstimateInput label="재단 폭" unit="mm" value={pieceWidthText} onChangeText={setPieceWidthText} /><EstimateInput label="재단 길이" unit="mm" value={pieceLengthText} onChangeText={setPieceLengthText} /><EstimateInput label="필요 수량" unit="개" value={quantityText} onChangeText={setQuantityText} /></View><Text style={styles.directHint}>{directEstimateJob ? '입력값이 변경되면 자동으로 다시 계산됩니다.' : '재단 폭과 길이를 0보다 크게 입력하면 자동 계산됩니다.'}</Text></View><View style={styles.controls}><Text style={styles.controlsTitle}>{hasSavedProject ? '프로젝트 견적 조건' : '견적 조건'}</Text><View style={styles.controlGrid}><EstimateInput label="원단 단가" unit="원/m" value={materialCostText} onChangeText={setMaterialCostText} /><EstimateInput label="시공 단가" unit="원/m²" value={constructionCostText} onChangeText={setConstructionCostText} /></View><PricePresetRow value={constructionCost} onChange={setConstructionCostText} /><View style={styles.discountRow}><View style={styles.discountCopy}><Text style={styles.controlLabel}>할인 적용</Text><Text style={styles.controlHint}>{discountEnabled ? '입력한 할인율을 적용합니다.' : '할인 미적용 상태입니다.'}</Text></View><Switch accessibilityLabel="할인 적용" value={discountEnabled} onValueChange={setDiscountEnabled} /><TextInput accessibilityLabel="할인율 퍼센트" editable={discountEnabled} value={discountText} onChangeText={(value) => setDiscountText(value.replace(/[^0-9.]/g, ''))} placeholder="0" keyboardType="numeric" style={[styles.discountInput, !discountEnabled && styles.disabledInput]} /><Text style={styles.percent}>%</Text></View><View style={projectStyles.estimateActions}><TouchableOpacity accessibilityRole="button" disabled={estimateJobs.length === 0} onPress={() => void exportEstimatePdf()} style={[styles.pdfButton, estimateJobs.length === 0 && styles.disabledButton]}><Text style={styles.pdfButtonText}>통합 견적 PDF·인쇄</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" disabled={estimateJobs.length === 0} onPress={() => void copyEstimate()} style={[projectStyles.copyButton, estimateJobs.length === 0 && styles.disabledButton]}><Text style={projectStyles.copyButtonText}>견적 요약 복사</Text></TouchableOpacity></View></View>{estimatePanels.showProjectSummary ? <><ProjectEstimateSummary estimate={projectEstimate} jobCount={projectEstimate.jobCount} company={company} /><ProjectEstimateBreakdown estimate={projectEstimate} /></> : <View style={styles.emptyCard}><Text style={styles.emptyTitle}>견적을 계산할 규격을 입력해 주세요.</Text><Text style={styles.emptyDescription}>저장된 프로젝트가 없어도 위의 재단 폭·길이·수량만 입력하면 자동견적을 확인할 수 있습니다.</Text></View>}</>}
   </ScrollView>;
 }
 
@@ -91,6 +111,7 @@ function PricePresetRow({ value, onChange }: { value: number; onChange(value: st
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#f1f5f9' }, content: { width: '100%', maxWidth: 980, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, contentSmall: { paddingHorizontal: 12, paddingTop: 20 },
   header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 14, marginBottom: 18 }, eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' }, title: { marginTop: 6, fontSize: 32, lineHeight: 40, fontWeight: '800', color: '#0f172a' }, description: { marginTop: 7, fontSize: 14, lineHeight: 21, color: '#64748b' }, refresh: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 15, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff' }, refreshText: { fontSize: 12, fontWeight: '800', color: '#334155' }, error: { marginBottom: 16, padding: 13, borderRadius: 10, borderWidth: 1, borderColor: '#fecaca', color: '#991b1b', backgroundColor: '#fff1f2' }, controls: { padding: 17, borderRadius: 16, backgroundColor: '#fff', borderWidth: 1, borderColor: '#e2e8f0' }, controlsTitle: { fontSize: 15, fontWeight: '800', color: '#1e293b' }, controlGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 }, control: { minWidth: 180, flex: 1 }, controlLabel: { marginBottom: 6, fontSize: 11, fontWeight: '700', color: '#475569' }, controlInputWrap: { flexDirection: 'row', alignItems: 'center', minHeight: 42, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#f8fafc' }, controlInput: { flex: 1, minHeight: 40, paddingHorizontal: 10, fontSize: 14, fontWeight: '700', color: '#0f172a' }, unit: { paddingRight: 10, fontSize: 10, color: '#64748b' }, pricePresetRow: { flexDirection: 'row', gap: 8, marginTop: 12 }, pricePreset: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 9, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, pricePresetActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, pricePresetLabel: { fontSize: 10, color: '#64748b' }, pricePresetLabelActive: { color: '#1d4ed8', fontWeight: '800' }, pricePresetValue: { marginTop: 2, fontSize: 11, fontWeight: '700', color: '#334155' }, discountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 14 }, discountCopy: { flex: 1 }, controlHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, discountInput: { width: 62, height: 40, paddingHorizontal: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, textAlign: 'center', color: '#0f172a' }, disabledInput: { opacity: 0.4, backgroundColor: '#f1f5f9' }, percent: { fontSize: 12, color: '#64748b' }, pdfButton: { minHeight: 42, alignItems: 'center', justifyContent: 'center', marginTop: 14, borderRadius: 9, backgroundColor: '#1e3a8a' }, pdfButtonText: { fontSize: 12, fontWeight: '800', color: '#fff' }, empty: { paddingVertical: 30, textAlign: 'center', color: '#64748b' }, emptyCard: { marginTop: 12, padding: 24, borderRadius: 18, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, emptyTitle: { fontSize: 17, fontWeight: '800', color: '#1e293b' }, emptyDescription: { marginTop: 8, fontSize: 13, lineHeight: 20, color: '#64748b' },
+  directCard: { marginBottom: 14, padding: 17, borderRadius: 16, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, directHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }, directEyebrow: { fontSize: 10, letterSpacing: 1.3, fontWeight: '800', color: '#2563eb' }, directTitle: { marginTop: 4, fontSize: 18, fontWeight: '800', color: '#1e3a8a' }, directDescription: { marginTop: 5, fontSize: 11, lineHeight: 17, color: '#1d4ed8' }, rollBadge: { paddingHorizontal: 9, paddingVertical: 6, borderRadius: 999, backgroundColor: '#dbeafe', fontSize: 10, fontWeight: '800', color: '#1d4ed8' }, directHint: { marginTop: 10, fontSize: 10, color: '#1e40af' }, disabledButton: { opacity: 0.45 },
 });
 
 const projectStyles = StyleSheet.create({

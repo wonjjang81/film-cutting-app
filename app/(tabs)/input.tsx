@@ -23,6 +23,7 @@ import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../
 import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
+import { DIRECT_ESTIMATE_INPUT_STORAGE_KEY } from '../../src/features/estimate/directEstimate';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -115,6 +116,7 @@ export default function FilmCutInputScreen() {
   const updateActiveForm: React.Dispatch<React.SetStateAction<CuttingFormState>> = (updater) => {
     setForm((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
+      void AsyncStorage.setItem(DIRECT_ESTIMATE_INPUT_STORAGE_KEY, JSON.stringify({ pieceWidthMm: Number(next.pieceWidth), pieceLengthMm: Number(next.pieceLength), quantity: Number(next.quantity) }));
       setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: next, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: next } : piece) } : group));
       return next;
     });
@@ -179,6 +181,7 @@ export default function FilmCutInputScreen() {
     try {
       const latest = await refreshLibrary();
       const computed = computeAgainst(nextForm, latest, Date.now(), nextUseRemnants ? latest.remnants : [], completed, completedIds, preferredJobId);
+      void AsyncStorage.setItem(DIRECT_ESTIMATE_INPUT_STORAGE_KEY, JSON.stringify({ pieceWidthMm: computed.request.pieceWidthMm, pieceLengthMm: computed.request.pieceLengthMm, quantity: computed.request.quantity }));
       setPendingBatchSave(null);
       if (autoSaveHistory) {
         await repository.saveJob(computed.nextJob);
