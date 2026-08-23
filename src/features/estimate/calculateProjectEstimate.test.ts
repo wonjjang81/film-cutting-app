@@ -9,9 +9,11 @@ describe('calculateProjectEstimate', () => {
     const result = calculateProjectEstimate([job('a', 1000), job('b', 2000)], 10000, 15000);
     expect(result.jobCount).toBe(2);
     expect(result.materialLengthM).toBe(3);
-    expect(result.subtotal).toBe(180000);
-    expect(result.discountRate).toBe(0.15);
-    expect(result.total).toBe(153000);
+    expect(result.materialAreaM2).toBeCloseTo(3.66, 5);
+    expect(result.subtotal).toBe(84_900);
+    expect(result.discountRate).toBe(0.05);
+    expect(result.total).toBe(80_655);
+    expect(result.totalRange).toEqual({ min: 58_055, max: 115_425 });
   });
 
   it('uses one physical merged-roll length instead of summing source jobs', () => {

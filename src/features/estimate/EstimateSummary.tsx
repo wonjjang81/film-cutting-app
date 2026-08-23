@@ -12,7 +12,7 @@ export function EstimateSummary({ job, compact = false, materialCostPerM, constr
     <Text style={styles.caption}>{job.name} · {job.filmName ? `${job.filmName} · ` : ''}신규 원단 {materialRate.toLocaleString('ko-KR')}원/m · 시공 {constructionRate.toLocaleString('ko-KR')}원/m²</Text>
     <View style={styles.rows}>
       <EstimateRow label="신규 원단" value={`${estimate.materialLengthM.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}m · ${estimate.materialCost.toLocaleString('ko-KR')}원`} />
-      <EstimateRow label="시공 면적" value={`${estimate.productAreaM2.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}m² · ${estimate.constructionCost.toLocaleString('ko-KR')}원`} />
+      <EstimateRow label="사용 면적" value={`${estimate.materialAreaM2.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}m² · ${estimate.constructionCost.toLocaleString('ko-KR')}원`} />
       <EstimateRow label="소계" value={`${estimate.subtotal.toLocaleString('ko-KR')}원`} />
       <EstimateRow label={`할인 (${Math.round(estimate.discountRate * 100)}%)`} value={`-${estimate.discount.toLocaleString('ko-KR')}원`} />
     </View>

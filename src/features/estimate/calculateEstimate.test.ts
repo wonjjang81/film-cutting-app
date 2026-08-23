@@ -14,27 +14,28 @@ const job: SavedCuttingJob = {
 describe('calculateEstimate', () => {
   it('calculates default material, construction, and tier discount', () => {
     expect(calculateEstimate(job)).toEqual({
-      materialLengthM: 2, materialCost: 20_000, productAreaM2: 2.5,
-      constructionCost: 37_500, subtotal: 57_500, discountRate: 0.05, discount: 2_875, total: 54_625,
+      materialLengthM: 2, materialAreaM2: 2.44, materialCost: 20_000, productAreaM2: 2.5,
+      constructionCost: 36_600, subtotal: 56_600, discountRate: 0.05, discount: 2_830, total: 53_770,
     });
   });
 
   it('accepts custom unit prices without changing the saved job', () => {
-    expect(calculateEstimate(job, 12_000, 20_000)).toMatchObject({ materialCost: 24_000, constructionCost: 50_000, total: 70_300 });
+    expect(calculateEstimate(job, 12_000, 20_000)).toMatchObject({ materialCost: 24_000, constructionCost: 48_800, total: 69_160 });
   });
 
   it('uses group-specific saved prices when the default rates are requested', () => {
-    expect(calculateEstimate({ ...job, materialCostPerM: 12_000, constructionCostPerM2: 20_000 })).toMatchObject({ materialCost: 24_000, constructionCost: 50_000 });
+    expect(calculateEstimate({ ...job, materialCostPerM: 12_000, constructionCostPerM2: 20_000 })).toMatchObject({ materialCost: 24_000, constructionCost: 48_800 });
   });
 
   it('uses the merged physical total length and area when supplied', () => {
     expect(calculateEstimate(job, 10_000, 15_000, undefined, { materialLengthMm: 710, productAreaM2: 0.47 })).toMatchObject({
       materialLengthM: 0.71,
+      materialAreaM2: 0.8662,
       materialCost: 7_100,
       productAreaM2: 0.47,
-      constructionCost: 7_050,
-      subtotal: 14_150,
-      total: 14_150,
+      constructionCost: 12_993,
+      subtotal: 20_093,
+      total: 20_093,
     });
   });
 });
