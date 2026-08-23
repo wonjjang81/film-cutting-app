@@ -40,7 +40,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
     && rollWidthMm - horizontalMarginMm * 2 > 0
     && displayLengthMm - verticalMarginMm * 2 > 0;
   if (!validSize) return null;
-  const fontSize = Math.max(8, Math.min(18, Math.min(rollWidthMm, displayLengthMm) / 22));
+  const fontSize = Math.max(14, Math.min(32, Math.min(rollWidthMm, displayLengthMm) / 12));
   const baseHeight = Math.max(300, (displayLengthMm / rollWidthMm) * viewportWidth);
   const drawingHeight = baseHeight * zoom;
   const viewBoxWidth = rollWidthMm / zoom;
@@ -84,8 +84,8 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
             <G key={item.id}>
               <Rect x={item.x} y={item.y} width={item.width} height={item.height} rx={2}
                 fill={item.rotated ? '#ccfbf1' : '#dbeafe'} stroke={item.rotated ? '#0f766e' : '#1d4ed8'} strokeWidth={Math.max(0.8, rollWidthMm / 700)} />
-              <SvgText x={item.x + item.width / 2} y={item.y + item.height / 2 + fontSize / 3}
-                textAnchor="middle" fontSize={fontSize} fontWeight="700" fill={item.rotated ? '#115e59' : '#1e3a8a'}>
+              <SvgText x={item.x + item.width / 2} y={item.y + item.height / 2 + Math.min(item.width, item.height) * 0.08}
+                textAnchor="middle" fontSize={Math.max(16, Math.min(64, Math.min(item.width * 0.34, item.height * 0.42)))} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>
                 {item.id} · {item.rotated ? '90도 회전' : '기본 방향'}
               </SvgText>
               {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>

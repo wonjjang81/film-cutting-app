@@ -42,7 +42,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         const active = selectedId === placement.id;
         return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
           <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
-          <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={color}>{placement.id}</SvgText>
+          <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(18, Math.min(64, Math.min(placement.width * 0.34, placement.height * 0.42)))} fontWeight="900" fill={color}>{placement.id}</SvgText>
           {completedPlacementIds.has(placement.id) && <G><Rect x={placement.x + placement.width * 0.18} y={placement.y + placement.height * 0.18} width={placement.width * 0.64} height={placement.height * 0.64} fill="none" stroke="#dc2626" strokeWidth={Math.max(3, placement.width / 45)} transform={`rotate(0 ${placement.x + placement.width / 2} ${placement.y + placement.height / 2})`} /><SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2} textAnchor="middle" fontSize={Math.max(12, Math.min(32, placement.width / 10))} fontWeight="900" fill="#dc2626">×</SvgText></G>}
         </G>;
       })}
@@ -88,7 +88,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
               <Rect x={0} y={0} width={use.widthMm} height={Math.max(use.result.usedLengthMm, 1)} fill="#f0fdfa" stroke="#0f766e" strokeWidth={2} rx={4} />
               {use.placements.map((placement) => <G key={placement.id}>
                 <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds)}22`} stroke={colorFor(placement.sourceId, sourceIds)} strokeWidth={2} />
-                <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(10, Math.min(22, placement.width / 18))} fontWeight="700" fill={colorFor(placement.sourceId, sourceIds)}>{placement.id}</SvgText>
+                <SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2 + 5} textAnchor="middle" fontSize={Math.max(18, Math.min(64, Math.min(placement.width * 0.34, placement.height * 0.42)))} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds)}>{placement.id}</SvgText>
               </G>)}
             </Svg>
           </View>;
