@@ -284,6 +284,7 @@ function validateMergedJob(value: unknown): SavedMergedCuttingJob | undefined {
     || !finiteNonnegative(value.utilizationPercent) || !finiteNonnegative(value.wastePercent)
     || !Array.isArray(value.placements)) return undefined;
   const placements = value.placements.map(validateMergedPlacement);
+  const sourceIds = value.sourceIds === undefined ? undefined : value.sourceIds;
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
   const inventoryConfirmedAt = value.inventoryConfirmedAt === undefined ? undefined : normalizeTimestamp(value.inventoryConfirmedAt);
   const remnantIds = value.remnantIds === undefined ? undefined : value.remnantIds;
@@ -297,10 +298,13 @@ function validateMergedJob(value: unknown): SavedMergedCuttingJob | undefined {
     || (value.isInventoryConfirmed !== undefined && typeof value.isInventoryConfirmed !== 'boolean')
     || (value.inventoryConfirmedAt !== undefined && inventoryConfirmedAt === undefined)
     || (remnantIds !== undefined && (!Array.isArray(remnantIds) || !remnantIds.every(validId)))
+    || (sourceIds !== undefined && (!Array.isArray(sourceIds) || !sourceIds.every(validId)))
     || (remnantSummary === null || (remnantSummary !== undefined && remnantSummary.some((item) => item === undefined)))) return undefined;
   return {
     id: value.id, name: value.name, mergeGroupId: value.mergeGroupId,
-    groupNames: [...value.groupNames], sourceJobIds: [...value.sourceJobIds], createdAt, updatedAt,
+    groupNames: [...value.groupNames], sourceJobIds: [...value.sourceJobIds],
+    ...(sourceIds === undefined ? {} : { sourceIds: [...sourceIds] }),
+    createdAt, updatedAt,
     rollWidthMm: value.rollWidthMm, usedLengthMm: value.usedLengthMm, producedQuantity: value.producedQuantity,
     utilizationPercent: value.utilizationPercent, wastePercent: value.wastePercent,
     placements: placements as SavedMergedPlacement[],

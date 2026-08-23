@@ -31,4 +31,37 @@ describe('calculateProjectEstimate', () => {
     expect(result.materialCost).toBe(7_100);
     expect(result.productAreaM2).toBe(10);
   });
+
+  it('uses each job rate independently unless global overwrite is enabled', () => {
+    const first = { ...job('first', 1000), materialCostPerM: 10_000, constructionCostPerM2: 10_000 };
+    const second = { ...job('second', 2000), materialCostPerM: 20_000, constructionCostPerM2: 20_000 };
+    const grouped = calculateProjectEstimate([first, second], 10_000, 15_000, 0);
+    expect(grouped.jobs.map((line) => line.rates.materialCostPerM)).toEqual([10_000, 20_000]);
+    expect(grouped.materialCost).toBe(50_000);
+    expect(grouped.constructionCost).toBe(61_000);
+    const global = calculateProjectEstimate([first, second], 10_000, 15_000, 0, [], { rateMode: 'global' });
+    expect(global.jobs.every((line) => line.rates.materialCostPerM === 10_000)).toBe(true);
+    expect(global.materialCost).toBe(30_000);
+    expect(global.constructionCost).toBe(54_900);
+  });
+
+  it('allocates a mixed merged roll to each source group rate', () => {
+    const first = { ...job('source-a', 510), materialCostPerM: 10_000, constructionCostPerM2: 10_000 };
+    const second = { ...job('source-b', 310), materialCostPerM: 20_000, constructionCostPerM2: 20_000 };
+    const merged = {
+      id: 'merged-mixed', name: '병합 혼합', mergeGroupId: 'auto', groupNames: ['그룹 1', '그룹 2'], sourceJobIds: ['source-a', 'source-b'], sourceIds: ['g1-p1', 'g2-p1'],
+      createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', rollWidthMm: 1220, usedLengthMm: 710,
+      producedQuantity: 2, utilizationPercent: 54.3, wastePercent: 45.7,
+      placements: [
+        { id: 1, sourceId: 'g1-p1', instanceIndex: 0, x: 5, y: 5, width: 500, height: 500, rotated: false },
+        { id: 2, sourceId: 'g2-p1', instanceIndex: 0, x: 510, y: 5, width: 300, height: 500, rotated: false },
+      ],
+    };
+    const result = calculateProjectEstimate([first, second], 10_000, 15_000, 0, [merged]);
+    const detail = result.mergedJobs[0]!;
+    expect(detail.rates.mixed).toBe(true);
+    expect(detail.sourceDetails?.map((line) => line.rates.materialCostPerM)).toEqual([10_000, 20_000]);
+    expect(detail.estimate.materialLengthM).toBeCloseTo(0.71, 8);
+    expect(detail.sourceDetails?.reduce((sum, line) => sum + line.estimate.materialLengthM, 0)).toBeCloseTo(0.71, 8);
+  });
 });

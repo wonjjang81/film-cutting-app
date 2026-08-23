@@ -249,6 +249,7 @@ export default function FilmCutInputScreen() {
             .filter((piece) => piece.mergeGroupId === entry.mergeGroupId)
             .map((piece) => sourceJobIds.get(`${piece.groupId}-${piece.pieceId}`))
             .filter((id): id is string => id !== undefined),
+          sourceIds: [...entry.sourceIds],
           createdAt: new Date(timestamp + 1000 + index).toISOString(),
           updatedAt: new Date(timestamp + 1000 + index).toISOString(),
           rollWidthMm: FIXED_ROLL_WIDTH_MM,

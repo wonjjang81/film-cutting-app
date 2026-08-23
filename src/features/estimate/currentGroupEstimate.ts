@@ -91,6 +91,7 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     mergeGroupId: entry.mergeGroupId,
     groupNames: [...entry.groupNames],
     sourceJobIds: entry.sourceIds.map((sourceId) => jobBySourceId.get(sourceId)?.id).filter((id): id is string => Boolean(id)),
+    sourceIds: [...entry.sourceIds],
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     rollWidthMm: 1_220,

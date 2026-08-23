@@ -97,6 +97,8 @@ export type SavedMergedCuttingJob = {
   mergeGroupId: string;
   groupNames: string[];
   sourceJobIds: string[];
+  /** Source group/piece keys in the same order as sourceJobIds. Added for per-group estimate allocation. */
+  sourceIds?: string[];
   createdAt: string;
   updatedAt: string;
   rollWidthMm: number;
