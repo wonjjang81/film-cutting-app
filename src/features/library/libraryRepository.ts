@@ -428,11 +428,23 @@ function orderJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
     .slice(0, MAX_SAVED_JOBS);
 }
 
+function sortJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
+  return jobs
+    .map(clone)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id));
+}
+
 function orderMergedJobs(jobs: readonly SavedMergedCuttingJob[]): SavedMergedCuttingJob[] {
   return jobs
     .map(clone)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
     .slice(0, MAX_SAVED_JOBS);
+}
+
+function sortMergedJobs(jobs: readonly SavedMergedCuttingJob[]): SavedMergedCuttingJob[] {
+  return jobs
+    .map(clone)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id));
 }
 
 function orderProjects(projects: readonly SavedProject[]): SavedProject[] {
@@ -614,11 +626,11 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         const previous = (document.projects ?? []).find((item) => item.id === validProject.id);
         const replacedJobIds = new Set([...(previous?.jobIds ?? []), ...validProject.jobIds]);
         const replacedMergedIds = new Set([...(previous?.mergedJobIds ?? []), ...validProject.mergedJobIds]);
-        document.jobs = orderJobs([
+        document.jobs = sortJobs([
           ...document.jobs.filter((job) => !replacedJobIds.has(job.id)),
           ...validJobs,
         ]);
-        document.mergedJobs = orderMergedJobs([
+        document.mergedJobs = sortMergedJobs([
           ...document.mergedJobs.filter((job) => !replacedMergedIds.has(job.id)),
           ...validMergedJobs,
         ]);
