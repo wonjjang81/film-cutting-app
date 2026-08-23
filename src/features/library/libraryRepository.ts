@@ -383,6 +383,10 @@ function assertId(id: string): void {
   if (!validId(id)) throw new Error('ID must be nonblank.');
 }
 
+function isOptimisticConflict(error: unknown): boolean {
+  return error instanceof Error && error.message.includes('다른 기기에서 프로젝트가 변경되었습니다');
+}
+
 function orderJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
   return jobs
     .map(clone)
@@ -476,11 +480,21 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
 
   const mutate = <T>(operation: (document: LibraryDocument) => T): Promise<T> => {
     const run = async (): Promise<T> => {
-      const loaded = await readForMutation();
-      const document = clone(loaded.document);
-      const result = operation(document);
-      await adapter.set(LIBRARY_STORAGE_KEY, JSON.stringify(document));
-      return result;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const loaded = await readForMutation();
+        const document = clone(loaded.document);
+        const result = operation(document);
+        try {
+          await adapter.set(LIBRARY_STORAGE_KEY, JSON.stringify(document));
+          return result;
+        } catch (error) {
+          // A concurrent writer can invalidate the ETag between the read and
+          // write. Re-read and reapply this pure document operation once so
+          // normal multi-device activity does not break a group calculation.
+          if (!isOptimisticConflict(error) || attempt > 0) throw error;
+        }
+      }
+      throw new Error('프로젝트 저장을 다시 시도하지 못했습니다.');
     };
     const pending = mutationQueue.then(run, run);
     mutationQueue = pending.then(() => undefined, () => undefined);

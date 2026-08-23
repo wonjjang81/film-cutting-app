@@ -240,6 +240,27 @@ describe('library repository', () => {
     expect(loaded.document.mergedJobs).toHaveLength(1);
   });
 
+  it('replays a mutation once after an optimistic concurrency conflict', async () => {
+    let value: string | null = null;
+    let conflicts = 0;
+    const adapter: KeyValueAdapter = {
+      get: async () => value,
+      set: async (_key, nextValue) => {
+        if (conflicts === 0) {
+          conflicts += 1;
+          throw new Error('다른 기기에서 프로젝트가 변경되었습니다.');
+        }
+        value = nextValue;
+      },
+    };
+    const repository = createLibraryRepository(adapter);
+
+    await repository.saveJob(job(1));
+
+    expect(conflicts).toBe(1);
+    expect((await repository.load()).document.jobs).toHaveLength(1);
+  });
+
   it('confirms multiple jobs in one inventory transaction and prevents a second confirmation', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     const first = job(1, { id: 'batch-job-1' });
