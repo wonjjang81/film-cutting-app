@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ContinuousRollInput, ContinuousRollLayoutValidationError, getContinuousRollCandidateCount, getContinuousRollPlanningMetrics, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
+import { ContinuousRollInput, ContinuousRollLayoutValidationError, compareContinuousRollCandidates, getContinuousRollCandidateCount, getContinuousRollPlanningMetrics, optimizeContinuousRollLayout } from './optimizeContinuousRollLayout';
 
 type Objective = [number, number, number, number, number];
 type OraclePattern = { key: string; capacity: number; height: number; rotations: number };
@@ -526,6 +526,20 @@ describe('optimizeContinuousRollLayout', () => {
     expect(result.optimizationStatus).toBe('approximate');
     expect(result.usedLengthMm).toBeGreaterThan(result.lowerBoundLengthMm);
     expect(result.optimalityGapMm).toBeCloseTo(result.usedLengthMm - result.lowerBoundLengthMm);
+  });
+
+  it('compares approximate mixed orientation against deterministic direction baselines', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 10, pieceWidthMm: 3, pieceLengthMm: 4, quantity: 100_000,
+      gapMm: 1, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: true,
+    };
+    const candidates = compareContinuousRollCandidates(input);
+
+    expect(candidates.map((candidate) => candidate.name)).toEqual(['최적 혼합', '순방향', '회전 방향']);
+    expect(candidates[0]?.result.optimizationStatus).toBe('approximate');
+    expect(candidates.every((candidate) => candidate.result.producedQuantity > 0)).toBe(true);
+    expect(candidates[1]?.savedLengthMm).toBeGreaterThanOrEqual(0);
+    expect(candidates[2]?.savedLengthMm).toBeGreaterThanOrEqual(0);
   });
 
   it('fails over to material-first when an admitted exact pattern search reaches its runtime cap', () => {

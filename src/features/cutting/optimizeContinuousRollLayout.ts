@@ -21,6 +21,13 @@ export type ContinuousRollPlanningMetrics = {
   retainedStates: number;
 };
 
+export type ContinuousRollCandidateComparison = {
+  name: '최적 혼합' | '순방향' | '회전 방향';
+  result: ContinuousRollResult;
+  savedLengthMm: number;
+  producedDelta: number;
+};
+
 export class ContinuousRollLayoutValidationError extends Error {}
 
 /** Deliberately small browser budgets. The exact path aborts before exceeding either bound. */
@@ -1288,4 +1295,28 @@ export function optimizeContinuousRollLayout(rawInput: ContinuousRollInput): Con
   const selected = selectExactPlan(input, targetQuantity) ?? selectMaterialPlan(input, targetQuantity);
   if (!selected.plan || selected.quantity === 0) return emptyResult(selected.metrics, input);
   return materializeResult(selected.quantity, selected.plan, input, selected.metrics);
+}
+
+/**
+ * Compares the bounded optimizer with two deterministic single-direction
+ * baselines. This is intentionally limited to the approximate path so a
+ * large browser calculation can explain where its material savings come from
+ * without multiplying the exact search cost for small inputs.
+ */
+export function compareContinuousRollCandidates(rawInput: ContinuousRollInput): ContinuousRollCandidateComparison[] {
+  const optimized = optimizeContinuousRollLayout(rawInput);
+  if (optimized.optimizationStatus !== 'approximate') return [{ name: '최적 혼합', result: optimized, savedLengthMm: 0, producedDelta: 0 }];
+  const forward = optimizeContinuousRollLayout({ ...rawInput, allowRotation: false });
+  const rotated = optimizeContinuousRollLayout({
+    ...rawInput,
+    pieceWidthMm: rawInput.pieceLengthMm,
+    pieceLengthMm: rawInput.pieceWidthMm,
+    allowRotation: false,
+  });
+  const candidates: ContinuousRollCandidateComparison[] = [
+    { name: '최적 혼합', result: optimized, savedLengthMm: 0, producedDelta: optimized.producedQuantity - optimized.producedQuantity },
+    { name: '순방향', result: forward, savedLengthMm: Math.max(0, forward.usedLengthMm - optimized.usedLengthMm), producedDelta: forward.producedQuantity - optimized.producedQuantity },
+    { name: '회전 방향', result: rotated, savedLengthMm: Math.max(0, rotated.usedLengthMm - optimized.usedLengthMm), producedDelta: rotated.producedQuantity - optimized.producedQuantity },
+  ];
+  return candidates.filter((candidate, index, all) => all.findIndex((item) => item.name === candidate.name) === index);
 }
