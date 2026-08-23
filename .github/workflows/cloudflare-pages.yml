@@ -37,7 +37,11 @@ jobs:
       - run: pnpm test
       - run: pnpm build:web
         env:
+          CF_PAGES: "1"
+          EXPO_PUBLIC_WEB_BASE_URL: "/"
           EXPO_PUBLIC_CLOUDFLARE_API_URL: ${{ vars.CLOUDFLARE_API_URL }}
+      - name: Verify Cloudflare static asset paths
+        run: node scripts/cloudflare-build-check.mjs
       - name: Deploy to Cloudflare Pages
         uses: cloudflare/wrangler-action@v3
         with:
