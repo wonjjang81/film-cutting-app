@@ -224,7 +224,28 @@ export default function FilmCutInputScreen() {
   const updateActiveForm: React.Dispatch<React.SetStateAction<CuttingFormState>> = (updater) => {
     setForm((current) => {
       const next = typeof updater === 'function' ? updater(current) : updater;
-      setGroups((items) => items.map((group) => group.id === activeGroupId ? { ...group, form: next, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: next } : piece) } : group));
+      const identityChanged = next.brand !== current.brand || next.productNumber !== current.productNumber;
+      setGroups((items) => {
+        const activeGroup = items.find((group) => group.id === activeGroupId);
+        const mergeGroupId = activeGroup?.mergeGroupId;
+        const shareIdentity = (group: CuttingGroupDraft) => group.id === activeGroupId
+          || (identityChanged && mergeGroupId !== undefined && mergeGroupId !== DISABLED_MERGE_GROUP_ID && group.mergeGroupId === mergeGroupId);
+        return items.map((group) => {
+          if (!shareIdentity(group)) return group.id === activeGroupId
+            ? { ...group, form: next, pieces: group.pieces.map((piece) => piece.id === activePieceId ? { ...piece, form: next } : piece) }
+            : group;
+          const pieces = group.pieces.map((piece) => {
+            const pieceForm = group.id === activeGroupId && piece.id === activePieceId ? next : piece.form;
+            return identityChanged
+              ? { ...piece, form: { ...pieceForm, brand: next.brand, productNumber: next.productNumber } }
+              : group.id === activeGroupId && piece.id === activePieceId ? { ...piece, form: next } : piece;
+          });
+          const groupForm = group.id === activeGroupId
+            ? next
+            : { ...group.form, brand: next.brand, productNumber: next.productNumber };
+          return { ...group, form: groupForm, pieces };
+        });
+      });
       return next;
     });
   };
@@ -303,6 +324,18 @@ export default function FilmCutInputScreen() {
     const remaining = groups.filter((group) => group.id !== id);
     setGroups(remaining);
     if (id === activeGroupId) selectGroup(remaining[0]!);
+  };
+  const changeMergeGroup = (id: string, mergeGroupId: string | undefined) => {
+    const source = groups.find((group) => group.id === id);
+    if (!source) return;
+    setGroups((items) => items.map((group) => {
+      const linked = group.id === id || (mergeGroupId !== undefined && mergeGroupId !== DISABLED_MERGE_GROUP_ID && group.mergeGroupId === mergeGroupId);
+      if (!linked) return group;
+      const pieces = group.pieces.map((piece) => ({ ...piece, form: { ...piece.form, brand: source.form.brand, productNumber: source.form.productNumber } }));
+      return { ...group, mergeGroupId: group.id === id ? mergeGroupId : group.mergeGroupId, form: { ...group.form, brand: source.form.brand, productNumber: source.form.productNumber }, pieces };
+    }));
+    setForm((current) => ({ ...current, brand: source.form.brand, productNumber: source.form.productNumber }));
+    setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
   useEffect(() => {
@@ -826,7 +859,7 @@ export default function FilmCutInputScreen() {
           <View style={[styles.panel, wide && styles.inputPanelWide]}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
-          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={(id, mergeGroupId) => setGroups((items) => items.map((group) => group.id === id ? { ...group, mergeGroupId } : group))} onSettings={(id, patch) => setGroups((items) => items.map((group) => group.id === id ? { ...group, ...patch } : group))} />
+          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onDelete={deleteGroup} onMergeGroup={changeMergeGroup} onSettings={(id, patch) => setGroups((items) => items.map((group) => group.id === id ? { ...group, ...patch } : group))} />
           <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} />
           <View style={styles.identityGrid}><BrandSelect value={form.brand} onChange={(brand) => updateActiveForm((current) => ({ ...current, brand }))} /><TextField label="제품 번호 (선택)" value={form.productNumber} onChange={(productNumber) => updateActiveForm((current) => ({ ...current, productNumber }))} /></View>
           <FormSection title={`${groups.find((group) => group.id === activeGroupId)?.name ?? '현재 그룹'} · ${groups.find((group) => group.id === activeGroupId)?.pieces.find((piece) => piece.id === activePieceId)?.name ?? '현재 조각'} 생산 조건`} fields={[[ 'pieceWidth', '재단 폭', 'mm' ], [ 'pieceLength', '재단 길이', 'mm' ], [ 'quantity', '필요 수량', '개' ]]} form={form} setForm={updateActiveForm} />
@@ -876,7 +909,7 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRename, onD
       ? '자동 병합 · 전체 그룹을 한 롤 후보로 계산합니다.'
       : '같은 번호 그룹을 하나의 혼합 롤로 계산합니다.';
   return <View style={styles.groupInputPanel}>
-    <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>그룹 입력</Text><Text style={styles.groupInputHint}>그룹명은 ✎로 변경할 수 있으며 그룹을 선택해 조건을 입력합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 그룹 추가</Text></TouchableOpacity></View>
+    <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>그룹 입력</Text><Text style={styles.groupInputHint}>그룹명은 ✎로 변경할 수 있으며, 같은 그룹·병합 그룹의 브랜드와 제품번호는 함께 적용됩니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 그룹 추가</Text></TouchableOpacity></View>
     <View style={styles.groupChips}>{groups.map((group, index) => <View key={group.id} style={[styles.groupChip, group.id === activeGroupId && styles.groupChipActive]}><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: group.id === activeGroupId }} onPress={() => onSelect(group)} style={styles.groupChipMain}>{editingId === group.id ? <TextInput accessibilityLabel={`${group.name} 이름`} autoFocus value={editingName} onChangeText={setEditingName} onBlur={finishRename} onSubmitEditing={finishRename} returnKeyType="done" style={styles.groupNameInput} /> : <><Text style={[styles.groupChipIndex, group.id === activeGroupId && styles.groupChipIndexActive]}>{index + 1}</Text><View style={styles.groupChipCopy}><Text style={[styles.groupChipText, group.id === activeGroupId && styles.groupChipTextActive]} numberOfLines={1}>{group.name}</Text><Text style={styles.groupChipMeta} numberOfLines={1}>{group.form.brand} · {group.form.pieceWidth || '—'}×{group.form.pieceLength || '—'} · {group.form.quantity || '—'}개{group.mergeGroupId && group.mergeGroupId !== DISABLED_MERGE_GROUP_ID ? ` · ${group.mergeGroupId === AUTO_MERGE_GROUP_ID ? '자동 병합' : `병합 ${group.mergeGroupId}`}` : ''}</Text></View></>}</TouchableOpacity>{editingId !== group.id && <TouchableOpacity accessibilityLabel={`${group.name} 이름 변경`} onPress={() => { setEditingId(group.id); setEditingName(group.name); }} style={styles.groupChipAction}><Text>✎</Text></TouchableOpacity>}{groups.length > 1 && <TouchableOpacity accessibilityLabel={`${group.name} 삭제`} onPress={() => onDelete(group.id)} style={styles.groupChipAction}><Text style={styles.groupDeleteText}>×</Text></TouchableOpacity>}</View>)}</View>
     <View style={styles.mergeControl}><Text style={styles.mergeControlLabel}>현재 그룹 병합 번호</Text>{['1', '2', '3'].map((value) => <TouchableOpacity key={value} accessibilityRole="button" accessibilityState={{ selected: activeMergeGroupId === value }} onPress={() => onMergeGroup(activeGroupId, activeMergeGroupId === value ? DISABLED_MERGE_GROUP_ID : value)} style={[styles.mergeControlButton, activeMergeGroupId === value && styles.mergeControlButtonActive]}><Text style={[styles.mergeControlText, activeMergeGroupId === value && styles.mergeControlTextActive]}>{value}</Text></TouchableOpacity>)}<Text style={styles.mergeControlHint}>{mergeLabel}</Text></View>
     {activeGroup && <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 }}><TextInput accessibilityLabel="그룹 필름명" value={activeGroup.filmName} onChangeText={(value) => onSettings(activeGroup.id, { filmName: value })} placeholder="그룹 필름명" placeholderTextColor="#94a3b8" style={{ flex: 1, minWidth: 120, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 원단 단가" value={activeGroup.materialCostPerM} onChangeText={(value) => onSettings(activeGroup.id, { materialCostPerM: value.replace(/[^0-9]/g, '') })} placeholder="원단 단가 원/m" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /><TextInput accessibilityLabel="그룹 시공 단가" value={activeGroup.constructionCostPerM2} onChangeText={(value) => onSettings(activeGroup.id, { constructionCostPerM2: value.replace(/[^0-9]/g, '') })} placeholder="시공 단가 원/m²" placeholderTextColor="#94a3b8" keyboardType="numeric" style={{ flex: 1, minWidth: 110, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 11, color: '#0f172a', backgroundColor: '#fff' }} /></View>}
