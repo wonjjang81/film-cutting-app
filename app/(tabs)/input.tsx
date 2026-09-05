@@ -179,7 +179,15 @@ export default function FilmCutInputScreen() {
     const savedJobs = project.jobIds
       .map((id) => document.jobs.find((job) => job.id === id))
       .filter((job): job is SavedCuttingJob => Boolean(job));
-    if (savedJobs.length === 0) return;
+    if (savedJobs.length === 0) {
+      // Projects can now be created from the project tab before the first
+      // cutting calculation. Keep the persisted project identity while
+      // opening a fresh editable group for the first piece.
+      const fresh = newGroupDraft(1);
+      setProjectId(project.id); setProjectName(project.name); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form);
+      setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
+      return;
+    }
     const mergeGroupByName = new Map<string, string>();
     project.mergedJobIds.forEach((id) => {
       const merged = document.mergedJobs.find((job) => job.id === id);
