@@ -7,10 +7,15 @@ export function defaultPieceId(groupName: string, index: number): string {
 
 /** Returns only the editable part after the fixed group-name prefix. */
 export function pieceNamePart(groupName: string, pieceId: string): string {
-  const prefix = `${groupName}_`;
-  if (pieceId.startsWith(prefix)) return pieceId.slice(prefix.length) || '01';
-  const separator = Math.max(pieceId.lastIndexOf('_'), pieceId.lastIndexOf('-'));
-  return (separator >= 0 ? pieceId.slice(separator + 1) : pieceId).trim() || '01';
+  const normalizedGroup = groupName.trim();
+  const normalizedPiece = pieceId.trim();
+  for (const separator of ['_', '-']) {
+    const prefix = `${normalizedGroup}${separator}`;
+    if (normalizedPiece.startsWith(prefix)) return normalizedPiece.slice(prefix.length) || '01';
+  }
+  // Legacy/custom IDs have no reliable delimiter. Preserve the full value
+  // instead of truncating a legitimate piece name such as "좌측-상단".
+  return normalizedPiece || '01';
 }
 
 /** Combines the immutable group name and the operator-editable piece name. */
@@ -27,12 +32,19 @@ export function composePieceId(groupName: string, pieceName: string): string {
  */
 export function nextPieceId(pieces: readonly PieceIdEntry[], groupName: string): string {
   if (pieces.length === 0) return defaultPieceId(groupName, 1);
+  const groupPrefix = `${groupName}_`;
+  const defaultIndexes = pieces
+    .map((piece) => piece.id.trim())
+    .filter((id) => id.startsWith(groupPrefix))
+    .map((id) => Number(id.slice(groupPrefix.length)))
+    .filter((index) => Number.isInteger(index) && index > 0);
+  if (defaultIndexes.length > 0) return defaultPieceId(groupName, Math.max(...defaultIndexes) + 1);
   const lastId = pieces.at(-1)?.id.trim() ?? '';
   const match = lastId.match(/^(.+?)[-_](\d+)$/);
   if (match) {
     const prefix = match[1]!.trim() || groupName;
     const next = Number(match[2]) + 1;
-    if (prefix === groupName && match[0]!.includes('_')) return defaultPieceId(groupName, next);
+    if (prefix === groupName) return defaultPieceId(groupName, next);
     return `${prefix}-${String(next).padStart(2, '0')}`;
   }
   return `${lastId || groupName}-01`;

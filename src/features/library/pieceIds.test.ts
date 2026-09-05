@@ -9,12 +9,14 @@ describe('legacy piece IDs', () => {
 
   it('keeps the group prefix fixed while exposing only the piece name part', () => {
     expect(pieceNamePart('그룹 1', '그룹 1_01')).toBe('01');
-    expect(pieceNamePart('그룹 1', '맞춤-창')).toBe('창');
+    expect(pieceNamePart('그룹 1', '맞춤-창')).toBe('맞춤-창');
+    expect(pieceNamePart('그룹 1', '그룹 1-02')).toBe('02');
     expect(composePieceId('그룹 2', 'A')).toBe('그룹 2_A');
   });
 
   it('increments a numeric suffix and supports custom IDs', () => {
     expect(nextPieceId([{ id: '그룹 1_01' }], '그룹 1')).toBe('그룹 1_02');
+    expect(nextPieceId([{ id: '그룹 1_01' }, { id: '그룹 1_03' }], '그룹 1')).toBe('그룹 1_04');
     expect(nextPieceId([{ id: '창고-A' }], '그룹 1')).toBe('창고-A-01');
     expect(nextPieceId([], '그룹 1')).toBe('그룹 1_01');
   });

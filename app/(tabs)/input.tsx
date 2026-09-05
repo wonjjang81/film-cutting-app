@@ -207,7 +207,7 @@ export default function FilmCutInputScreen() {
       // Saved jobs use a generated storage ID, while the legacy UI exposes
       // the human-readable piece ID in the job name. Restore that ID so the
       // batch list and the next calculation keep the same source identity.
-      const restoredPieceId = pieceName || defaultPieceId(groupName, group.pieces.length + 1);
+      const restoredPieceId = composePieceId(groupName, pieceNamePart(groupName, pieceName || defaultPieceId(groupName, group.pieces.length + 1)));
       const uniquePieceId = group.pieces.some((piece) => piece.id === restoredPieceId)
         ? `${restoredPieceId}-${group.pieces.length + 1}`
         : restoredPieceId;
@@ -286,6 +286,11 @@ export default function FilmCutInputScreen() {
         return { ...piece, id: nextId, name: nextId };
       }),
     } : group));
+    setSavedGroupPlanViews((views) => {
+      const next = { ...views };
+      delete next[id];
+      return next;
+    });
     if (id === activeGroupId) {
       const activePiece = currentGroup.pieces.find((piece) => piece.id === activePieceId);
       if (activePiece) setActivePieceId(composePieceId(nextName, pieceNamePart(currentGroup.name, activePiece.id)));
