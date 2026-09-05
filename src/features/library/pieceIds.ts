@@ -5,6 +5,22 @@ export function defaultPieceId(groupName: string, index: number): string {
   return `${groupName}_${String(Math.max(1, index)).padStart(2, '0')}`;
 }
 
+/** Returns only the editable part after the fixed group-name prefix. */
+export function pieceNamePart(groupName: string, pieceId: string): string {
+  const prefix = `${groupName}_`;
+  if (pieceId.startsWith(prefix)) return pieceId.slice(prefix.length) || '01';
+  const separator = Math.max(pieceId.lastIndexOf('_'), pieceId.lastIndexOf('-'));
+  return (separator >= 0 ? pieceId.slice(separator + 1) : pieceId).trim() || '01';
+}
+
+/** Combines the immutable group name and the operator-editable piece name. */
+export function composePieceId(groupName: string, pieceName: string): string {
+  const normalizedGroup = groupName.trim();
+  const normalizedPiece = pieceName.trim();
+  if (!normalizedGroup || !normalizedPiece) throw new Error('그룹명과 조각 이름을 입력해 주세요.');
+  return `${normalizedGroup}_${normalizedPiece}`;
+}
+
 /**
  * Generates the next ID using the legacy app's suffix rules. Custom IDs are
  * preserved; only the last numeric suffix is incremented.

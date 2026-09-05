@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { defaultPieceId, nextPieceId, validatePieceId } from './pieceIds';
+import { composePieceId, defaultPieceId, nextPieceId, pieceNamePart, validatePieceId } from './pieceIds';
 
 describe('legacy piece IDs', () => {
   it('creates group-based two digit IDs', () => {
     expect(defaultPieceId('그룹 1', 1)).toBe('그룹 1_01');
     expect(defaultPieceId('그룹 1', 3)).toBe('그룹 1_03');
+  });
+
+  it('keeps the group prefix fixed while exposing only the piece name part', () => {
+    expect(pieceNamePart('그룹 1', '그룹 1_01')).toBe('01');
+    expect(pieceNamePart('그룹 1', '맞춤-창')).toBe('창');
+    expect(composePieceId('그룹 2', 'A')).toBe('그룹 2_A');
   });
 
   it('increments a numeric suffix and supports custom IDs', () => {
