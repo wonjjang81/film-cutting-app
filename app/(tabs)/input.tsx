@@ -306,12 +306,19 @@ export default function FilmCutInputScreen() {
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
   useEffect(() => {
     const id = Array.isArray(routeProjectId) ? routeProjectId[0] : routeProjectId;
-    if (!id || routedProjectRef.current === id || library.projects === undefined) return;
+    if (!id || routedProjectRef.current === id) return;
+    // The input tab stays mounted while switching tabs. A project created
+    // from the projects tab may therefore require one fresh library read
+    // before its route can be restored.
+    if (library.projects === undefined) {
+      void refreshLibrary().catch((caught) => setError(messageOf(caught)));
+      return;
+    }
     const project = library.projects.find((item) => item.id === id);
     if (!project) return;
     routedProjectRef.current = id;
     restoreProject(project, library);
-  }, [library, restoreProject, routeProjectId]);
+  }, [library, refreshLibrary, restoreProject, routeProjectId]);
   useEffect(() => {
     if (routeNewProject !== '1' || routedProjectRef.current === 'new') return;
     routedProjectRef.current = 'new';
