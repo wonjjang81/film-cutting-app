@@ -9,6 +9,18 @@ export type CloudflareLibraryAdapterOptions = {
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
+async function readJsonResponse(response: Response): Promise<string> {
+  const body = await response.text();
+  try {
+    JSON.parse(body);
+  } catch {
+    // Cloudflare Access can return its sign-in HTML with HTTP 200. Treating
+    // that page as a successful library response silently loses projects.
+    throw new Error('Cloudflare 프로젝트 요청이 인증 페이지를 반환했습니다. Cloudflare Access 로그인 상태를 확인해 주세요.');
+  }
+  return body;
+}
+
 function endpoint(baseUrl: string): string {
   return `${baseUrl.replace(/\/$/, '')}/api/library`;
 }
@@ -55,7 +67,7 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
         latestEtagSequence = sequence;
         etag = response.headers.get('ETag');
       }
-      return response.text();
+      return readJsonResponse(response);
     },
     async set(_key, value): Promise<void> {
       const sequence = ++requestSequence;
@@ -67,6 +79,7 @@ export function createCloudflareLibraryAdapter({ baseUrl, fetchImpl = fetch, tim
       const response = await request(endpoint(baseUrl), { credentials: 'include', cache: 'no-store', method: 'PUT', headers: { ...headers, 'Cache-Control': 'no-cache' }, body: value });
       if (response.status === 409) throw new Error('다른 기기에서 프로젝트가 변경되었습니다. 최신 데이터를 불러온 후 다시 시도해 주세요.');
       if (!response.ok) throw new Error(`Cloudflare 프로젝트 저장 실패 (${response.status}).`);
+      await readJsonResponse(response);
       if (sequence === latestEtagSequence) etag = response.headers.get('ETag');
     },
   };

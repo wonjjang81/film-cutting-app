@@ -42,6 +42,17 @@ describe('Cloudflare library adapter', () => {
     await expect(adapter.get('key')).rejects.toThrow('Cloudflare 프로젝트 요청 시간이 초과되었습니다');
   });
 
+  it('does not treat a Cloudflare Access HTML page as a successful project read or save', async () => {
+    const accessHtml = '<!DOCTYPE html><html><head><title>Sign in · Cloudflare Access</title></head></html>';
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(new Response(accessHtml, { status: 200, headers: { 'content-type': 'text/html' } }))
+      .mockResolvedValueOnce(new Response(accessHtml, { status: 200, headers: { 'content-type': 'text/html' } }));
+    const adapter = createCloudflareLibraryAdapter({ baseUrl: 'https://film.example.com', fetchImpl });
+
+    await expect(adapter.get('key')).rejects.toThrow('인증 페이지');
+    await expect(adapter.set('key', '{"version":1}')).rejects.toThrow('인증 페이지');
+  });
+
   it('does not let a stale concurrent GET overwrite the ETag after a successful PUT', async () => {
     let version = 'v1';
     let getCount = 0;
