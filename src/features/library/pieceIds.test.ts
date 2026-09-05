@@ -8,7 +8,7 @@ describe('legacy piece IDs', () => {
   });
 
   it('increments a numeric suffix and supports custom IDs', () => {
-    expect(nextPieceId([{ id: '그룹 1_01' }], '그룹 1')).toBe('그룹 1-02');
+    expect(nextPieceId([{ id: '그룹 1_01' }], '그룹 1')).toBe('그룹 1_02');
     expect(nextPieceId([{ id: '창고-A' }], '그룹 1')).toBe('창고-A-01');
     expect(nextPieceId([], '그룹 1')).toBe('그룹 1_01');
   });

@@ -16,6 +16,7 @@ export function nextPieceId(pieces: readonly PieceIdEntry[], groupName: string):
   if (match) {
     const prefix = match[1]!.trim() || groupName;
     const next = Number(match[2]) + 1;
+    if (prefix === groupName && match[0]!.includes('_')) return defaultPieceId(groupName, next);
     return `${prefix}-${String(next).padStart(2, '0')}`;
   }
   return `${lastId || groupName}-01`;
@@ -23,8 +24,8 @@ export function nextPieceId(pieces: readonly PieceIdEntry[], groupName: string):
 
 export function validatePieceId(pieces: readonly PieceIdEntry[], currentId: string, value: string): string | null {
   const normalized = value.trim();
-  if (!normalized) return '조각 ID를 입력해 주세요.';
-  if (pieces.some((piece) => piece.id === normalized && piece.id !== currentId)) return '같은 그룹에 이미 사용 중인 조각 ID입니다.';
+  if (!normalized) return '조각 이름을 입력해 주세요.';
+  if (pieces.some((piece) => piece.id === normalized && piece.id !== currentId)) return '같은 그룹에 이미 사용 중인 조각 이름입니다.';
   return null;
 }
 
