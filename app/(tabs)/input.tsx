@@ -18,6 +18,7 @@ import { createAppLibraryRepository } from '../../src/features/library/libraryRe
 import type { InventoryDelta } from '../../src/features/library/libraryRepository';
 import type { FilmPreset, FilmRemnant, LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob, SavedProject } from '../../src/features/library/models';
 import { composePieceId, defaultPieceId, nextPieceId, pieceNamePart, validatePieceId } from '../../src/features/library/pieceIds';
+import { DEFAULT_BRANDS, isDefaultBrand, normalizeBrandList } from '../../src/features/library/brandOptions';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
@@ -28,13 +29,13 @@ import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } fro
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
-const BRAND_OPTIONS = ['영림', '현대', 'Lx', '삼성'] as const;
+const BRANDS_STORAGE_KEY = 'film-cutting-brand-options-v1';
 const FIXED_ROLL_WIDTH_MM = 1220;
 const DEFAULT_GAP_MM = 0;
 const DEFAULT_SIDE_MARGIN_MM = 5;
 const DEFAULT_START_END_MARGIN_MM = 5;
 const initialForm: CuttingFormState = {
-  brand: BRAND_OPTIONS[0], productNumber: '', rollWidth: String(FIXED_ROLL_WIDTH_MM), pieceWidth: '0', pieceLength: '0',
+  brand: DEFAULT_BRANDS[0], productNumber: '', rollWidth: String(FIXED_ROLL_WIDTH_MM), pieceWidth: '0', pieceLength: '0',
   quantity: '1', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
@@ -909,12 +910,50 @@ function NumericField({ label, unit, value, onChange, integer = false, step = 1,
 function TextField({ label, value, onChange }: { label: string; value: string; onChange(value: string): void }) { return <View style={styles.textField}><Text style={styles.label}>{label}</Text><TextInput accessibilityLabel={label} autoCapitalize="none" value={value} onChangeText={onChange} style={styles.textInput} placeholder={`${label} 입력`} placeholderTextColor="#94a3b8" /></View>; }
 function BrandSelect({ value, onChange }: { value: string; onChange(value: string): void }) {
   const [open, setOpen] = useState(false);
+  const [brands, setBrands] = useState<string[]>([...DEFAULT_BRANDS]);
+  const [newBrand, setNewBrand] = useState('');
+  const [brandError, setBrandError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(BRANDS_STORAGE_KEY).then((raw) => {
+      if (!active) return;
+      try { setBrands(normalizeBrandList(raw ? JSON.parse(raw) : null, value)); }
+      catch { setBrands(normalizeBrandList(null, value)); }
+    });
+    return () => { active = false; };
+  }, []);
+
+  const visibleBrands = brands.some((brand) => brand.toLocaleLowerCase('ko-KR') === value.trim().toLocaleLowerCase('ko-KR')) || !value.trim()
+    ? brands
+    : normalizeBrandList([...brands, value]);
+  const persistBrands = (next: string[]) => { setBrands(next); void AsyncStorage.setItem(BRANDS_STORAGE_KEY, JSON.stringify(next)); };
+  const addBrand = () => {
+    const next = newBrand.trim().replace(/\s+/g, ' ');
+    if (!next) { setBrandError('추가할 브랜드명을 입력해 주세요.'); return; }
+    if (brands.some((brand) => brand.toLocaleLowerCase('ko-KR') === next.toLocaleLowerCase('ko-KR'))) { setBrandError('이미 등록된 브랜드입니다.'); return; }
+    const nextBrands = [...brands, next];
+    persistBrands(nextBrands); onChange(next); setNewBrand(''); setBrandError(null); setOpen(true);
+  };
+  const removeBrand = (brand: string) => {
+    if (isDefaultBrand(brand)) return;
+    const nextBrands = brands.filter((item) => item !== brand);
+    persistBrands(nextBrands);
+    if (value.toLocaleLowerCase('ko-KR') === brand.toLocaleLowerCase('ko-KR')) onChange(DEFAULT_BRANDS[0]);
+  };
   return <View style={styles.brandField}>
     <Text style={styles.label}>제품 브랜드</Text>
-    <TouchableOpacity accessibilityRole="combobox" accessibilityLabel="제품 브랜드" accessibilityState={{ expanded: open }} onPress={() => setOpen((current) => !current)} style={styles.selectButton}>
+    <TouchableOpacity accessibilityRole="combobox" accessibilityLabel="제품 브랜드" accessibilityState={{ expanded: open }} onPress={() => { setOpen((current) => !current); setBrandError(null); }} style={styles.selectButton}>
       <Text style={[styles.selectText, !value && styles.selectPlaceholder]}>{value || '브랜드 선택'}</Text><Text style={styles.selectChevron}>{open ? '⌃' : '⌄'}</Text>
     </TouchableOpacity>
-    {open && <View style={styles.optionList}>{BRAND_OPTIONS.map((brand) => <TouchableOpacity key={brand} accessibilityRole="button" accessibilityState={{ selected: value === brand }} onPress={() => { onChange(brand); setOpen(false); }} style={[styles.option, value === brand && styles.optionSelected]}><Text style={[styles.optionText, value === brand && styles.optionTextSelected]}>{brand}</Text></TouchableOpacity>)}</View>}
+    {open && <View style={styles.optionList}>
+      {visibleBrands.map((brand) => <View key={brand} style={styles.optionRow}>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${brand} 브랜드 선택`} accessibilityState={{ selected: value === brand }} onPress={() => { onChange(brand); setOpen(false); }} style={[styles.option, value === brand && styles.optionSelected]}><Text style={[styles.optionText, value === brand && styles.optionTextSelected]}>{brand}</Text></TouchableOpacity>
+        {!isDefaultBrand(brand) && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${brand} 브랜드 삭제`} onPress={() => removeBrand(brand)} style={styles.brandDeleteButton}><Text style={styles.brandDeleteText}>×</Text></TouchableOpacity>}
+      </View>)}
+      <View style={styles.brandAddRow}><TextInput accessibilityLabel="새 브랜드명" value={newBrand} onChangeText={(text) => { setNewBrand(text); setBrandError(null); }} onSubmitEditing={addBrand} returnKeyType="done" placeholder="새 브랜드명" placeholderTextColor="#94a3b8" style={styles.brandAddInput} /><TouchableOpacity accessibilityRole="button" accessibilityLabel="브랜드 추가" onPress={addBrand} style={styles.brandAddButton}><Text style={styles.brandAddButtonText}>추가</Text></TouchableOpacity></View>
+      {brandError && <Text style={styles.brandError}>{brandError}</Text>}
+    </View>}
   </View>;
 }
 function FixedProductionConditions() {
@@ -931,7 +970,7 @@ function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
 function withProductionDefaults(form: CuttingFormState): CuttingFormState {
-  const brand = BRAND_OPTIONS.includes(form.brand as (typeof BRAND_OPTIONS)[number]) ? form.brand : BRAND_OPTIONS[0];
+  const brand = form.brand.trim() || DEFAULT_BRANDS[0];
   return { ...form, brand, rollWidth: String(FIXED_ROLL_WIDTH_MM), gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true };
 }
 function formFromRequest(request: RemnantPlanRequest): CuttingFormState {
@@ -985,7 +1024,7 @@ const styles = StyleSheet.create({
   message: { marginBottom: 18, padding: 13, borderRadius: 10, borderWidth: 1 }, messageInfo: { borderColor: '#bfdbfe', backgroundColor: '#eff6ff' }, messageError: { borderColor: '#fecaca', backgroundColor: '#fff1f2' }, messageInfoText: { color: '#1e40af' }, messageErrorText: { color: '#991b1b' },
   workspace: { gap: 20 }, workspaceWide: { flexDirection: 'row', alignItems: 'stretch' }, panel: { minWidth: 0, padding: 21, borderRadius: 20, backgroundColor: '#fff', ...shadow }, inputPanelWide: { width: 450, flexShrink: 0 }, previewPanel: { flex: 1, minHeight: 560 },
   panelHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 20 }, panelHeaderCopy: { flex: 1 }, panelTitle: { fontSize: 20, fontWeight: '800', color: '#0f172a' }, panelSubtitle: { marginTop: 5, fontSize: 12, lineHeight: 18, color: '#64748b' }, stepBadge: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#eff6ff' }, stepBadgeDark: { backgroundColor: '#0f172a' }, stepText: { fontSize: 12, fontWeight: '800', color: '#2563eb' }, stepTextLight: { color: '#fff' },
-  projectContext: { marginTop: 12, marginBottom: 6, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#eff6ff' }, projectContextLabel: { fontSize: 11, fontWeight: '700', color: '#64748b' }, projectContextName: { marginTop: 3, fontSize: 17, fontWeight: '800', color: '#1e3a8a' }, projectContextHint: { marginTop: 4, fontSize: 11, color: '#475569' }, identityGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, zIndex: 10 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'absolute', top: 73, left: 0, right: 0, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, option: { minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' },
+  projectContext: { marginTop: 12, marginBottom: 6, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#eff6ff' }, projectContextLabel: { fontSize: 11, fontWeight: '700', color: '#64748b' }, projectContextName: { marginTop: 3, fontSize: 17, fontWeight: '800', color: '#1e3a8a' }, projectContextHint: { marginTop: 4, fontSize: 11, color: '#475569' }, identityGrid: { position: 'relative', zIndex: 20, flexDirection: 'row', flexWrap: 'wrap', gap: 10 }, textField: { minWidth: 170, flex: 1 }, brandField: { minWidth: 170, flex: 1, position: 'relative', zIndex: 30 }, label: { marginBottom: 6, fontSize: 12, fontWeight: '700', color: '#475569' }, textInput: { minHeight: 46, paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, fontSize: 15, fontWeight: '700', color: '#0f172a', backgroundColor: '#f8fafc' }, selectButton: { minHeight: 46, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#f8fafc' }, selectText: { fontSize: 15, fontWeight: '700', color: '#0f172a' }, selectPlaceholder: { color: '#94a3b8' }, selectChevron: { fontSize: 18, color: '#64748b' }, optionList: { position: 'relative', zIndex: 100, width: '100%', marginTop: 6, overflow: 'hidden', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, backgroundColor: '#fff', ...shadow }, optionRow: { flexDirection: 'row', alignItems: 'stretch', backgroundColor: '#fff' }, option: { flex: 1, minHeight: 42, justifyContent: 'center', paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#f1f5f9' }, optionSelected: { backgroundColor: '#eff6ff' }, optionText: { fontSize: 14, color: '#334155' }, optionTextSelected: { color: '#1d4ed8', fontWeight: '800' }, brandDeleteButton: { width: 42, minHeight: 42, alignItems: 'center', justifyContent: 'center', borderBottomWidth: 1, borderBottomColor: '#f1f5f9', backgroundColor: '#fff' }, brandDeleteText: { fontSize: 20, lineHeight: 22, color: '#dc2626' }, brandAddRow: { flexDirection: 'row', alignItems: 'center', gap: 6, padding: 8, backgroundColor: '#f8fafc' }, brandAddInput: { flex: 1, minHeight: 36, paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, fontSize: 12, color: '#0f172a', backgroundColor: '#fff' }, brandAddButton: { minHeight: 36, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 7, backgroundColor: '#2563eb' }, brandAddButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, brandError: { paddingHorizontal: 9, paddingBottom: 7, fontSize: 10, color: '#b91c1c', backgroundColor: '#f8fafc' },
   mergeControl: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: '#dbeafe' }, mergeControlLabel: { fontSize: 10, fontWeight: '800', color: '#475569' }, mergeControlButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, mergeControlButtonActive: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, mergeControlText: { fontSize: 11, fontWeight: '800', color: '#64748b' }, mergeControlTextActive: { color: '#fff' }, mergeControlHint: { flex: 1, minWidth: 150, fontSize: 10, color: '#64748b' },
   groupInputPanel: { marginBottom: 17, padding: 12, borderRadius: 13, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fbff' }, groupInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, groupInputTitle: { fontSize: 14, fontWeight: '800', color: '#1e3a8a' }, groupInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addGroupButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#2563eb' }, addGroupButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, groupChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 11 }, groupChip: { minHeight: 48, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupChipActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupChipMain: { minWidth: 120, maxWidth: 190, minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 9, paddingRight: 4 }, groupChipIndex: { width: 19, height: 19, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 19, fontWeight: '800', color: '#475569' }, groupChipIndexActive: { backgroundColor: '#2563eb', color: '#fff' }, groupChipCopy: { flex: 1, minWidth: 0 }, groupChipText: { flexShrink: 1, fontSize: 11, fontWeight: '700', color: '#475569' }, groupChipTextActive: { color: '#1d4ed8' }, groupChipMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, groupChipAction: { width: 24, height: 43, alignItems: 'center', justifyContent: 'center' }, groupDeleteText: { fontSize: 17, color: '#ef4444' }, groupNameInput: { minWidth: 86, height: 30, paddingHorizontal: 5, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 5, fontSize: 11, backgroundColor: '#fff' },
   pieceInputPanel: { marginBottom: 15, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#fff' }, pieceInputHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceInputTitle: { fontSize: 13, fontWeight: '800', color: '#334155' }, pieceInputHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, addPieceButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#0f766e' }, addPieceButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, pieceRows: { gap: 6, marginTop: 10 }, pieceRowCard: { minHeight: 46, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 8, backgroundColor: '#f8fafc' }, pieceRowCardActive: { borderColor: '#0f766e', backgroundColor: '#f0fdfa' }, pieceRowMain: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 9 }, pieceIndex: { width: 20, height: 20, textAlign: 'center', borderRadius: 10, backgroundColor: '#e2e8f0', fontSize: 10, lineHeight: 20, fontWeight: '800', color: '#64748b' }, pieceIndexActive: { backgroundColor: '#0f766e', color: '#fff' }, pieceCopy: { flex: 1, minWidth: 0 }, pieceName: { fontSize: 11, fontWeight: '700', color: '#475569' }, pieceNameActive: { color: '#115e59' }, pieceMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, pieceEditButton: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 7 }, pieceEditButtonText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, pieceEditRow: { flex: 1, minWidth: 0, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 7 }, pieceEditPrefix: { minHeight: 34, justifyContent: 'center', paddingLeft: 2 }, pieceEditPrefixText: { fontSize: 12, fontWeight: '800', color: '#115e59' }, pieceIdInput: { flex: 1, minWidth: 55, minHeight: 34, paddingHorizontal: 8, borderWidth: 1, borderColor: '#5eead4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, color: '#0f172a' }, pieceEditAction: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 6, backgroundColor: '#0f766e' }, pieceEditActionText: { fontSize: 10, fontWeight: '800', color: '#fff' }, pieceEditCancel: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 5 }, pieceEditCancelText: { fontSize: 10, color: '#64748b' }, pieceEditError: { width: '100%', paddingHorizontal: 9, paddingBottom: 6, fontSize: 10, color: '#b91c1c' }, pieceDelete: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' }, pieceDeleteText: { fontSize: 18, color: '#ef4444' },
