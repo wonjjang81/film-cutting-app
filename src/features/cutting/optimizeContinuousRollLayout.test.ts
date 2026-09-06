@@ -542,6 +542,16 @@ describe('optimizeContinuousRollLayout', () => {
     expect(candidates[2]?.savedLengthMm).toBeGreaterThanOrEqual(0);
   });
 
+  it('skips an impossible rotated baseline when a piece length exceeds the roll width', () => {
+    const input: ContinuousRollInput = {
+      rollWidthMm: 1_220, pieceWidthMm: 100, pieceLengthMm: 2_320, quantity: 100_000,
+      gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true,
+    };
+
+    expect(() => compareContinuousRollCandidates(input)).not.toThrow();
+    expect(compareContinuousRollCandidates(input).map((candidate) => candidate.name)).toEqual(['최적 혼합', '순방향']);
+  });
+
   it('fails over to material-first when an admitted exact pattern search reaches its runtime cap', () => {
     const input: ContinuousRollInput = {
       rollWidthMm: 4, pieceWidthMm: 1, pieceLengthMm: 1.000001, quantity: 20,

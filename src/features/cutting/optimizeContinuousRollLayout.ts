@@ -1306,8 +1306,20 @@ export function optimizeContinuousRollLayout(rawInput: ContinuousRollInput): Con
 export function compareContinuousRollCandidates(rawInput: ContinuousRollInput): ContinuousRollCandidateComparison[] {
   const optimized = optimizeContinuousRollLayout(rawInput);
   if (optimized.optimizationStatus !== 'approximate') return [{ name: '최적 혼합', result: optimized, savedLengthMm: 0, producedDelta: 0 }];
-  const forward = optimizeContinuousRollLayout({ ...rawInput, allowRotation: false });
-  const rotated = optimizeContinuousRollLayout({
+  // A direction baseline is optional context for the operator. It can be
+  // physically impossible even when the mixed plan is valid (for example,
+  // rotating a 2,320mm piece into a 1,220mm roll width). Do not let an
+  // impossible comparison candidate abort the already valid batch plan.
+  const tryOptimizeBaseline = (input: ContinuousRollInput): ContinuousRollResult | undefined => {
+    try {
+      return optimizeContinuousRollLayout(input);
+    } catch (error) {
+      if (error instanceof ContinuousRollLayoutValidationError) return undefined;
+      throw error;
+    }
+  };
+  const forward = tryOptimizeBaseline({ ...rawInput, allowRotation: false });
+  const rotated = tryOptimizeBaseline({
     ...rawInput,
     pieceWidthMm: rawInput.pieceLengthMm,
     pieceLengthMm: rawInput.pieceWidthMm,
@@ -1315,8 +1327,8 @@ export function compareContinuousRollCandidates(rawInput: ContinuousRollInput): 
   });
   const candidates: ContinuousRollCandidateComparison[] = [
     { name: '최적 혼합', result: optimized, savedLengthMm: 0, producedDelta: optimized.producedQuantity - optimized.producedQuantity },
-    { name: '순방향', result: forward, savedLengthMm: Math.max(0, forward.usedLengthMm - optimized.usedLengthMm), producedDelta: forward.producedQuantity - optimized.producedQuantity },
-    { name: '회전 방향', result: rotated, savedLengthMm: Math.max(0, rotated.usedLengthMm - optimized.usedLengthMm), producedDelta: rotated.producedQuantity - optimized.producedQuantity },
+    ...(forward ? [{ name: '순방향' as const, result: forward, savedLengthMm: Math.max(0, forward.usedLengthMm - optimized.usedLengthMm), producedDelta: forward.producedQuantity - optimized.producedQuantity }] : []),
+    ...(rotated ? [{ name: '회전 방향' as const, result: rotated, savedLengthMm: Math.max(0, rotated.usedLengthMm - optimized.usedLengthMm), producedDelta: rotated.producedQuantity - optimized.producedQuantity }] : []),
   ];
   return candidates.filter((candidate, index, all) => all.findIndex((item) => item.name === candidate.name) === index);
 }
