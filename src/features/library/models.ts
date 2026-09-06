@@ -1,3 +1,5 @@
+import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
+
 /** A reusable cutting specification for one branded film product. */
 export type FilmPreset = {
   id: string;
@@ -62,6 +64,8 @@ export type SavedCuttingJob = {
   brand: string;
   productNumber: string;
   filmName?: string;
+  subgroupName?: string;
+  difficulty?: ConstructionDifficulty;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   createdAt: string;

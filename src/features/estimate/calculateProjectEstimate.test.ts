@@ -47,6 +47,13 @@ describe('calculateProjectEstimate', () => {
     expect(global.constructionCost).toBe(54_900);
   });
 
+  it('uses the subgroup difficulty rate when no explicit construction rate is saved', () => {
+    const difficult = { ...job('difficult', 1000), difficulty: 'high' as const };
+    const result = calculateProjectEstimate([difficult], 10_000, 15_000, 0);
+    expect(result.jobs[0]?.rates.constructionCostPerM2).toBe(100_000);
+    expect(result.constructionCost).toBe(122_000);
+  });
+
   it('allocates a mixed merged roll to each source group rate', () => {
     const first = { ...job('source-a', 510), materialCostPerM: 10_000, constructionCostPerM2: 10_000 };
     const second = { ...job('source-b', 310), materialCostPerM: 20_000, constructionCostPerM2: 20_000 };

@@ -25,6 +25,7 @@ import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMe
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
 import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart } from '../../src/features/library/subgroupCards';
+import { DEFAULT_DIFFICULTY, normalizeDifficulty, type ConstructionDifficulty } from '../../src/features/estimate/difficultyPricing';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -38,7 +39,7 @@ const initialForm: CuttingFormState = {
   quantity: '1', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
-type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean };
+type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty };
 type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
 type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
 type SavedPiecePlanView = {
@@ -73,7 +74,7 @@ function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDra
   // calculation, just as the legacy group estimator did.
   const groupName = `그룹 ${index}`;
   const pieces = withInitialPieces ? [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex)) : [];
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -185,6 +186,7 @@ export default function FilmCutInputScreen() {
     });
     const restoredGroups: CuttingGroupDraft[] = [];
     const groupsByName = new Map<string, CuttingGroupDraft>();
+    const subgroupByGroupName = new Map<string, Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty }>>();
     savedJobs.forEach((job, index) => {
       const [groupLabel, ...pieceLabel] = job.name.split(' · ');
       const groupName = groupLabel?.trim() || `그룹 ${index + 1}`;
@@ -202,9 +204,21 @@ export default function FilmCutInputScreen() {
         ? `${restoredPieceId}-${group.pieces.length + 1}`
         : restoredPieceId;
       group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
+      const subgroupName = job.subgroupName?.trim() || 'A';
+      const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty }>();
+      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], difficulty: normalizeDifficulty(job.difficulty) };
+      subgroup.pieceIds.push(uniquePieceId);
+      subgroup.difficulty = normalizeDifficulty(job.difficulty ?? subgroup.difficulty);
+      subgroups.set(subgroupName, subgroup);
+      subgroupByGroupName.set(groupName, subgroups);
       group.form = group.pieces[0]!.form;
     });
-    restoredGroups.forEach((group) => { group.subgroups = [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true }]; });
+    restoredGroups.forEach((group) => {
+      const savedSubgroups = subgroupByGroupName.get(group.name);
+      group.subgroups = savedSubgroups
+        ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty }))
+        : [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY }];
+    });
     const firstGroup = restoredGroups[0]!;
     const firstPiece = firstGroup.pieces[0]!;
     setProjectId(project.id); setProjectName(project.name); setGroups(restoredGroups); setActiveGroupId(firstGroup.id); setActivePieceId(firstPiece.id); setForm(firstPiece.form);
@@ -290,7 +304,7 @@ export default function FilmCutInputScreen() {
       usedIds.add(id);
       return { ...piece, id, name: id };
     });
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: uniquePieces[0]!.form, pieces: [...item.pieces, ...uniquePieces], subgroups: [...item.subgroups, { id: subgroupId, name: subgroupName, pieceIds: uniquePieces.map((piece) => piece.id), expanded: true }] } : item));
+    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: uniquePieces[0]!.form, pieces: [...item.pieces, ...uniquePieces], subgroups: [...item.subgroups, { id: subgroupId, name: subgroupName, pieceIds: uniquePieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY }] } : item));
     setActivePieceId(uniquePieces[0]!.id); setForm(uniquePieces[0]!.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setNotice(`소그룹 ${subgroupName}과 기본 조각 3개를 추가했습니다.`);
   };
   const renameSubgroup = (groupId: string, subgroupId: string, value: string) => {
@@ -312,6 +326,13 @@ export default function FilmCutInputScreen() {
     setError(null);
     setNotice(`소그룹 이름을 ${nextName}(으)로 변경했습니다. 조각 표시에도 반영되었습니다. 배치 계산을 다시 실행해 주세요.`);
     setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
+  };
+  const updateSubgroupDifficulty = (groupId: string, subgroupId: string, difficulty: ConstructionDifficulty) => {
+    setGroups((items) => items.map((group) => group.id === groupId
+      ? { ...group, subgroups: group.subgroups.map((subgroup) => subgroup.id === subgroupId ? { ...subgroup, difficulty } : subgroup) }
+      : group));
+    setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
+    setNotice(`소그룹 난이도를 ${difficulty === 'low' ? '하' : difficulty === 'high' ? '상' : '중'}로 설정했습니다. 견적에 반영됩니다.`);
   };
   const moveSubgroupToGroup = (sourceGroupId: string, subgroupId: string, targetGroupId: string) => {
     if (sourceGroupId === targetGroupId) return;
@@ -378,7 +399,7 @@ export default function FilmCutInputScreen() {
     if (source.pieces.length <= 1) { setError('대그룹에는 최소 1개의 조각이 필요합니다.'); return; }
     const sourcePiece = source.pieces.find((piece) => piece.id === pieceId);
     if (!sourcePiece) return;
-    const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true };
+    const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true, difficulty: DEFAULT_DIFFICULTY };
     const nextPieceIdValue = composePieceId(target.name, pieceNamePart(source.name, sourcePiece.id));
     if (target.pieces.some((piece) => piece.id === nextPieceIdValue)) { setError('대상 대그룹에 같은 조각 이름이 이미 있습니다.'); return; }
     const movedPiece = { ...sourcePiece, id: nextPieceIdValue, name: nextPieceIdValue, form: { ...sourcePiece.form, brand: target.form.brand, productNumber: target.form.productNumber } };
@@ -498,10 +519,13 @@ export default function FilmCutInputScreen() {
     setCandidateComparison(nextPlan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(request) : []);
     const createdAt = new Date(timestampMs).toISOString();
     const activeGroup = groups.find((group) => group.id === activeGroupId);
+    const activeSubgroup = activeGroup?.subgroups.find((subgroup) => subgroup.pieceIds.includes(activePieceId));
     const nextJob = buildSavedCuttingJob({
       id: preferredJobId ?? createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
       name: request.productNumber ? `${request.brand} ${request.productNumber} 작업` : `${request.brand} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
       filmName: activeGroup?.filmName,
+      subgroupName: activeSubgroup?.name,
+      difficulty: activeSubgroup?.difficulty,
       materialCostPerM: optionalCost(activeGroup?.materialCostPerM),
       constructionCostPerM2: optionalCost(activeGroup?.constructionCostPerM2),
     });
@@ -537,7 +561,8 @@ export default function FilmCutInputScreen() {
       const targetGroups = groups.filter((group) => group.id === groupId);
       const requests: GroupedPieceRequest[] = targetGroups.flatMap((group) => group.pieces.map((piece) => {
         const normalized = withProductionDefaults(piece.form);
-        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
+        const subgroup = group.subgroups.find((item) => item.pieceIds.includes(piece.id));
+        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, difficulty: subgroup?.difficulty, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
         && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
         && Number.isInteger(request.quantity) && request.quantity > 0);
@@ -571,7 +596,7 @@ export default function FilmCutInputScreen() {
         generatedIds.push(id);
         savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
-        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         jobsToSave.push(job);
       }
       const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
@@ -641,7 +666,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request);
     const createdAt = new Date().toISOString();
-    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+      const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setCandidateComparison(entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : []);
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
@@ -970,7 +995,7 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-          <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} />
+          <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeDifficulty={updateSubgroupDifficulty} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -1004,7 +1029,7 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, o
     </View>; })}</View>
   </View>;
 }
-function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onMoveSubgroup, onChangeForm }: { groups: CuttingGroupDraft[]; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(groupId: string, piece: CuttingPieceDraft): void; onAdd(groupId: string, subgroupId?: string): void; onAddSubgroup(): void; onDelete(groupId: string, id: string): void; onRename(groupId: string, pieceId: string, nextId: string): void; onRenameSubgroup(groupId: string, subgroupId: string, name: string): void; onMoveSubgroup(sourceGroupId: string, subgroupId: string, targetGroupId: string): void; onChangeForm(groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
+function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onChangeDifficulty, onMoveSubgroup, onChangeForm }: { groups: CuttingGroupDraft[]; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(groupId: string, piece: CuttingPieceDraft): void; onAdd(groupId: string, subgroupId?: string): void; onAddSubgroup(): void; onDelete(groupId: string, id: string): void; onRename(groupId: string, pieceId: string, nextId: string): void; onRenameSubgroup(groupId: string, subgroupId: string, name: string): void; onChangeDifficulty(groupId: string, subgroupId: string, difficulty: ConstructionDifficulty): void; onMoveSubgroup(sourceGroupId: string, subgroupId: string, targetGroupId: string): void; onChangeForm(groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -1045,7 +1070,7 @@ function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd,
           onRenameSubgroup(groupId, subgroup.id, commitSubgroupName(subgroupDraft, subgroup.name));
           setSubgroupNameDrafts((current) => { const next = { ...current }; delete next[subgroup.id]; return next; });
         };
-        return <View key={subgroup.id} style={[styles.subgroupCard, { zIndex: cardLayer, elevation: cardLayer }]}><View style={[styles.subgroupHeader, styles.dropdownHeader]}><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroupInputValue} onChangeText={(value) => setSubgroupNameDrafts((current) => ({ ...current, [subgroup.id]: normalizeSubgroupNameDraft(value) }))} onBlur={commitSubgroupDraft} onSubmitEditing={commitSubgroupDraft} returnKeyType="done" style={styles.subgroupNameInput} /><SubgroupGroupSelect options={groupOptions} value={groupId} onChange={(targetGroupId) => onMoveSubgroup(groupId, subgroup.id, targetGroupId)} onOpenChange={(open) => setOpenSubgroupId(open ? subgroup.id : null)} /><Text style={styles.subgroupMeta}>대그룹 {groupDisplayId} · {pieces.length}개 조각</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{isExpanded && <><View style={[styles.pieceRows, styles.dropdownRows]}>{pieces.map((piece, index) => renderPiece(group, subgroup.name, piece, index))}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(groupId, subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
+        return <View key={subgroup.id} style={[styles.subgroupCard, { zIndex: cardLayer, elevation: cardLayer }]}><View style={[styles.subgroupHeader, styles.dropdownHeader]}><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroupInputValue} onChangeText={(value) => setSubgroupNameDrafts((current) => ({ ...current, [subgroup.id]: normalizeSubgroupNameDraft(value) }))} onBlur={commitSubgroupDraft} onSubmitEditing={commitSubgroupDraft} returnKeyType="done" style={styles.subgroupNameInput} /><SubgroupGroupSelect options={groupOptions} value={groupId} onChange={(targetGroupId) => onMoveSubgroup(groupId, subgroup.id, targetGroupId)} onOpenChange={(open) => setOpenSubgroupId(open ? subgroup.id : null)} /><DifficultySelect value={subgroup.difficulty} onChange={(difficulty) => onChangeDifficulty(groupId, subgroup.id, difficulty)} /><Text style={styles.subgroupMeta}>대그룹 {groupDisplayId} · {pieces.length}개 조각</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{isExpanded && <><View style={[styles.pieceRows, styles.dropdownRows]}>{pieces.map((piece, index) => renderPiece(group, subgroup.name, piece, index))}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(groupId, subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
       }))}
   </View>;
 }
@@ -1053,6 +1078,10 @@ function SubgroupGroupSelect({ options, value, onChange, onOpenChange }: { optio
   const [open, setOpen] = useState(false);
   const current = options.find((option) => option.id === value);
   return <View style={styles.subgroupGroupSelectWrap}><TouchableOpacity accessibilityRole="combobox" accessibilityLabel="소그룹 대그룹 ID 선택" accessibilityState={{ expanded: open }} onPress={() => setOpen((state) => { const next = !state; onOpenChange?.(next); return next; })} style={styles.subgroupGroupSelect}><Text style={styles.subgroupGroupSelectText}>대그룹 {current?.displayId ?? '—'}</Text><Text style={styles.subgroupGroupSelectChevron}>{open ? '⌃' : '⌄'}</Text></TouchableOpacity>{open && <View style={[styles.subgroupGroupOptions, styles.topmostDropdown]}>{options.map((option) => <TouchableOpacity key={option.id} accessibilityRole="button" accessibilityLabel={`대그룹 ID ${option.displayId} 선택`} onPress={() => { onChange(option.id); setOpen(false); onOpenChange?.(false); }} style={[styles.subgroupGroupOption, option.id === value && styles.subgroupGroupOptionActive]}><Text style={[styles.subgroupGroupOptionText, option.id === value && styles.subgroupGroupOptionTextActive]}>ID {option.displayId}</Text></TouchableOpacity>)}</View>}</View>;
+}
+function DifficultySelect({ value, onChange }: { value?: ConstructionDifficulty; onChange(value: ConstructionDifficulty): void }) {
+  const current = normalizeDifficulty(value);
+  return <View style={styles.difficultySelect} accessibilityLabel="소그룹 시공 난이도 선택"><Text style={styles.difficultyLabel}>난이도</Text>{(['low', 'medium', 'high'] as const).map((difficulty) => <TouchableOpacity key={difficulty} accessibilityRole="button" accessibilityState={{ selected: current === difficulty }} accessibilityLabel={`난이도 ${difficulty === 'low' ? '하' : difficulty === 'high' ? '상' : '중'}`} onPress={() => onChange(difficulty)} style={[styles.difficultyOption, current === difficulty && styles.difficultyOptionActive]}><Text style={[styles.difficultyOptionText, current === difficulty && styles.difficultyOptionTextActive]}>{difficulty === 'low' ? '하' : difficulty === 'high' ? '상' : '중'}</Text></TouchableOpacity>)}</View>;
 }
 function NumericField({ label, unit, value, onChange, integer = false, step = 1, min = 0, compact = false }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean; step?: number; min?: number; compact?: boolean }) {
   const adjust = (direction: -1 | 1) => { const current = Number(value); const base = Number.isFinite(current) ? current : min; onChange(String(Math.max(min, base + direction * step))); };
@@ -1173,7 +1202,7 @@ async function withBusy(operation: () => Promise<void>, setBusy: (value: boolean
 const shadow = { shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 3 } as const;
 const styles = StyleSheet.create({
   productionSettingsCard: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#f8fbff', overflow: 'hidden' }, productionSettingsHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }, productionSettingsTitle: { fontSize: 13, fontWeight: '900', color: '#1e3a8a' }, productionSettingsHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, productionSettingsToggle: { fontSize: 20, color: '#2563eb' }, productionSettingsBody: { paddingHorizontal: 10, paddingBottom: 10 },
-  pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, subgroupCard: { position: 'relative', overflow: 'visible', marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, subgroupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 }, subgroupNameInput: { flex: 1, minHeight: 32, paddingHorizontal: 8, borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, fontWeight: '800', color: '#115e59' }, subgroupGroupSelectWrap: { position: 'relative', zIndex: 20 }, subgroupGroupSelect: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 6, backgroundColor: '#eff6ff' }, subgroupGroupSelectText: { fontSize: 9, fontWeight: '800', color: '#1d4ed8' }, subgroupGroupSelectChevron: { fontSize: 11, color: '#2563eb' }, subgroupGroupOptions: { position: 'absolute', top: 33, right: 0, minWidth: 85, overflow: 'hidden', borderWidth: 1, borderColor: '#93c5fd', borderRadius: 7, backgroundColor: '#fff', ...shadow }, subgroupGroupOption: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: '#eff6ff' }, subgroupGroupOptionActive: { backgroundColor: '#dbeafe' }, subgroupGroupOptionText: { fontSize: 10, color: '#475569' }, subgroupGroupOptionTextActive: { fontWeight: '800', color: '#1d4ed8' }, subgroupMeta: { fontSize: 10, color: '#64748b' }, subgroupToggle: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#e2e8f0' }, subgroupToggleText: { fontSize: 9, fontWeight: '800', color: '#475569' }, emptySubgroup: { marginTop: 10, padding: 16, alignItems: 'center', borderRadius: 9, backgroundColor: '#f8fafc' }, emptySubgroupText: { fontSize: 11, color: '#64748b' },
+  pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, subgroupCard: { position: 'relative', overflow: 'visible', marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, subgroupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 }, subgroupNameInput: { flex: 1, minHeight: 32, paddingHorizontal: 8, borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, fontWeight: '800', color: '#115e59' }, subgroupGroupSelectWrap: { position: 'relative', zIndex: 20 }, subgroupGroupSelect: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 6, backgroundColor: '#eff6ff' }, subgroupGroupSelectText: { fontSize: 9, fontWeight: '800', color: '#1d4ed8' }, subgroupGroupSelectChevron: { fontSize: 11, color: '#2563eb' }, subgroupGroupOptions: { position: 'absolute', top: 33, right: 0, minWidth: 85, overflow: 'hidden', borderWidth: 1, borderColor: '#93c5fd', borderRadius: 7, backgroundColor: '#fff', ...shadow }, subgroupGroupOption: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: '#eff6ff' }, subgroupGroupOptionActive: { backgroundColor: '#dbeafe' }, subgroupGroupOptionText: { fontSize: 10, color: '#475569' }, subgroupGroupOptionTextActive: { fontWeight: '800', color: '#1d4ed8' }, difficultySelect: { flexDirection: 'row', alignItems: 'center', gap: 2 }, difficultyLabel: { fontSize: 8, color: '#64748b' }, difficultyOption: { minWidth: 20, minHeight: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 5, backgroundColor: '#fff' }, difficultyOptionActive: { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }, difficultyOptionText: { fontSize: 9, fontWeight: '700', color: '#64748b' }, difficultyOptionTextActive: { color: '#b45309', fontWeight: '900' }, subgroupMeta: { fontSize: 10, color: '#64748b' }, subgroupToggle: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#e2e8f0' }, subgroupToggleText: { fontSize: 9, fontWeight: '800', color: '#475569' }, emptySubgroup: { marginTop: 10, padding: 16, alignItems: 'center', borderRadius: 9, backgroundColor: '#f8fafc' }, emptySubgroupText: { fontSize: 11, color: '#64748b' },
   groupRows: { gap: 6, marginTop: 10, overflow: 'visible' }, groupRow: { position: 'relative', overflow: 'visible', minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 130, minWidth: 88, height: 32, flexShrink: 1, paddingHorizontal: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
   mergedPreviewNotice: { flex: 1, minHeight: 360, marginTop: 14, padding: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, mergedPreviewNoticeTitle: { fontSize: 16, fontWeight: '900', color: '#115e59', textAlign: 'center' }, mergedPreviewNoticeText: { maxWidth: 420, marginTop: 8, fontSize: 12, lineHeight: 19, color: '#0f766e', textAlign: 'center' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, pageContent: { width: '100%', maxWidth: 1400, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, pageContentSmall: { paddingHorizontal: 12, paddingTop: 20 },

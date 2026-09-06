@@ -48,4 +48,15 @@ describe('current group estimate', () => {
     expect(plan.pieceNamesBySourceId['g1-group-1-그룹 1_01']).toBe('A_01');
     expect(plan.subgroupNamesBySourceId['g1-group-1-그룹 1_01']).toBe('A');
   });
+
+  it('carries subgroup name and difficulty into current estimate jobs', () => {
+    const snapshot = createCurrentEstimateSnapshot([{
+      id: 'g1',
+      name: '그룹 1',
+      subgroups: [{ id: 'sg-a', name: 'A', difficulty: 'high', pieceIds: ['p1'], expanded: true }],
+      pieces: [{ id: 'p1', name: 'p1', form: form('500', '1000') }],
+    }]);
+    const result = calculateCurrentGroupEstimate(snapshot);
+    expect(result.jobs[0]).toMatchObject({ subgroupName: 'A', difficulty: 'high' });
+  });
 });

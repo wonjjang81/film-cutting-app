@@ -3,6 +3,7 @@ import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
 import { subgroupPieceDisplayName } from '../library/subgroupCards';
+import { normalizeDifficulty, type ConstructionDifficulty } from './difficultyPricing';
 
 export const CURRENT_GROUP_ESTIMATE_STORAGE_KEY = 'film-cutting-current-group-estimate';
 
@@ -13,7 +14,7 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
-  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean }[];
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
@@ -48,13 +49,17 @@ function optionalCost(value: string | undefined): number | undefined {
 }
 
 export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRequest[] {
-  return snapshot.pieces.flatMap((group) => group.pieces.map((piece) => ({
+  return snapshot.pieces.flatMap((group) => group.pieces.map((piece) => {
+    const subgroup = group.subgroups?.find((candidate) => candidate.pieceIds.includes(piece.id));
+    return ({
     groupId: group.id,
     groupName: group.name,
     pieceId: piece.id,
     pieceName: displayPieceName(group, piece),
     mergeGroupId: group.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
     filmName: group.filmName,
+    subgroupName: subgroup?.name,
+    difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
     materialCostPerM: optionalCost(group.materialCostPerM),
     constructionCostPerM2: optionalCost(group.constructionCostPerM2),
     request: {
@@ -70,7 +75,8 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
       allowRotation: piece.form.allowRotation,
       remnants: [],
     },
-  })));
+    });
+  }));
 }
 
 function displayPieceName(group: CurrentEstimateGroupSource, piece: CurrentEstimateGroupSource['pieces'][number]): string {
@@ -101,6 +107,8 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     plan: entry.plan,
     inventory: [],
     filmName: entry.filmName,
+    subgroupName: entry.subgroupName,
+    difficulty: entry.difficulty,
     materialCostPerM: entry.materialCostPerM,
     constructionCostPerM2: entry.constructionCostPerM2,
   }));

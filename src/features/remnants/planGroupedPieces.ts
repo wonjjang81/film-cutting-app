@@ -1,6 +1,7 @@
 import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
+import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
 export type GroupedPieceRequest = {
   groupId: string;
@@ -9,6 +10,8 @@ export type GroupedPieceRequest = {
   pieceName: string;
   mergeGroupId?: string;
   filmName?: string;
+  subgroupName?: string;
+  difficulty?: ConstructionDifficulty;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   request: RemnantPlanRequest;

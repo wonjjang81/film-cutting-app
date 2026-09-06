@@ -1,5 +1,6 @@
 import type { RemnantPlan, RemnantPlanRequest } from '../remnants/planWithRemnants';
 import type { FilmRemnant, SavedCuttingJob } from './models';
+import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
 export type CuttingFormState = {
   brand: string;
@@ -73,6 +74,8 @@ export type BuildSavedCuttingJobOptions = {
   filmName?: string;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
+  subgroupName?: string;
+  difficulty?: ConstructionDifficulty;
 };
 
 /** Builds the storage/export view of a tentative plan without mutating it. */
@@ -86,6 +89,8 @@ export function buildSavedCuttingJob({
   filmName,
   materialCostPerM,
   constructionCostPerM2,
+  subgroupName,
+  difficulty,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
   const inventoryById = new Map(inventory.map((remnant) => [remnant.id, remnant]));
   const usageCounts = new Map<string, number>();
@@ -127,6 +132,8 @@ export function buildSavedCuttingJob({
     ...(filmName?.trim() ? { filmName: filmName.trim() } : {}),
     ...(materialCostPerM === undefined ? {} : { materialCostPerM }),
     ...(constructionCostPerM2 === undefined ? {} : { constructionCostPerM2 }),
+    ...(subgroupName?.trim() ? { subgroupName: subgroupName.trim() } : {}),
+    ...(difficulty === undefined ? {} : { difficulty }),
     createdAt,
     updatedAt: createdAt,
     input: {

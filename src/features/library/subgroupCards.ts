@@ -1,6 +1,7 @@
 import { composePieceId, pieceNamePart } from './pieceIds';
+import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
-export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean };
+export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
 export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';

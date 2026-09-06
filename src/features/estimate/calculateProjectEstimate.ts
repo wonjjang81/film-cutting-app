@@ -1,5 +1,6 @@
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { calculateEstimateAtRates, CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MIN, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M, type Estimate } from './calculateEstimate';
+import { constructionRateForDifficulty } from './difficultyPricing';
 
 export type EstimateRateMode = 'group' | 'global';
 export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; mixed?: boolean };
@@ -27,9 +28,11 @@ function finiteRate(value: number | undefined, fallback: number): number {
 }
 
 function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructionCostPerM2: number, mode: EstimateRateMode): EstimateRateSummary {
+  const hasDifficultyContext = job.difficulty !== undefined || job.subgroupName !== undefined;
+  const effectiveConstructionCost = job.constructionCostPerM2 ?? (hasDifficultyContext ? constructionRateForDifficulty(job.difficulty) : constructionCostPerM2);
   return mode === 'global'
     ? { materialCostPerM, constructionCostPerM2 }
-    : { materialCostPerM: finiteRate(job.materialCostPerM, materialCostPerM), constructionCostPerM2: finiteRate(job.constructionCostPerM2, constructionCostPerM2) };
+    : { materialCostPerM: finiteRate(job.materialCostPerM, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2) };
 }
 
 function sumEstimates(items: readonly Estimate[]): Estimate {
