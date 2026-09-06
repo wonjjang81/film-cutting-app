@@ -40,4 +40,11 @@ describe('planning placement model', () => {
     ];
     expect(findLatestPieceJob('그룹 1', '그룹 1_01', jobs)?.id).toBe('new');
   });
+
+  it('finds an independent job when the displayed subgroup name differs from the source piece id', () => {
+    const jobs = [
+      { id: 'displayed', name: '그룹 1 · A_01 작업', updatedAt: '2026-01-02T00:00:00.000Z' },
+    ];
+    expect(findLatestPieceJob('그룹 1', 'group-1-piece-1', jobs, 'A_01')?.id).toBe('displayed');
+  });
 });

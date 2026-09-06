@@ -49,7 +49,7 @@ export function findLatestMergedJob<T extends SavedMergedJobSource>(plan: Merged
 }
 
 /** Resolves the newest persisted job for an independently planned piece. */
-export function findLatestPieceJob<T extends SavedPieceJobSource>(groupName: string, pieceId: string, jobs: readonly T[]): T | undefined {
-  const expectedName = `${groupName} · ${pieceId} 작업`;
-  return jobs.filter((job) => job.name === expectedName).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+export function findLatestPieceJob<T extends SavedPieceJobSource>(groupName: string, pieceId: string, jobs: readonly T[], displayName?: string): T | undefined {
+  const expectedNames = new Set([`${groupName} · ${pieceId} 작업`, ...(displayName?.trim() ? [`${groupName} · ${displayName.trim()} 작업`] : [])]);
+  return jobs.filter((job) => expectedNames.has(job.name)).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
 }
