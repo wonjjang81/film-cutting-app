@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { flattenSubgroupCards, hasAssignedSubgroups, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
+import { commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -41,5 +41,12 @@ describe('subgroup card normalization', () => {
     expect(subgroupPieceDisplayName('그룹 1', 'A', '그룹 1_01')).toBe('A_01');
     expect(subgroupPieceDisplayName('그룹 1', 'B', '그룹 1_B_01')).toBe('B_01');
     expect(subgroupPieceNamePart('그룹 1', 'B', '그룹 1_B_01')).toBe('01');
+  });
+
+  it('allows an empty name while editing and restores the previous name on commit', () => {
+    expect(normalizeSubgroupNameDraft('')).toBe('');
+    expect(normalizeSubgroupNameDraft('  새  이름  ')).toBe(' 새 이름 ');
+    expect(commitSubgroupName('', 'A')).toBe('A');
+    expect(commitSubgroupName('  새  이름  ', 'A')).toBe('새 이름');
   });
 });
