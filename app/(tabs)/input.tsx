@@ -24,7 +24,7 @@ import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../
 import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart } from '../../src/features/library/subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart } from '../../src/features/library/subgroupCards';
 import { DEFAULT_DIFFICULTY, normalizeDifficulty, type ConstructionDifficulty } from '../../src/features/estimate/difficultyPricing';
 
 const repository = createAppLibraryRepository();
@@ -317,12 +317,21 @@ export default function FilmCutInputScreen() {
       setError('같은 대그룹 안에서는 소그룹 이름을 중복 사용할 수 없습니다.');
       return;
     }
-    setGroups((items) => items.map((item) => item.id === groupId ? {
-       ...item,
-       // Subgroup names are presentation metadata. Keep piece IDs stable so
-       // saved plans and manual placements remain linked after a rename.
-       subgroups: item.subgroups.map((itemSubgroup) => itemSubgroup.id === subgroupId ? { ...itemSubgroup, name: nextName } : itemSubgroup),
-    } : item));
+    const targetPieces = group.pieces.filter((piece) => subgroup.pieceIds.includes(piece.id));
+    const renamedPieces = renameSubgroupPieceDrafts(group.name, subgroup.name, nextName, targetPieces);
+    const activePieceIndex = targetPieces.findIndex((piece) => piece.id === activePieceId);
+    if (activePieceIndex >= 0) setActivePieceId(renamedPieces[activePieceIndex]!.id);
+    setGroups((items) => items.map((item) => {
+      if (item.id !== groupId) return item;
+      const renamedById = new Map(targetPieces.map((piece, index) => [piece.id, renamedPieces[index]!] as const));
+      return {
+        ...item,
+        pieces: item.pieces.map((piece) => renamedById.get(piece.id) ?? piece),
+        subgroups: item.subgroups.map((itemSubgroup) => itemSubgroup.id === subgroupId
+          ? { ...itemSubgroup, name: nextName, pieceIds: renamedPieces.map((piece) => piece.id) }
+          : itemSubgroup),
+      };
+    }));
     setError(null);
     setNotice(`소그룹 이름을 ${nextName}(으)로 변경했습니다. 조각 표시에도 반영되었습니다. 배치 계산을 다시 실행해 주세요.`);
     setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);

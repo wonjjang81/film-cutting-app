@@ -29,14 +29,24 @@ export function commitSubgroupName(value: string, fallback: string): string {
 }
 
 export function renameSubgroupPieces(groupName: string, previousName: string, nextName: string, pieceIds: readonly string[]): string[] {
-  const previousPrefix = `${groupName.trim()}_${previousName.trim()}_`;
+  const normalizedGroup = groupName.trim();
+  const previousPrefix = `${normalizedGroup}_${previousName.trim()}_`;
+  const groupPrefix = `${normalizedGroup}_`;
   const normalizedName = nextName.trim();
   return pieceIds.map((pieceId) => {
     const suffix = pieceId.startsWith(previousPrefix)
       ? pieceId.slice(previousPrefix.length)
-      : pieceNamePart(`${groupName.trim()}_${previousName.trim()}`, pieceId);
+      : pieceId.startsWith(groupPrefix)
+        ? pieceId.slice(groupPrefix.length)
+        : subgroupPieceNamePart(normalizedGroup, previousName, pieceId);
     return composePieceId(groupName, `${normalizedName}_${suffix || '01'}`);
   });
+}
+
+/** Renames the persisted draft IDs and display names together after a subgroup rename. */
+export function renameSubgroupPieceDrafts<T extends { id: string; name: string }>(groupName: string, previousName: string, nextName: string, pieces: readonly T[]): T[] {
+  const nextIds = renameSubgroupPieces(groupName, previousName, nextName, pieces.map((piece) => piece.id));
+  return pieces.map((piece, index) => ({ ...piece, id: nextIds[index]!, name: nextIds[index]! }));
 }
 
 export function subgroupCardStackIndex(total: number, index: number): number {

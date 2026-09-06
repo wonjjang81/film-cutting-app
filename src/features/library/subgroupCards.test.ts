@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -29,6 +29,24 @@ describe('subgroup card normalization', () => {
     expect(renameSubgroupPieces('그룹 1', 'A', '창짝', ['그룹 1_A_01', '그룹 1_A_02'])).toEqual([
       '그룹 1_창짝_01',
       '그룹 1_창짝_02',
+    ]);
+  });
+
+  it('updates draft piece IDs so a renamed subgroup does not retain the old prefix', () => {
+    expect(renameSubgroupPieceDrafts('그룹 1', 'B', '드레스룸', [{ id: '그룹 1_B_01', name: '그룹 1_B_01' }])).toEqual([
+      { id: '그룹 1_드레스룸_01', name: '그룹 1_드레스룸_01' },
+    ]);
+  });
+
+  it('keeps the numeric suffix when the original subgroup used the default group-only ID', () => {
+    expect(renameSubgroupPieceDrafts('그룹 1', 'A', '드레스룸', [{ id: '그룹 1_01', name: '그룹 1_01' }])).toEqual([
+      { id: '그룹 1_드레스룸_01', name: '그룹 1_드레스룸_01' },
+    ]);
+  });
+
+  it('renames legacy IDs that contain the generated group prefix', () => {
+    expect(renameSubgroupPieceDrafts('그룹 1', 'A', '드레스룸', [{ id: 'group-1-그룹 1_01', name: 'group-1-그룹 1_01' }])).toEqual([
+      { id: '그룹 1_드레스룸_01', name: '그룹 1_드레스룸_01' },
     ]);
   });
 
