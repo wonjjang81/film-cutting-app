@@ -62,13 +62,13 @@ function newPieceDraft(groupName: string, index: number): CuttingPieceDraft {
   const id = defaultPieceId(groupName, index);
   return { id, name: id, form: { ...initialForm } };
 }
-function newGroupDraft(index: number): CuttingGroupDraft {
+function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDraft {
   // The legacy app opened each group with three editable piece rows. Keep
   // those rows available while allowing untouched 0×0 rows to be ignored by
   // calculation, just as the legacy group estimator did.
   const groupName = `그룹 ${index}`;
-  const pieces = [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex));
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]!.form, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  const pieces = withInitialPieces ? [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex)) : [];
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -267,8 +267,8 @@ export default function FilmCutInputScreen() {
   };
   const selectGroup = (group: CuttingGroupDraft) => {
     saveActivePlanView();
-    const piece = group.pieces[0]!;
-    setActiveGroupId(group.id); setActivePieceId(piece.id); setForm(piece.form); restorePlanView(group.id, piece.id);
+    const piece = group.pieces[0];
+    setActiveGroupId(group.id); setActivePieceId(piece?.id ?? ''); setForm(piece?.form ?? group.form); if (piece) restorePlanView(group.id, piece.id); else { setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); }
   };
   const selectPiece = (piece: CuttingPieceDraft) => {
     saveActivePlanView();
@@ -282,6 +282,10 @@ export default function FilmCutInputScreen() {
     setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: next.form, pieces: [...item.pieces, next] } : item));
     setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
   };
+  const addSubgroup = () => {
+    addPiece();
+    setNotice('소그룹 입력 단위를 추가했습니다. 폭·길이·수량을 입력해 주세요.');
+  };
   const deletePiece = (id: string) => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group || group.pieces.length <= 1) return;
     const remaining = group.pieces.filter((piece) => piece.id !== id);
@@ -289,8 +293,8 @@ export default function FilmCutInputScreen() {
     if (id === activePieceId) selectPiece(remaining[0]!);
   };
   const addGroup = () => {
-    const next = newGroupDraft(groups.length + 1);
-    setGroups((items) => [...items, next]); setActiveGroupId(next.id); setActivePieceId(next.pieces[0]!.id); setForm(next.form); setPlan(null); setDraftJob(null); setPlanRequest(null); setMergedGroupPlans([]);
+    const next = newGroupDraft(groups.length + 1, false);
+    setGroups((items) => [...items, next]); setActiveGroupId(next.id); setActivePieceId(''); setForm(next.form); setPlan(null); setDraftJob(null); setPlanRequest(null); setMergedGroupPlans([]);
   };
   const renameGroupDisplayId = (id: string, value: string) => {
     const nextId = value.replace(/[^0-9]/g, '');
@@ -904,8 +908,8 @@ export default function FilmCutInputScreen() {
           <View style={styles.panel}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
-          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRename={renameGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} onChangeForm={(pieceId, updater) => updatePieceForm(activeGroupId, pieceId, updater)} />
+          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
+          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onAddSubgroup={addSubgroup} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} onChangeForm={(pieceId, updater) => updatePieceForm(activeGroupId, pieceId, updater)} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -933,27 +937,23 @@ export default function FilmCutInputScreen() {
   );
 }
 
-function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRename, onRenameId, onDelete, onGroupBrandChange, onGroupProductNumberChange }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRename(id: string, name: string): void; onRenameId(id: string, value: string): void; onDelete(id: string): void; onGroupBrandChange(id: string, value: string): void; onGroupProductNumberChange(id: string, value: string): void }) {
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const finishRename = () => { if (editingId) onRename(editingId, editingName); setEditingId(null); };
+function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, onDelete, onGroupBrandChange, onGroupProductNumberChange }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRenameId(id: string, value: string): void; onDelete(id: string): void; onGroupBrandChange(id: string, value: string): void; onGroupProductNumberChange(id: string, value: string): void }) {
   return <View style={styles.groupInputPanel}>
-    <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>대그룹 입력</Text><Text style={styles.groupInputHint}>대그룹은 제품 브랜드·제품번호별로 구분합니다. 이름은 ✎로 변경할 수 있습니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 대그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 대그룹 추가</Text></TouchableOpacity></View>
+    <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>대그룹 입력</Text><Text style={styles.groupInputHint}>대그룹은 배치계획용 브랜드·제품번호 단위이며 ID는 숫자로 관리합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 대그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 대그룹 추가</Text></TouchableOpacity></View>
     <View style={styles.hierarchyRole}><Text style={styles.hierarchyBadge}>대그룹 정보</Text><Text style={styles.hierarchyRoleText}>각 대그룹 행에서 ID·브랜드·제품번호를 설정합니다.</Text></View>
     <View style={styles.groupRows}>{groups.map((group, index) => <View key={group.id} style={[styles.groupRow, group.id === activeGroupId && styles.groupRowActive]}>
       <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 선택`} accessibilityState={{ selected: group.id === activeGroupId }} onPress={() => onSelect(group)} style={styles.groupRowSelect}>
         <Text style={[styles.groupChipIndex, group.id === activeGroupId && styles.groupChipIndexActive]}>{group.displayId || index + 1}</Text>
-        {editingId === group.id ? <TextInput accessibilityLabel={`${group.name} 이름`} autoFocus value={editingName} onChangeText={setEditingName} onBlur={finishRename} onSubmitEditing={finishRename} returnKeyType="done" style={styles.groupNameInput} /> : <View style={styles.groupChipCopy}><Text style={[styles.groupChipText, group.id === activeGroupId && styles.groupChipTextActive]} numberOfLines={1}>대그룹 ID {group.displayId || index + 1}</Text><Text style={styles.groupChipMeta} numberOfLines={1}>{group.name} · {group.pieces.length}개 조각</Text></View>}
+        <View style={styles.groupChipCopy}><Text style={[styles.groupChipText, group.id === activeGroupId && styles.groupChipTextActive]} numberOfLines={1}>대그룹 ID {group.displayId || index + 1}</Text><Text style={styles.groupChipMeta} numberOfLines={1}>{group.form.brand || '브랜드 미입력'} · {group.form.productNumber || '제품번호 미입력'} · {group.pieces.length}개 조각</Text></View>
       </TouchableOpacity>
-      {editingId !== group.id && <TextInput accessibilityLabel={`${group.name} 대그룹 ID`} value={group.displayId} onChangeText={(value) => onRenameId(group.id, value)} onBlur={() => onRenameId(group.id, group.displayId)} keyboardType="numeric" style={styles.groupIdInput} />}
+      <TextInput accessibilityLabel={`대그룹 ID ${group.displayId || index + 1}`} value={group.displayId} onChangeText={(value) => onRenameId(group.id, value)} onBlur={() => onRenameId(group.id, group.displayId)} keyboardType="numeric" style={styles.groupIdInput} />
       <BrandSelect compact value={group.form.brand} onChange={(value) => onGroupBrandChange(group.id, value)} />
       <TextInput accessibilityLabel={`${group.name} 제품 번호`} autoCapitalize="none" value={group.form.productNumber} onChangeText={(value) => onGroupProductNumberChange(group.id, value)} placeholder="제품번호" placeholderTextColor="#94a3b8" style={styles.groupProductInput} />
-      {editingId !== group.id && <TouchableOpacity accessibilityLabel={`${group.name} 이름 변경`} onPress={() => { setEditingId(group.id); setEditingName(group.name); }} style={styles.groupRowAction}><Text>✎</Text></TouchableOpacity>}
       {groups.length > 1 && <TouchableOpacity accessibilityLabel={`${group.name} 삭제`} onPress={() => onDelete(group.id)} style={styles.groupRowAction}><Text style={styles.groupDeleteText}>×</Text></TouchableOpacity>}
     </View>)}</View>
   </View>;
 }
-function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onDelete, onRename, onChangeForm }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void; onChangeForm(pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
+function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onChangeForm }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onAddSubgroup(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void; onChangeForm(pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -965,7 +965,7 @@ function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onDelete, onRe
     setEditingId(null); setEditingError(null);
   };
   return <View style={styles.pieceInputPanel}>
-    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>대그룹 ID {group.displayId}</Text><Text style={styles.pieceInputHint}>{group.name} · 조각별 폭·길이·수량을 입력합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? `${group.name} 조각 입력 접기` : `${group.name} 조각 입력 펼치기`} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>
+    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>대그룹 ID {group.displayId}</Text><Text style={styles.pieceInputHint}>{group.name} · 소그룹별 조각 폭·길이·수량을 입력합니다.</Text></View><View style={styles.pieceHeaderActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 소그룹 추가`} onPress={onAddSubgroup} style={styles.addSubgroupButton}><Text style={styles.addSubgroupButtonText}>＋ 소그룹 추가</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? `${group.name} 조각 입력 접기` : `${group.name} 조각 입력 펼치기`} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View></View>
     {expanded && <><View style={styles.pieceRows}>{group.pieces.map((piece, index) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
       <View style={styles.pieceRowContent}>
         {editingId === piece.id
@@ -1096,7 +1096,7 @@ async function withBusy(operation: () => Promise<void>, setBusy: (value: boolean
 const shadow = { shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 3 } as const;
 const styles = StyleSheet.create({
   productionSettingsCard: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#f8fbff', overflow: 'hidden' }, productionSettingsHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }, productionSettingsTitle: { fontSize: 13, fontWeight: '900', color: '#1e3a8a' }, productionSettingsHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, productionSettingsToggle: { fontSize: 20, color: '#2563eb' }, productionSettingsBody: { paddingHorizontal: 10, paddingBottom: 10 },
-  pieceHeaderCopy: { flex: 1, minWidth: 0 }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, pieceSettingsButton: { width: 24, height: 36, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, pieceSettingsButtonText: { fontSize: 13, fontWeight: '900', color: '#2563eb' }, modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, costModalCard: { width: '100%', maxWidth: 390, padding: 18, borderRadius: 16, backgroundColor: '#fff', ...shadow }, costModalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 12 }, costModalTitle: { fontSize: 17, fontWeight: '900', color: '#0f172a' }, costModalSubtitle: { marginTop: 3, fontSize: 11, color: '#64748b' }, modalCloseButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderRadius: 7, backgroundColor: '#f1f5f9' }, modalCloseText: { fontSize: 20, lineHeight: 22, color: '#64748b' }, costModalInput: { minHeight: 42, marginTop: 8, paddingHorizontal: 11, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, fontSize: 13, color: '#0f172a', backgroundColor: '#f8fafc' }, costModalHint: { marginTop: 9, fontSize: 10, lineHeight: 15, color: '#64748b' }, costModalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8, marginTop: 16 }, costModalCancel: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#f1f5f9' }, costModalCancelText: { fontSize: 11, fontWeight: '800', color: '#475569' }, costModalSave: { minHeight: 38, justifyContent: 'center', paddingHorizontal: 16, borderRadius: 8, backgroundColor: '#2563eb' }, costModalSaveText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' },
   groupRows: { gap: 6, marginTop: 10 }, groupRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 92, minWidth: 55, height: 32, flexShrink: 1, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
   mergedPreviewNotice: { flex: 1, minHeight: 360, marginTop: 14, padding: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, mergedPreviewNoticeTitle: { fontSize: 16, fontWeight: '900', color: '#115e59', textAlign: 'center' }, mergedPreviewNoticeText: { maxWidth: 420, marginTop: 8, fontSize: 12, lineHeight: 19, color: '#0f766e', textAlign: 'center' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, pageContent: { width: '100%', maxWidth: 1400, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, pageContentSmall: { paddingHorizontal: 12, paddingTop: 20 },
