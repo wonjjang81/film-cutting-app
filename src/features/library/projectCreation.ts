@@ -1,5 +1,7 @@
 import type { SavedProject } from './models';
 import { createUniqueUiId } from './uiWorkflowHelpers';
+import type { CurrentEstimateSnapshot } from '../estimate/currentGroupEstimate';
+import { calculateCurrentGroupEstimate } from '../estimate/currentGroupEstimate';
 
 /** Creates the persisted header used when a project is started before its first calculation. */
 export function createEmptyProject(name: string, createdAt: string, existingIds: readonly string[]): SavedProject {
@@ -16,5 +18,15 @@ export function createEmptyProject(name: string, createdAt: string, existingIds:
     constructionCostPerM2: 15_000,
     createdAt,
     updatedAt: createdAt,
+  };
+}
+
+export function createProjectFromCurrentEstimate(name: string, snapshot: CurrentEstimateSnapshot, createdAt: string, existingIds: readonly string[]) {
+  const project = createEmptyProject(name, createdAt, existingIds);
+  const estimate = calculateCurrentGroupEstimate(snapshot);
+  return {
+    project: { ...project, jobIds: estimate.jobs.map((job) => job.id), mergedJobIds: estimate.mergedJobs.map((job) => job.id) },
+    jobs: estimate.jobs,
+    mergedJobs: estimate.mergedJobs,
   };
 }
