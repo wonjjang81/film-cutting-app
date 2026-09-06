@@ -26,6 +26,7 @@ import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } 
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
 import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart } from '../../src/features/library/subgroupCards';
 import { DEFAULT_DIFFICULTY, normalizeDifficulty, type ConstructionDifficulty } from '../../src/features/estimate/difficultyPricing';
+import { applyPatternFixed } from '../../src/features/library/groupSettings';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -40,7 +41,7 @@ const initialForm: CuttingFormState = {
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
 type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty };
-type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
+type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string; patternFixed: boolean };
 type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
 type SavedPiecePlanView = {
   plan: RemnantPlan | null;
@@ -74,7 +75,7 @@ function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDra
   // calculation, just as the legacy group estimator did.
   const groupName = `그룹 ${index}`;
   const pieces = withInitialPieces ? [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex)) : [];
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '', patternFixed: false };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -193,7 +194,7 @@ export default function FilmCutInputScreen() {
       const pieceName = pieceLabel.join(' · ').replace(/ 작업$/, '').trim() || `조각 ${index + 1}`;
       let group = groupsByName.get(groupName);
       if (!group) {
-        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, displayId: String(restoredGroups.length + 1), name: groupName, form: formFromSavedJob(job), pieces: [], subgroups: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
+        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, displayId: String(restoredGroups.length + 1), name: groupName, form: formFromSavedJob(job), pieces: [], subgroups: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2), patternFixed: false };
         groupsByName.set(groupName, group); restoredGroups.push(group);
       }
       // Saved jobs use a generated storage ID, while the legacy UI exposes
@@ -214,6 +215,7 @@ export default function FilmCutInputScreen() {
       group.form = group.pieces[0]!.form;
     });
     restoredGroups.forEach((group) => {
+      group.patternFixed = group.pieces.length > 0 && group.pieces.every((piece) => !piece.form.allowRotation);
       const savedSubgroups = subgroupByGroupName.get(group.name);
       group.subgroups = savedSubgroups
         ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty }))
@@ -261,6 +263,16 @@ export default function FilmCutInputScreen() {
     if (groupId === activeGroupId) setForm((current) => ({ ...current, ...patch }));
     setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
   };
+  const updateGroupPatternFixed = (groupId: string, patternFixed: boolean) => {
+    setGroups((items) => items.map((group) => {
+      if (group.id !== groupId) return group;
+      const pieces = applyPatternFixed(group.pieces, patternFixed);
+      return { ...group, patternFixed, form: { ...group.form, allowRotation: !patternFixed }, pieces };
+    }));
+    if (groupId === activeGroupId) setForm((current) => ({ ...current, allowRotation: !patternFixed }));
+    setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
+    setError(null); setNotice(patternFixed ? '무늬고정을 적용했습니다. 해당 대그룹은 회전 없이 배치됩니다.' : '무늬고정을 해제했습니다. 해당 대그룹은 회전 배치가 허용됩니다.');
+  };
   const updatePieceForm = (groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>) => {
     setGroups((items) => items.map((group) => {
       if (group.id !== groupId) return group;
@@ -288,6 +300,7 @@ export default function FilmCutInputScreen() {
       ?? group.subgroups[0];
     if (!targetSubgroup) { addSubgroup(); return; }
     const next = newPieceDraft(`${group.name}_${targetSubgroup.name}`, targetSubgroup.pieceIds.length + 1);
+    if (group.patternFixed) next.form = { ...next.form, allowRotation: false };
     next.id = nextPieceId(group.pieces, `${group.name}_${targetSubgroup.name}`);
     next.name = next.id;
     setGroups((items) => items.map((item) => item.id === groupId ? { ...item, form: next.form, pieces: [...item.pieces, next], subgroups: item.subgroups.map((subgroup) => subgroup.id === targetSubgroup.id ? { ...subgroup, pieceIds: [...subgroup.pieceIds, next.id], expanded: true } : subgroup) } : item));
@@ -298,8 +311,9 @@ export default function FilmCutInputScreen() {
     const subgroupName = subgroupNameForIndex(group.subgroups.length);
     const subgroupId = `${group.id}-subgroup-${subgroupName}`;
     const pieces = [1, 2, 3].map((index) => newPieceDraft(`${group.name}_${subgroupName}`, index));
+    const patternPieces = group.patternFixed ? applyPatternFixed(pieces, true) : pieces;
     const usedIds = new Set(group.pieces.map((piece) => piece.id));
-    const uniquePieces = pieces.map((piece, index) => {
+    const uniquePieces = patternPieces.map((piece, index) => {
       const id = usedIds.has(piece.id) ? `${piece.id}-${index + 1}` : piece.id;
       usedIds.add(id);
       return { ...piece, id, name: id };
@@ -357,7 +371,7 @@ export default function FilmCutInputScreen() {
       let nextId = composePieceId(target.name, suffix);
       if (usedIds.has(nextId)) nextId = `${nextId}-${index + 1}`;
       usedIds.add(nextId);
-      return { ...piece, id: nextId, name: nextId, form: { ...piece.form, brand: target.form.brand, productNumber: target.form.productNumber } };
+      return { ...piece, id: nextId, name: nextId, form: { ...piece.form, brand: target.form.brand, productNumber: target.form.productNumber, allowRotation: target.patternFixed ? false : piece.form.allowRotation } };
     });
     const renamedById = new Map(sourcePieces.map((piece, index) => [piece.id, renamedPieces[index]!.id]));
     const subgroupIdBase = `${target.id}-subgroup-${subgroup.name}`;
@@ -411,7 +425,7 @@ export default function FilmCutInputScreen() {
     const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true, difficulty: DEFAULT_DIFFICULTY };
     const nextPieceIdValue = composePieceId(target.name, pieceNamePart(source.name, sourcePiece.id));
     if (target.pieces.some((piece) => piece.id === nextPieceIdValue)) { setError('대상 대그룹에 같은 조각 이름이 이미 있습니다.'); return; }
-    const movedPiece = { ...sourcePiece, id: nextPieceIdValue, name: nextPieceIdValue, form: { ...sourcePiece.form, brand: target.form.brand, productNumber: target.form.productNumber } };
+    const movedPiece = { ...sourcePiece, id: nextPieceIdValue, name: nextPieceIdValue, form: { ...sourcePiece.form, brand: target.form.brand, productNumber: target.form.productNumber, allowRotation: target.patternFixed ? false : sourcePiece.form.allowRotation } };
     setGroups((items) => items.map((group) => {
       if (group.id === source.id) { const pieces = group.pieces.filter((piece) => piece.id !== pieceId); const subgroups = group.subgroups.map((subgroup) => ({ ...subgroup, pieceIds: subgroup.pieceIds.filter((id) => id !== pieceId) })).filter((subgroup) => subgroup.pieceIds.length > 0); return { ...group, pieces, form: pieces[0]!.form, subgroups }; }
       if (group.id === target.id) return { ...group, pieces: [...group.pieces, movedPiece], subgroups: group.subgroups.length > 0 ? group.subgroups.map((subgroup, index) => index === 0 ? { ...subgroup, pieceIds: [...subgroup.pieceIds, movedPiece.id] } : subgroup) : [{ ...targetSubgroup, pieceIds: [movedPiece.id] }] };
@@ -522,12 +536,12 @@ export default function FilmCutInputScreen() {
   };
 
   const computeAgainst = useCallback((nextForm: CuttingFormState, inventory: LibraryDocument, timestampMs = Date.now(), remnants = inventory.remnants, completed = false, completedIds: number[] = [], preferredJobId?: string) => {
-    const normalizedForm = withProductionDefaults(nextForm);
+    const activeGroup = groups.find((group) => group.id === activeGroupId);
+    const normalizedForm = withProductionDefaults({ ...nextForm, allowRotation: activeGroup?.patternFixed ? false : nextForm.allowRotation });
     const request = toRemnantPlanRequest(normalizedForm, remnants);
     const nextPlan = planWithRemnants(request);
     setCandidateComparison(nextPlan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(request) : []);
     const createdAt = new Date(timestampMs).toISOString();
-    const activeGroup = groups.find((group) => group.id === activeGroupId);
     const activeSubgroup = activeGroup?.subgroups.find((subgroup) => subgroup.pieceIds.includes(activePieceId));
     const nextJob = buildSavedCuttingJob({
       id: preferredJobId ?? createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
@@ -570,7 +584,7 @@ export default function FilmCutInputScreen() {
       const latest = await refreshLibrary();
       const targetGroups = groups.filter((group) => group.id === groupId);
       const requests: GroupedPieceRequest[] = targetGroups.flatMap((group) => group.pieces.map((piece) => {
-        const normalized = withProductionDefaults(piece.form);
+        const normalized = withProductionDefaults({ ...piece.form, allowRotation: group.patternFixed ? false : piece.form.allowRotation });
         const subgroup = group.subgroups.find((item) => item.pieceIds.includes(piece.id));
         return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, difficulty: subgroup?.difficulty, request: toRemnantPlanRequest(normalized, []), filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
@@ -1004,7 +1018,7 @@ export default function FilmCutInputScreen() {
           <View style={styles.panel}>
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
-          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
+          <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onPatternFixedChange={updateGroupPatternFixed} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
           <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeDifficulty={updateSubgroupDifficulty} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
@@ -1022,7 +1036,7 @@ export default function FilmCutInputScreen() {
   );
 }
 
-function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, onDelete, onGroupBrandChange, onGroupProductNumberChange }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRenameId(id: string, value: string): void; onDelete(id: string): void; onGroupBrandChange(id: string, value: string): void; onGroupProductNumberChange(id: string, value: string): void }) {
+function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, onDelete, onPatternFixedChange, onGroupBrandChange, onGroupProductNumberChange }: { groups: CuttingGroupDraft[]; activeGroupId: string; onSelect(group: CuttingGroupDraft): void; onAdd(): void; onRenameId(id: string, value: string): void; onDelete(id: string): void; onPatternFixedChange(id: string, value: boolean): void; onGroupBrandChange(id: string, value: string): void; onGroupProductNumberChange(id: string, value: string): void }) {
   const [openBrandGroupId, setOpenBrandGroupId] = useState<string | null>(null);
   return <View style={[styles.groupInputPanel, styles.overlayGroupPanel]}>
     <View style={styles.groupInputHeader}><View><Text style={styles.groupInputTitle}>대그룹 입력</Text><Text style={styles.groupInputHint}>대그룹은 배치계획용 브랜드·제품번호 단위이며 ID는 숫자로 관리합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 대그룹 추가" onPress={onAdd} style={styles.addGroupButton}><Text style={styles.addGroupButtonText}>＋ 대그룹 추가</Text></TouchableOpacity></View>
@@ -1035,6 +1049,7 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, o
       <TextInput accessibilityLabel={`대그룹 ID ${group.displayId || index + 1}`} value={group.displayId} onChangeText={(value) => onRenameId(group.id, value)} onBlur={() => onRenameId(group.id, group.displayId)} keyboardType="numeric" style={styles.groupIdInput} />
       <BrandSelect compact value={group.form.brand} onChange={(value) => onGroupBrandChange(group.id, value)} onOpenChange={(open) => setOpenBrandGroupId(open ? group.id : null)} />
       <TextInput accessibilityLabel={`${group.name} 제품 번호`} autoCapitalize="none" value={group.form.productNumber} onChangeText={(value) => onGroupProductNumberChange(group.id, value)} placeholder="제품번호" placeholderTextColor="#94a3b8" style={styles.groupProductInput} />
+      <View style={styles.patternFixedControl}><Text style={styles.patternFixedLabel}>무늬고정</Text><Switch accessibilityLabel={`${group.name} 무늬고정`} value={group.patternFixed} onValueChange={(value) => onPatternFixedChange(group.id, value)} trackColor={{ false: '#cbd5e1', true: '#99f6e4' }} thumbColor={group.patternFixed ? '#0f766e' : '#f8fafc'} /></View>
       {groups.length > 1 && <TouchableOpacity accessibilityLabel={`${group.name} 삭제`} onPress={() => onDelete(group.id)} style={styles.groupRowAction}><Text style={styles.groupDeleteText}>×</Text></TouchableOpacity>}
     </View>; })}</View>
   </View>;
@@ -1166,7 +1181,7 @@ function messageOf(value: unknown): string { return value instanceof Error ? val
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }
 function withProductionDefaults(form: CuttingFormState): CuttingFormState {
   const brand = form.brand.trim() || DEFAULT_BRANDS[0];
-  return { ...form, brand, rollWidth: String(FIXED_ROLL_WIDTH_MM), gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true };
+  return { ...form, brand, rollWidth: String(FIXED_ROLL_WIDTH_MM), gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM) };
 }
 function formFromRequest(request: RemnantPlanRequest): CuttingFormState {
   return withProductionDefaults({ brand: request.brand, productNumber: request.productNumber, rollWidth: String(request.rollWidthMm), pieceWidth: String(request.pieceWidthMm), pieceLength: String(request.pieceLengthMm), quantity: String(request.quantity), gap: String(request.gapMm), sideMargin: String(request.sideMarginMm), startEndMargin: String(request.startEndMarginMm), allowRotation: request.allowRotation });
@@ -1213,7 +1228,7 @@ const shadow = { shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 22, 
 const styles = StyleSheet.create({
   productionSettingsCard: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#f8fbff', overflow: 'hidden' }, productionSettingsHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }, productionSettingsTitle: { fontSize: 13, fontWeight: '900', color: '#1e3a8a' }, productionSettingsHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, productionSettingsToggle: { fontSize: 20, color: '#2563eb' }, productionSettingsBody: { paddingHorizontal: 10, paddingBottom: 10 },
   pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, subgroupCard: { position: 'relative', overflow: 'visible', marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, subgroupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 }, subgroupNameInput: { flex: 1, minHeight: 32, paddingHorizontal: 8, borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, fontWeight: '800', color: '#115e59' }, subgroupGroupSelectWrap: { position: 'relative', zIndex: 20 }, subgroupGroupSelect: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 6, backgroundColor: '#eff6ff' }, subgroupGroupSelectText: { fontSize: 9, fontWeight: '800', color: '#1d4ed8' }, subgroupGroupSelectChevron: { fontSize: 11, color: '#2563eb' }, subgroupGroupOptions: { position: 'absolute', top: 33, right: 0, minWidth: 85, overflow: 'hidden', borderWidth: 1, borderColor: '#93c5fd', borderRadius: 7, backgroundColor: '#fff', ...shadow }, subgroupGroupOption: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: '#eff6ff' }, subgroupGroupOptionActive: { backgroundColor: '#dbeafe' }, subgroupGroupOptionText: { fontSize: 10, color: '#475569' }, subgroupGroupOptionTextActive: { fontWeight: '800', color: '#1d4ed8' }, difficultySelect: { flexDirection: 'row', alignItems: 'center', gap: 2 }, difficultyLabel: { fontSize: 8, color: '#64748b' }, difficultyOption: { minWidth: 20, minHeight: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 5, backgroundColor: '#fff' }, difficultyOptionActive: { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }, difficultyOptionText: { fontSize: 9, fontWeight: '700', color: '#64748b' }, difficultyOptionTextActive: { color: '#b45309', fontWeight: '900' }, subgroupMeta: { fontSize: 10, color: '#64748b' }, subgroupToggle: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#e2e8f0' }, subgroupToggleText: { fontSize: 9, fontWeight: '800', color: '#475569' }, emptySubgroup: { marginTop: 10, padding: 16, alignItems: 'center', borderRadius: 9, backgroundColor: '#f8fafc' }, emptySubgroupText: { fontSize: 11, color: '#64748b' },
-  groupRows: { gap: 6, marginTop: 10, overflow: 'visible' }, groupRow: { position: 'relative', overflow: 'visible', minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 130, minWidth: 88, height: 32, flexShrink: 1, paddingHorizontal: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
+  groupRows: { gap: 6, marginTop: 10, overflow: 'visible' }, groupRow: { position: 'relative', overflow: 'visible', minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 130, minWidth: 88, height: 32, flexShrink: 1, paddingHorizontal: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, patternFixedControl: { width: 58, flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }, patternFixedLabel: { fontSize: 9, fontWeight: '800', color: '#475569' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
   mergedPreviewNotice: { flex: 1, minHeight: 360, marginTop: 14, padding: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, mergedPreviewNoticeTitle: { fontSize: 16, fontWeight: '900', color: '#115e59', textAlign: 'center' }, mergedPreviewNoticeText: { maxWidth: 420, marginTop: 8, fontSize: 12, lineHeight: 19, color: '#0f766e', textAlign: 'center' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, pageContent: { width: '100%', maxWidth: 1400, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, pageContentSmall: { paddingHorizontal: 12, paddingTop: 20 },
   header: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-end', gap: 18, marginBottom: 24 }, headerCopy: { flex: 1, minWidth: 240 }, headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 9 },
