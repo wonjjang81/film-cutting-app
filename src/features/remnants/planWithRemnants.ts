@@ -5,6 +5,9 @@ import {
   optimizeContinuousRollLayout,
 } from '../cutting/optimizeContinuousRollLayout';
 
+/** Production limit for a newly opened continuous roll (25 metres). */
+export const MAX_NEW_ROLL_LENGTH_MM = 25_000;
+
 export type FilmRemnant = {
   id: string;
   brand: string;
@@ -80,6 +83,7 @@ function rollInput(request: RemnantPlanRequest, quantity: number, remnant?: Film
   return {
     ...input,
     quantity,
+    maxLengthMm: request.maxLengthMm ?? MAX_NEW_ROLL_LENGTH_MM,
     ...(remnant === undefined ? {} : { rollWidthMm: remnant.widthMm, maxLengthMm: remnant.lengthMm }),
   };
 }

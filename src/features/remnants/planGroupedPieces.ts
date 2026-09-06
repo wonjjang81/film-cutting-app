@@ -1,6 +1,6 @@
 import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
-import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
+import { MAX_NEW_ROLL_LENGTH_MM, planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
 export type GroupedPieceRequest = {
@@ -215,6 +215,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     .map((source, sourceIndex) => ({ source, sourceIndex }))
     .filter(({ source }) => source.id.trim().length > 0 && source.widthMm > 0 && source.lengthMm > 0 && source.quantity > 0 && entries.some((entry) => matchesRemnant(entry, source)));
   const condition = { gapMm: first.request.gapMm, sideMarginMm: first.request.sideMarginMm, startEndMarginMm: first.request.startEndMarginMm };
+  const maxNewRollLengthMm = first.request.maxLengthMm ?? MAX_NEW_ROLL_LENGTH_MM;
   let remainingUnits = candidates.map(({ source }) => source.quantity);
   while ([...remaining.values()].some((quantity) => quantity > 0)) {
     const options = candidates.flatMap(({ source, sourceIndex }, candidateIndex) => {
@@ -225,7 +226,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
       if (result.placements.length === 0) return [];
       const sourceQuantities = countPlacements(result.placements);
       const selectedPieces = eligible.map((entry) => ({ ...entry, request: { ...entry.request, quantity: sourceQuantities[sourceId(entry)] ?? 0 } }));
-      const baseline = optimizeMergedRollLayout({ rollWidthMm, ...condition, pieces: selectedPieces.map((entry) => ({ sourceId: sourceId(entry), widthMm: entry.request.pieceWidthMm, lengthMm: entry.request.pieceLengthMm, quantity: entry.request.quantity, allowRotation: entry.request.allowRotation })) });
+      const baseline = optimizeMergedRollLayout({ rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition, pieces: selectedPieces.map((entry) => ({ sourceId: sourceId(entry), widthMm: entry.request.pieceWidthMm, lengthMm: entry.request.pieceLengthMm, quantity: entry.request.quantity, allowRotation: entry.request.allowRotation })) });
       return [{ source, sourceIndex, candidateIndex, result, sourceQuantities, savedNewRollLengthMm: baseline.usedLengthMm }];
     });
     const selected = options.sort((left, right) => right.savedNewRollLengthMm - left.savedNewRollLengthMm || right.result.placements.length - left.result.placements.length || (left.source.widthMm * left.source.lengthMm) - (right.source.widthMm * right.source.lengthMm) || left.source.id.localeCompare(right.source.id))[0];
@@ -240,7 +241,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     consumed.set(selected.sourceIndex, next);
     remnantUses.push({ remnantId: selected.source.id, widthMm: selected.source.widthMm, lengthMm: selected.source.lengthMm, placements: selected.result.placements.map((placement) => ({ ...placement })), producedQuantity: selected.result.placements.length, sourceQuantities: selected.sourceQuantities, savedNewRollLengthMm: selected.savedNewRollLengthMm, result: selected.result });
   }
-  const result = optimizeMergedRollLayout({ rollWidthMm, ...condition, pieces: mergedPieces(entries, remaining) });
+  const result = optimizeMergedRollLayout({ rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition, pieces: mergedPieces(entries, remaining) });
   const inventoryDelta = makeMergedInventoryDelta([...consumed.values()].sort((left, right) => left.sourceIndex - right.sourceIndex), inventory.map((item) => item.id));
   return {
     mergeGroupId,

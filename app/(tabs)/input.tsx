@@ -19,7 +19,7 @@ import { DEFAULT_BRANDS, isDefaultBrand, normalizeBrandList } from '../../src/fe
 import { normalizeGroupDisplayId, validateGroupDisplayId } from '../../src/features/library/groupIdentifiers';
 import { updateGroupIdentity } from '../../src/features/library/groupIdentity';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
-import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
+import { buildSavedCuttingJob, createUniqueUiId, MAX_ROLL_LENGTH_MM, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
 import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
@@ -1163,7 +1163,7 @@ function BrandSelect({ value, onChange, compact = false, onOpenChange }: { value
   </View>;
 }
 function FixedProductionConditions() {
-  return <View style={styles.fixedConditions}><View style={styles.fixedConditionHeader}><Text style={styles.groupTitle}>재단 조건</Text><Text style={styles.fixedBadge}>고정</Text></View><Text style={styles.fixedConditionText}>원본 롤 폭 {FIXED_ROLL_WIDTH_MM.toLocaleString()} mm</Text><Text style={styles.fixedConditionText}>간격 {DEFAULT_GAP_MM} mm · 좌우 여백 {DEFAULT_SIDE_MARGIN_MM} mm · 시작·끝 여백 {DEFAULT_START_END_MARGIN_MM} mm</Text></View>;
+  return <View style={styles.fixedConditions}><View style={styles.fixedConditionHeader}><Text style={styles.groupTitle}>재단 조건</Text><Text style={styles.fixedBadge}>고정</Text></View><Text style={styles.fixedConditionText}>원본 롤 폭 {FIXED_ROLL_WIDTH_MM.toLocaleString()} mm · 최대 길이 {MAX_ROLL_LENGTH_MM.toLocaleString()} mm</Text><Text style={styles.fixedConditionText}>간격 {DEFAULT_GAP_MM} mm · 좌우 여백 {DEFAULT_SIDE_MARGIN_MM} mm · 시작·끝 여백 {DEFAULT_START_END_MARGIN_MM} mm</Text></View>;
 }
 function ProductionSettingsCard({ useRemnants, autoSaveHistory, busy, onToggleRemnants, onToggleHistory }: { useRemnants: boolean; autoSaveHistory: boolean; busy: boolean; onToggleRemnants(value: boolean): void; onToggleHistory(value: boolean): void }) {
   const [expanded, setExpanded] = useState(false);

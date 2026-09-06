@@ -47,6 +47,7 @@ describe('toRemnantPlanRequest', () => {
       sideMarginMm: 0,
       startEndMarginMm: 0,
       allowRotation: false,
+      maxLengthMm: 25_000,
       remnants: [remnant],
     });
   });
@@ -101,6 +102,7 @@ describe('buildSavedCuttingJob', () => {
         sideMarginMm: 0,
         startEndMarginMm: 0,
         allowRotation: false,
+        maxLengthMm: 25_000,
       },
       remnantIds: ['remnant-a'],
       remnantSummary: [{ id: 'remnant-a', widthMm: 60, lengthMm: 40, quantity: 1 }],

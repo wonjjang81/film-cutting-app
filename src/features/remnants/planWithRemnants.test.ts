@@ -88,11 +88,24 @@ describe('planWithRemnants', () => {
     expect(plan.newRollQuantity).toBe(1);
   });
 
-  it('sends only the remaining quantity to an unrestricted new-roll calculation', () => {
+  it('applies the configured maximum length to the remaining new-roll calculation', () => {
     const plan = planWithRemnants({ ...baseRequest, quantity: 2, maxLengthMm: 1 }, [remnant()]);
 
     expect(plan.newRollQuantity).toBe(1);
-    expect(plan.newRollResult).toMatchObject({ producedQuantity: 1, usedLengthMm: 40 });
+    expect(plan.newRollResult).toMatchObject({ producedQuantity: 0, usedLengthMm: 0 });
+  });
+
+  it('caps an unrestricted new roll at the 25m production maximum', () => {
+    const result = planWithRemnants({
+      ...baseRequest,
+      pieceWidthMm: 60,
+      pieceLengthMm: 1_000,
+      quantity: 30,
+      allowRotation: false,
+    }, []);
+
+    expect(result.newRollResult?.usedLengthMm).toBeLessThanOrEqual(25_000);
+    expect(result.newRollResult?.producedQuantity).toBeLessThan(30);
   });
 
   it('returns only bounded, non-overlapping residual rectangles that can fit a piece', () => {
