@@ -11,6 +11,8 @@ export type GroupedPieceRequest = {
   mergeGroupId?: string;
   filmName?: string;
   subgroupName?: string;
+  /** Per-location piece quantity multiplier; defaults to one for legacy data. */
+  siteCount?: number;
   difficulty?: ConstructionDifficulty;
   materialCostPerM?: number;
   constructionCostPerM2?: number;

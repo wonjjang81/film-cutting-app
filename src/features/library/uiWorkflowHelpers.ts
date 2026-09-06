@@ -79,6 +79,7 @@ export type BuildSavedCuttingJobOptions = {
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   subgroupName?: string;
+  siteCount?: number;
   difficulty?: ConstructionDifficulty;
 };
 
@@ -95,6 +96,7 @@ export function buildSavedCuttingJob({
   materialCostPerM,
   constructionCostPerM2,
   subgroupName,
+  siteCount,
   difficulty,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
   const inventoryById = new Map(inventory.map((remnant) => [remnant.id, remnant]));
@@ -139,6 +141,7 @@ export function buildSavedCuttingJob({
     ...(materialCostPerM === undefined ? {} : { materialCostPerM }),
     ...(constructionCostPerM2 === undefined ? {} : { constructionCostPerM2 }),
     ...(subgroupName?.trim() ? { subgroupName: subgroupName.trim() } : {}),
+    ...(siteCount === undefined ? {} : { siteCount }),
     ...(difficulty === undefined ? {} : { difficulty }),
     createdAt,
     updatedAt: createdAt,

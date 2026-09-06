@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -81,5 +81,13 @@ describe('subgroup card normalization', () => {
     expect(toggleAllSubgroupCards(['a', 'b'], {})).toEqual({ a: true, b: true });
     expect(toggleAllSubgroupCards(['a', 'b'], { a: true, b: true })).toEqual({ a: false, b: false });
     expect(toggleAllSubgroupCards([], { stale: true })).toEqual({});
+  });
+
+  it('normalizes subgroup site count with a backward-compatible default', () => {
+    expect(normalizeSubgroupSiteCount(undefined)).toBe(1);
+    expect(normalizeSubgroupSiteCount('3')).toBe(3);
+    expect(normalizeSubgroupSiteCount(0)).toBe(1);
+    expect(normalizeSubgroupSiteCount('invalid')).toBe(1);
+    expect(multiplyPieceQuantityBySiteCount(2, 3)).toBe(6);
   });
 });

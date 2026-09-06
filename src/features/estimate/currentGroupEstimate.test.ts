@@ -80,4 +80,17 @@ describe('current group estimate', () => {
     const result = calculateCurrentGroupEstimate(snapshot);
     expect(result.jobs[0]).toMatchObject({ groupId: 'g1', subgroupName: 'A', difficulty: 'high' });
   });
+
+  it('multiplies each subgroup piece quantity by its installation site count', () => {
+    const snapshot = createCurrentEstimateSnapshot([{
+      id: 'g1',
+      name: '그룹 1',
+      subgroups: [{ id: 'sg-a', name: 'A', siteCount: 3, pieceIds: ['p1'], expanded: true }],
+      pieces: [{ id: 'p1', name: 'p1', form: form('500', '1000', '2') }],
+    }]);
+    const result = calculateCurrentGroupEstimate(snapshot);
+    expect(result.jobs[0]?.input.quantity).toBe(6);
+    expect(result.jobs[0]?.siteCount).toBe(3);
+    expect(result.jobs[0]?.result.producedQuantity).toBeGreaterThanOrEqual(6);
+  });
 });

@@ -1,10 +1,22 @@
 import { composePieceId, pieceNamePart } from './pieceIds';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
-export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty };
+export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
 export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';
+
+/** Normalizes the number of installation locations for a subgroup. */
+export function normalizeSubgroupSiteCount(value: unknown): number {
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
+/** Applies a subgroup's installation count to a per-location piece quantity. */
+export function multiplyPieceQuantityBySiteCount(quantity: number, siteCount: unknown): number {
+  const normalizedQuantity = Number.isInteger(quantity) && quantity > 0 ? quantity : 0;
+  return normalizedQuantity * normalizeSubgroupSiteCount(siteCount);
+}
 
 /** Returns the next collapsed state for every visible subgroup card. */
 export function toggleAllSubgroupCards(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): Record<string, boolean> {

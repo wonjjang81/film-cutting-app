@@ -67,6 +67,8 @@ export type SavedCuttingJob = {
   productNumber: string;
   filmName?: string;
   subgroupName?: string;
+  /** Number of physical installation locations represented by this subgroup. */
+  siteCount?: number;
   difficulty?: ConstructionDifficulty;
   materialCostPerM?: number;
   constructionCostPerM2?: number;

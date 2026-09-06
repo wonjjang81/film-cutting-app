@@ -2,7 +2,7 @@ import { buildSavedCuttingJob } from '../library/uiWorkflowHelpers';
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
-import { subgroupPieceDisplayName } from '../library/subgroupCards';
+import { multiplyPieceQuantityBySiteCount, normalizeSubgroupSiteCount, subgroupPieceDisplayName } from '../library/subgroupCards';
 import { normalizeDifficulty, type ConstructionDifficulty } from './difficultyPricing';
 
 export const CURRENT_GROUP_ESTIMATE_STORAGE_KEY = 'film-cutting-current-group-estimate';
@@ -14,7 +14,7 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
-  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty }[];
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
@@ -59,6 +59,7 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     mergeGroupId: group.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
     filmName: group.filmName,
     subgroupName: subgroup?.name,
+    siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount),
     difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
     materialCostPerM: optionalCost(group.materialCostPerM),
     constructionCostPerM2: optionalCost(group.constructionCostPerM2),
@@ -68,7 +69,7 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
       rollWidthMm: 1_220,
       pieceWidthMm: Number(piece.form.pieceWidth),
       pieceLengthMm: Number(piece.form.pieceLength),
-      quantity: Number(piece.form.quantity),
+      quantity: multiplyPieceQuantityBySiteCount(Number(piece.form.quantity), subgroup?.siteCount),
       gapMm: Number(piece.form.gap),
       sideMarginMm: Number(piece.form.sideMargin),
       startEndMarginMm: Number(piece.form.startEndMargin),
@@ -116,6 +117,7 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     inventory: [],
     filmName: entry.filmName,
     subgroupName: entry.subgroupName,
+    siteCount: entry.siteCount,
     difficulty: entry.difficulty,
     materialCostPerM: entry.materialCostPerM,
     constructionCostPerM2: entry.constructionCostPerM2,
