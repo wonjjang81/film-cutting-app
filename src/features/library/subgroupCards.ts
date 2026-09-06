@@ -1,3 +1,5 @@
+import { composePieceId, pieceNamePart } from './pieceIds';
+
 export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
@@ -28,4 +30,23 @@ export function renameSubgroupPieces(groupName: string, previousName: string, ne
 export function subgroupCardStackIndex(total: number, index: number): number {
   return Math.max(1, total - index);
 }
-import { composePieceId, pieceNamePart } from './pieceIds';
+
+/**
+ * Returns the editable piece suffix while hiding an optional subgroup prefix
+ * that older drafts embedded in the persisted piece ID.
+ */
+export function subgroupPieceNamePart(groupName: string, subgroupName: string, pieceId: string): string {
+  const subgroupPrefix = `${subgroupName.trim()}_`;
+  const suffix = pieceNamePart(groupName, pieceId);
+  return suffix.startsWith(subgroupPrefix) ? suffix.slice(subgroupPrefix.length) || '01' : suffix || '01';
+}
+
+/**
+ * Keeps the subgroup visible without making it part of the editable piece ID.
+ * This also normalizes legacy IDs such as `그룹 1_B_01` to `B - 그룹 1_01`.
+ */
+export function subgroupPieceDisplayName(groupName: string, subgroupName: string, pieceId: string): string {
+  const normalizedGroup = groupName.trim();
+  const normalizedSubgroup = subgroupName.trim() || 'A';
+  return `${normalizedSubgroup} - ${composePieceId(normalizedGroup, subgroupPieceNamePart(normalizedGroup, normalizedSubgroup, pieceId))}`;
+}
