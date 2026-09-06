@@ -27,6 +27,7 @@ import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMe
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { EstimateSummary } from '../../src/features/estimate/EstimateSummary';
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
+import { flattenSubgroupCards, hasAssignedSubgroups } from '../../src/features/library/subgroupCards';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -278,12 +279,12 @@ export default function FilmCutInputScreen() {
     const piece = group.pieces[0];
     setActiveGroupId(group.id); setActivePieceId(piece?.id ?? ''); setForm(piece?.form ?? group.form); if (piece) restorePlanView(group.id, piece.id); else { setPlan(null); setPlanRequest(null); setDraftJob(null); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]); }
   };
-  const selectPiece = (piece: CuttingPieceDraft) => {
+  const selectPiece = (piece: CuttingPieceDraft, groupId = activeGroupId) => {
     saveActivePlanView();
-    setActivePieceId(piece.id); setForm(piece.form); setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: piece.form } : item)); restorePlanView(activeGroupId, piece.id);
+    setActiveGroupId(groupId); setActivePieceId(piece.id); setForm(piece.form); setGroups((items) => items.map((item) => item.id === groupId ? { ...item, form: piece.form } : item)); restorePlanView(groupId, piece.id);
   };
-  const addPiece = (subgroupId?: string) => {
-    const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
+  const addPiece = (subgroupId?: string, groupId = activeGroupId) => {
+    const group = groups.find((item) => item.id === groupId); if (!group) return;
     const targetSubgroup = group.subgroups.find((subgroup) => subgroup.id === subgroupId)
       ?? group.subgroups.find((subgroup) => subgroup.pieceIds.includes(activePieceId))
       ?? group.subgroups[0];
@@ -291,8 +292,8 @@ export default function FilmCutInputScreen() {
     const next = newPieceDraft(`${group.name}_${targetSubgroup.name}`, targetSubgroup.pieceIds.length + 1);
     next.id = nextPieceId(group.pieces, `${group.name}_${targetSubgroup.name}`);
     next.name = next.id;
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: next.form, pieces: [...item.pieces, next], subgroups: item.subgroups.map((subgroup) => subgroup.id === targetSubgroup.id ? { ...subgroup, pieceIds: [...subgroup.pieceIds, next.id], expanded: true } : subgroup) } : item));
-    setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
+    setGroups((items) => items.map((item) => item.id === groupId ? { ...item, form: next.form, pieces: [...item.pieces, next], subgroups: item.subgroups.map((subgroup) => subgroup.id === targetSubgroup.id ? { ...subgroup, pieceIds: [...subgroup.pieceIds, next.id], expanded: true } : subgroup) } : item));
+    setActiveGroupId(groupId); setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
   };
   const addSubgroup = () => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
@@ -353,12 +354,12 @@ export default function FilmCutInputScreen() {
     setError(null); setNotice(`소그룹 ${subgroup.name}을 대그룹 ID ${target.displayId}로 이동했습니다. 배치 계산을 다시 실행해 주세요.`);
     setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
   };
-  const deletePiece = (id: string) => {
-    const group = groups.find((item) => item.id === activeGroupId); if (!group || group.pieces.length <= 1) return;
+  const deletePiece = (id: string, groupId = activeGroupId) => {
+    const group = groups.find((item) => item.id === groupId); if (!group || group.pieces.length <= 1) return;
     const remaining = group.pieces.filter((piece) => piece.id !== id);
     const subgroups = group.subgroups.map((subgroup) => ({ ...subgroup, pieceIds: subgroup.pieceIds.filter((pieceId) => pieceId !== id) })).filter((subgroup) => subgroup.pieceIds.length > 0);
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, pieces: remaining, form: remaining[0]!.form, subgroups } : item));
-    if (id === activePieceId) { const nextPiece = remaining[0]; if (nextPiece) selectPiece(nextPiece); else { setActivePieceId(''); setForm(group.form); } }
+    setGroups((items) => items.map((item) => item.id === groupId ? { ...item, pieces: remaining, form: remaining[0]!.form, subgroups } : item));
+    if (groupId === activeGroupId && id === activePieceId) { const nextPiece = remaining[0]; if (nextPiece) selectPiece(nextPiece, activeGroupId); else { setActivePieceId(''); setForm(group.form); } }
   };
   const addGroup = () => {
     const next = newGroupDraft(groups.length + 1, false);
@@ -439,6 +440,7 @@ export default function FilmCutInputScreen() {
   };
   const deleteGroup = (id: string) => {
     if (groups.length <= 1) return;
+    if (hasAssignedSubgroups(groups, id)) { setError('소그룹이 연결된 대그룹은 삭제할 수 없습니다. 소그룹의 대그룹 ID를 먼저 변경해 주세요.'); return; }
     const remaining = groups.filter((group) => group.id !== id);
     setGroups(remaining);
     if (id === activeGroupId) selectGroup(remaining[0]!);
@@ -978,7 +980,7 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onAddSubgroup={addSubgroup} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} onRenameSubgroup={(subgroupId, name) => renameSubgroup(activeGroupId, subgroupId, name)} onMoveSubgroup={(subgroupId, targetGroupId) => moveSubgroupToGroup(activeGroupId, subgroupId, targetGroupId)} onChangeForm={(pieceId, updater) => updatePieceForm(activeGroupId, pieceId, updater)} />
+          <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -1022,35 +1024,38 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, o
     </View>)}</View>
   </View>;
 }
-function PieceInputPanel({ group, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onMoveSubgroup, onChangeForm }: { group: CuttingGroupDraft; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(subgroupId?: string): void; onAddSubgroup(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void; onRenameSubgroup(subgroupId: string, name: string): void; onMoveSubgroup(subgroupId: string, targetGroupId: string): void; onChangeForm(pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
+function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onMoveSubgroup, onChangeForm }: { groups: CuttingGroupDraft[]; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(groupId: string, piece: CuttingPieceDraft): void; onAdd(groupId: string, subgroupId?: string): void; onAddSubgroup(): void; onDelete(groupId: string, id: string): void; onRename(groupId: string, pieceId: string, nextId: string): void; onRenameSubgroup(groupId: string, subgroupId: string, name: string): void; onMoveSubgroup(sourceGroupId: string, subgroupId: string, targetGroupId: string): void; onChangeForm(groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingError, setEditingError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
   const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
-  const finishRename = (pieceId: string) => {
+  const finishRename = (groupId: string, pieceId: string) => {
     const nextId = editingValue.trim();
     if (!nextId) { setEditingError('조각 이름을 입력해 주세요.'); return; }
-    onRename(pieceId, nextId);
+    onRename(groupId, pieceId, nextId);
     setEditingId(null); setEditingError(null);
   };
-  const renderPiece = (piece: CuttingPieceDraft, index: number) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
+  const renderPiece = (group: CuttingGroupDraft, piece: CuttingPieceDraft, index: number) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
     <View style={styles.pieceRowContent}>
       {editingId === piece.id
-        ? <View style={styles.pieceEditRow}><View style={styles.pieceEditPrefix}><Text style={styles.pieceEditPrefixText}>{group.name}_</Text></View><TextInput accessibilityLabel={`${piece.id} 조각 이름`} autoFocus value={editingValue} onChangeText={(value) => { setEditingValue(value.replace(/[\s_]+/g, '')); setEditingError(null); }} onSubmitEditing={() => finishRename(piece.id)} returnKeyType="done" style={styles.pieceIdInput} /><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 저장`} onPress={() => finishRename(piece.id)} style={styles.pieceEditAction}><Text style={styles.pieceEditActionText}>저장</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="조각 이름 변경 취소" onPress={() => { setEditingId(null); setEditingError(null); }} style={styles.pieceEditCancel}><Text style={styles.pieceEditCancelText}>취소</Text></TouchableOpacity></View>
-        : <><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${piece.id} 선택`} accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]} numberOfLines={1}>{piece.id}</Text></View></TouchableOpacity><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 변경`} onPress={() => { setEditingId(piece.id); setEditingValue(pieceNamePart(group.name, piece.id)); setEditingError(null); }} style={styles.pieceEditButton}><Text style={styles.pieceEditButtonText}>✎</Text></TouchableOpacity><View style={styles.pieceCardFields}><NumericField compact label="재단 폭" unit="mm" value={piece.form.pieceWidth} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceWidth: value }))} /><NumericField compact label="재단 길이" unit="mm" value={piece.form.pieceLength} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceLength: value }))} /><NumericField compact label="필요 수량" unit="개" value={piece.form.quantity} integer step={1} min={1} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, quantity: value }))} /></View></>}
-      {editingId !== piece.id && group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.id} 삭제`} onPress={() => onDelete(piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}
+        ? <View style={styles.pieceEditRow}><View style={styles.pieceEditPrefix}><Text style={styles.pieceEditPrefixText}>{group.name}_</Text></View><TextInput accessibilityLabel={`${piece.id} 조각 이름`} autoFocus value={editingValue} onChangeText={(value) => { setEditingValue(value.replace(/[\s_]+/g, '')); setEditingError(null); }} onSubmitEditing={() => finishRename(group.id, piece.id)} returnKeyType="done" style={styles.pieceIdInput} /><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 저장`} onPress={() => finishRename(group.id, piece.id)} style={styles.pieceEditAction}><Text style={styles.pieceEditActionText}>저장</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="조각 이름 변경 취소" onPress={() => { setEditingId(null); setEditingError(null); }} style={styles.pieceEditCancel}><Text style={styles.pieceEditCancelText}>취소</Text></TouchableOpacity></View>
+        : <><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${piece.id} 선택`} accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(group.id, piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]} numberOfLines={1}>{piece.id}</Text></View></TouchableOpacity><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 변경`} onPress={() => { setEditingId(piece.id); setEditingValue(pieceNamePart(group.name, piece.id)); setEditingError(null); }} style={styles.pieceEditButton}><Text style={styles.pieceEditButtonText}>✎</Text></TouchableOpacity><View style={styles.pieceCardFields}><NumericField compact label="재단 폭" unit="mm" value={piece.form.pieceWidth} step={50} min={0} onChange={(value) => onChangeForm(group.id, piece.id, (current) => ({ ...current, pieceWidth: value }))} /><NumericField compact label="재단 길이" unit="mm" value={piece.form.pieceLength} step={50} min={0} onChange={(value) => onChangeForm(group.id, piece.id, (current) => ({ ...current, pieceLength: value }))} /><NumericField compact label="필요 수량" unit="개" value={piece.form.quantity} integer step={1} min={1} onChange={(value) => onChangeForm(group.id, piece.id, (current) => ({ ...current, quantity: value }))} /></View></>}
+      {editingId !== piece.id && group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.id} 삭제`} onPress={() => onDelete(group.id, piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}
     </View>
     {editingError && editingId === piece.id && <Text style={styles.pieceEditError}>{editingError}</Text>}
   </View>;
+  const subgroupCards = flattenSubgroupCards(groups);
   return <View style={styles.pieceInputPanel}>
-    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>대그룹 ID {group.displayId}</Text><Text style={styles.pieceInputHint}>{group.name} · 소그룹별 조각 폭·길이·수량을 입력합니다.</Text></View><View style={styles.pieceHeaderActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 소그룹 추가`} onPress={onAddSubgroup} style={styles.addSubgroupButton}><Text style={styles.addSubgroupButtonText}>＋ 소그룹 추가</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? `${group.name} 소그룹 입력 접기` : `${group.name} 소그룹 입력 펼치기`} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View></View>
-    {expanded && (group.subgroups.length === 0
+    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>소그룹 입력</Text><Text style={styles.pieceInputHint}>소그룹 카드는 독립적으로 관리하며, 각 카드에서 대그룹 ID를 지정합니다.</Text></View><View style={styles.pieceHeaderActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel="새 소그룹 추가" onPress={onAddSubgroup} style={styles.addSubgroupButton}><Text style={styles.addSubgroupButtonText}>＋ 소그룹 추가</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? '소그룹 입력 접기' : '소그룹 입력 펼치기'} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View></View>
+    {expanded && (subgroupCards.length === 0
       ? <View style={styles.emptySubgroup}><Text style={styles.emptySubgroupText}>소그룹이 없습니다. 위의 소그룹 추가 버튼으로 시작하세요.</Text></View>
-      : group.subgroups.map((subgroup) => {
+      : subgroupCards.map(({ groupId, groupDisplayId, subgroup }) => {
+        const group = groups.find((item) => item.id === groupId);
+        if (!group) return null;
         const pieces = subgroup.pieceIds.map((id) => group.pieces.find((piece) => piece.id === id)).filter((piece): piece is CuttingPieceDraft => Boolean(piece));
         const isExpanded = collapsedSubgroups[subgroup.id] !== true;
-        return <View key={subgroup.id} style={styles.subgroupCard}><View style={styles.subgroupHeader}><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroup.name} onChangeText={(value) => onRenameSubgroup(subgroup.id, value)} style={styles.subgroupNameInput} /><SubgroupGroupSelect options={groupOptions} value={group.id} onChange={(targetGroupId) => onMoveSubgroup(subgroup.id, targetGroupId)} /><Text style={styles.subgroupMeta}>{pieces.length}개 조각</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{isExpanded && <><View style={styles.pieceRows}>{pieces.map(renderPiece)}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
+        return <View key={subgroup.id} style={styles.subgroupCard}><View style={styles.subgroupHeader}><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroup.name} onChangeText={(value) => onRenameSubgroup(groupId, subgroup.id, value)} style={styles.subgroupNameInput} /><SubgroupGroupSelect options={groupOptions} value={groupId} onChange={(targetGroupId) => onMoveSubgroup(groupId, subgroup.id, targetGroupId)} /><Text style={styles.subgroupMeta}>대그룹 {groupDisplayId} · {pieces.length}개 조각</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{isExpanded && <><View style={styles.pieceRows}>{pieces.map((piece, index) => renderPiece(group, piece, index))}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(groupId, subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
       }))}
   </View>;
 }
