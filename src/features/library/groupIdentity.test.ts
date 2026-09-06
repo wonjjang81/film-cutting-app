@@ -27,4 +27,17 @@ describe('group identity updates', () => {
     expect(next.map((group) => group.form.productNumber)).toEqual(['P-2', 'P-2', '']);
     expect(next[1]?.pieces[0]?.form.productNumber).toBe('P-2');
   });
+
+  it('can update only the selected group when identity is edited from the group row', () => {
+    const groups = [
+      { id: 'g1', mergeGroupId: 'auto', form: { brand: '영림', productNumber: '' }, pieces: [{ form: { brand: '영림', productNumber: '' } }] },
+      { id: 'g2', mergeGroupId: 'auto', form: { brand: '영림', productNumber: '' }, pieces: [{ form: { brand: '영림', productNumber: '' } }] },
+    ];
+
+    const next = updateGroupIdentity(groups, 'g1', { productNumber: 'P-1' }, '__disabled__', false);
+
+    expect(next[0]?.form.productNumber).toBe('P-1');
+    expect(next[0]?.pieces[0]?.form.productNumber).toBe('P-1');
+    expect(next[1]).toEqual(groups[1]);
+  });
 });
