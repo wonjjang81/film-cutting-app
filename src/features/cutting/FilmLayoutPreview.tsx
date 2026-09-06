@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
-import { formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
 
@@ -97,8 +97,13 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
               <SvgText x={centerX} y={centerY - dimensionFontSize * 0.15} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>{annotation.label}</SvgText>
               <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
               {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>
-                <Line x1={item.x + item.width * 0.15} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.85} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
-                <Line x1={item.x + item.width * 0.85} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.15} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
+                {(() => {
+                  const cross = completionCrossMetrics(item.width, item.height);
+                  return <>
+                    <Line x1={item.x + cross.inset} y1={item.y + cross.inset} x2={item.x + item.width - cross.inset} y2={item.y + item.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                    <Line x1={item.x + item.width - cross.inset} y1={item.y + cross.inset} x2={item.x + cross.inset} y2={item.y + item.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                  </>;
+                })()}
               </G>}
                 </>;
               })()}

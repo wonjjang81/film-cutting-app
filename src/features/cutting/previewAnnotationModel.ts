@@ -17,3 +17,12 @@ export function formatPlacementInfo(label: string, width: number, height: number
     position: `X ${Math.round(x).toLocaleString()} · Y ${Math.round(y).toLocaleString()}mm`,
   };
 }
+
+/** Returns the inset and stroke width for a prominent completion cross. */
+export function completionCrossMetrics(width: number, height: number): { inset: number; strokeWidth: number } {
+  const minDimension = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
+  return {
+    inset: Math.max(1, Math.round(minDimension * 0.04)),
+    strokeWidth: Math.max(4, Math.round(minDimension * 0.12)),
+  };
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
 
 describe('preview annotation model', () => {
   it('formats a piece name and actual placed dimensions', () => {
@@ -14,5 +14,10 @@ describe('preview annotation model', () => {
       rotation: '90도 회전',
       position: 'X 15 · Y 25mm',
     });
+  });
+
+  it('sizes completion crosses to fill the placement without an outer box', () => {
+    expect(completionCrossMetrics(100, 450)).toEqual({ inset: 4, strokeWidth: 12 });
+    expect(completionCrossMetrics(20, 20)).toEqual({ inset: 1, strokeWidth: 4 });
   });
 });

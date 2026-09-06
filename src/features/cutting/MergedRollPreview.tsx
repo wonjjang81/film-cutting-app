@@ -1,10 +1,10 @@
 import * as React from 'react';
-import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
 import { groupPlacementsBySubgroup } from './planningPlacementModel';
-import { formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -56,7 +56,15 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
           <SvgText x={centerX} y={centerY - dimensionFontSize * 0.15} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={color}>{annotation.label}</SvgText>
           <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
-          {completedPlacementIds.has(placement.id) && <G><Rect x={placement.x + placement.width * 0.18} y={placement.y + placement.height * 0.18} width={placement.width * 0.64} height={placement.height * 0.64} fill="none" stroke="#dc2626" strokeWidth={Math.max(3, placement.width / 45)} transform={`rotate(0 ${placement.x + placement.width / 2} ${placement.y + placement.height / 2})`} /><SvgText x={placement.x + placement.width / 2} y={placement.y + placement.height / 2} textAnchor="middle" fontSize={Math.max(12, Math.min(32, placement.width / 10))} fontWeight="900" fill="#dc2626">×</SvgText></G>}
+          {completedPlacementIds.has(placement.id) && <G accessibilityLabel={`제품 ${placement.id} 재단 완료 표시`}>
+            {(() => {
+              const cross = completionCrossMetrics(placement.width, placement.height);
+              return <>
+                <Line x1={placement.x + cross.inset} y1={placement.y + cross.inset} x2={placement.x + placement.width - cross.inset} y2={placement.y + placement.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                <Line x1={placement.x + placement.width - cross.inset} y1={placement.y + cross.inset} x2={placement.x + cross.inset} y2={placement.y + placement.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+              </>;
+            })()}
+          </G>}
         </G>;
       })}
     </Svg>
