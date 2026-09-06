@@ -1,10 +1,10 @@
 import * as React from 'react';
 import Svg, { G, Rect, Text as SvgText } from 'react-native-svg';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
 import { groupPlacementsBySubgroup } from './planningPlacementModel';
-import { formatPlacementAnnotation } from './previewAnnotationModel';
+import { formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -113,10 +113,21 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           </View>;
         })}
       </View>}
-      {!compact && selected && <View style={styles.detail}>
-        <Text style={styles.detailTitle}>제품 {selected.id} 상세</Text>
-        <Text style={styles.detailText}>{labelBySource.get(selected.sourceId) ?? selected.sourceId} · {selected.width}×{selected.height}mm{selected.rotated ? ' · ↻' : ''} · 위치 ({selected.x}, {selected.y})mm</Text>
-      </View>}
+      {!compact && <Modal visible={selected !== null} transparent animationType="fade" onRequestClose={() => setSelectedId(null)}>
+        <View style={styles.modalBackdrop}>
+          {selected && (() => {
+            const info = formatPlacementInfo(labelBySource.get(selected.sourceId) ?? selected.sourceId, selected.width, selected.height, selected.rotated, selected.x, selected.y);
+            return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="병합 조각 정보 팝업">
+              <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
+              <Text style={styles.modalTitle}>조각 정보</Text>
+              <Text style={styles.modalLabel}>{info.label}</Text>
+              <Text style={styles.modalValue}>{info.dimensions}</Text>
+              <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="조각 정보 팝업 닫기" onPress={() => setSelectedId(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
+            </View>;
+          })()}
+        </View>
+      </Modal>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
       {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} />}
     </View>
@@ -165,7 +176,7 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
-  detail: { marginTop: 9, padding: 10, borderRadius: 8, backgroundColor: '#f1f5f9' }, detailTitle: { fontSize: 11, fontWeight: '800', color: '#334155' }, detailText: { marginTop: 3, fontSize: 10, lineHeight: 15, color: '#475569' },
+  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalClose: { minHeight: 40, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
   listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, list: { gap: 7, marginTop: 8 }, subgroupBlock: { gap: 5 }, subgroupHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, subgroupTitle: { fontSize: 11, fontWeight: '900', color: '#0f766e' }, subgroupMeta: { marginTop: 2, fontSize: 9, color: '#0f766e' }, subgroupToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
   completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },

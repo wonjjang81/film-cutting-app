@@ -1,9 +1,9 @@
 import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import * as React from 'react';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
-import { formatPlacementAnnotation } from './previewAnnotationModel';
+import { formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
 
@@ -21,6 +21,7 @@ type Props = {
 export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel }: Props) {
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [zoom, setZoom] = React.useState(1);
+  const [selectedId, setSelectedId] = React.useState<number | null>(null);
   if (!result) {
     return (
       <View style={styles.empty}>
@@ -83,7 +84,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
             </G>
           ))}
           {result.placements.map((item) => (
-            <G key={item.id}>
+            <G key={item.id} onPress={() => setSelectedId((current) => current === item.id ? null : item.id)} accessibilityLabel={`조각 ${item.id} 상세 보기`}>
               {(() => {
                 const annotation = formatPlacementAnnotation(pieceLabel ?? `조각 #${item.id}`, item.width, item.height, item.rotated);
                 const labelFontSize = Math.max(11, Math.min(30, Math.min(item.width, item.height) * 0.2));
@@ -107,6 +108,23 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
         </View>
         </ScrollView>
       </View>
+      <Modal visible={selectedId !== null} transparent animationType="fade" onRequestClose={() => setSelectedId(null)}>
+        <View style={styles.modalBackdrop}>
+          {(() => {
+            const selected = result.placements.find((item) => item.id === selectedId);
+            if (!selected) return null;
+            const info = formatPlacementInfo(pieceLabel ?? `조각 #${selected.id}`, selected.width, selected.height, selected.rotated, selected.x, selected.y);
+            return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="조각 정보 팝업">
+              <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
+              <Text style={styles.modalTitle}>조각 정보</Text>
+              <Text style={styles.modalLabel}>{info.label}</Text>
+              <Text style={styles.modalValue}>{info.dimensions}</Text>
+              <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="조각 정보 팝업 닫기" onPress={() => setSelectedId(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
+            </View>;
+          })()}
+        </View>
+      </Modal>
       <Text style={styles.caption}>{continuous ? '연속 롤 기준 · 구분선은 행 패턴 경계입니다.' : '첫 번째 원단 기준 · 숫자는 재단 순번입니다.'}</Text>
     </View>
   );
@@ -126,4 +144,5 @@ const styles = StyleSheet.create({
   canvasScrollContent: { flexGrow: 1, alignItems: 'center' },
   canvas: { minHeight: 300, overflow: 'hidden', borderRadius: 12, backgroundColor: '#f8fafc' },
   caption: { marginTop: 10, textAlign: 'center', fontSize: 12, color: '#64748b' },
+  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#1d4ed8' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#1e3a8a' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalClose: { minHeight: 40, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
 });
