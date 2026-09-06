@@ -17,6 +17,7 @@ type Props = {
   compact?: boolean;
   hidePlacementList?: boolean;
   hideLegend?: boolean;
+  completedPlacementIds?: readonly number[];
   sourceLabels?: Record<string, string>;
   sourceSubgroups?: Record<string, string>;
 };
@@ -26,7 +27,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, sourceLabels, sourceSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -38,7 +39,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const height = baseHeight * zoom;
   const viewBoxWidth = 1220 / zoom;
   const viewBoxX = (1220 - viewBoxWidth) / 2;
-  const completedPlacementIds = new Set(job?.completedPlacementIds ?? []);
+  const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
     <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
@@ -129,7 +130,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         </View>
       </Modal>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} />}
+      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} />}
     </View>
   );
 }
@@ -138,11 +139,11 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
  * The merged-roll piece list lives in the material-plan section so it has the
  * same placement-list position as a single-piece calculation.
  */
-export function MergedRollPlacementList({ plan, job, busy = false, sourceLabels, sourceSubgroups, onTogglePlacementComplete }: Pick<Props, 'plan' | 'job' | 'busy' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete'>) {
+export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete'>) {
   const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({});
-  const completedPlacementIds = new Set(job?.completedPlacementIds ?? []);
+  const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {});
   return <View style={styles.listSection}>

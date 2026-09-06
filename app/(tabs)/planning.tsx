@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
-import { findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion } from '../../src/features/cutting/planningPlacementModel';
+import { findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion, resolvePlacementCompletionIds } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
@@ -22,6 +22,7 @@ export default function PlanningScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pieceCompletionOverrides, setPieceCompletionOverrides] = useState<Record<string, number[]>>({});
+  const [mergedCompletionOverrides, setMergedCompletionOverrides] = useState<Record<string, number[]>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -36,35 +37,39 @@ export default function PlanningScreen() {
     } finally { setLoading(false); }
   }, []);
 
-  const toggleMergedPlacementComplete = useCallback(async (jobId: string, placementId: number) => {
+  const toggleMergedPlacementComplete = useCallback(async (mergeGroupId: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
     setLoading(true); setError(null);
     try {
       const loaded = await repository.load();
-      const current = loaded.document.mergedJobs.find((job) => job.id === jobId);
-      if (!current) { setLoading(false); return; }
-      const next = nextPlacementCompletion(current.completedPlacementIds ?? [], placementId, current.placements.map((placement) => placement.id));
+      const current = jobId ? loaded.document.mergedJobs.find((job) => job.id === jobId) : undefined;
+      const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, mergedCompletionOverrides[mergeGroupId]);
+      const next = nextPlacementCompletion(completedIds, placementId, placementIds);
       const now = new Date().toISOString();
-      const updated: SavedMergedCuttingJob = {
-        ...current,
-        isCuttingComplete: next.complete,
-        cuttingCompletedAt: next.complete ? now : undefined,
-        updatedAt: now,
-        completedPlacementIds: next.completedIds,
-      };
-      await repository.saveMergedJob(updated);
+      if (current) {
+        const updated: SavedMergedCuttingJob = {
+          ...current,
+          isCuttingComplete: next.complete,
+          cuttingCompletedAt: next.complete ? now : undefined,
+          updatedAt: now,
+          completedPlacementIds: next.completedIds,
+        };
+        await repository.saveMergedJob(updated);
+      } else {
+        setMergedCompletionOverrides((existing) => ({ ...existing, [mergeGroupId]: next.completedIds }));
+      }
       await refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '재단 완료 상태를 저장하지 못했습니다.');
       setLoading(false);
     }
-  }, [refresh]);
+  }, [mergedCompletionOverrides, refresh]);
 
   const togglePiecePlacementComplete = useCallback(async (sourceKey: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
     setLoading(true); setError(null);
     try {
       const loaded = await repository.load();
       const current = jobId ? loaded.document.jobs.find((job) => job.id === jobId) : undefined;
-      const completedIds = current?.completedPlacementIds ?? pieceCompletionOverrides[sourceKey] ?? [];
+      const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, pieceCompletionOverrides[sourceKey]);
       const next = nextPlacementCompletion(completedIds, placementId, placementIds);
       const now = new Date().toISOString();
       if (current) {
@@ -108,13 +113,15 @@ export default function PlanningScreen() {
       <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><Text style={styles.sectionHint}>병합 롤은 한 번만 표시합니다.</Text></View>
         {currentPlan.mergedPlans.map((plan) => {
           const job = findLatestMergedJob(plan, library.mergedJobs);
-          return <MergedRollPreview key={`merged-${plan.mergeGroupId}`} plan={plan} job={job} busy={loading} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={job ? (placementId) => void toggleMergedPlacementComplete(job.id, placementId) : undefined} hideLegend />;
+          const placementIds = plan.result.placements.map((placement) => placement.id);
+          const completedPlacementIds = resolvePlacementCompletionIds(job?.completedPlacementIds, mergedCompletionOverrides[plan.mergeGroupId]);
+          return <MergedRollPreview key={`merged-${plan.mergeGroupId}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(plan.mergeGroupId, job?.id, placementId, placementIds)} hideLegend />;
         })}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
           const displayName = currentPlan.pieceNamesBySourceId[sourceKey] ?? entry.pieceName;
           const job = findLatestPieceJob(entry.groupName, entry.pieceId, library.jobs, displayName);
-          return <PiecePlanCard key={sourceKey} entry={entry} displayName={displayName} completedPlacementIds={pieceCompletionOverrides[sourceKey] ?? job?.completedPlacementIds} onTogglePlacementComplete={(placementId, placementIds) => void togglePiecePlacementComplete(sourceKey, job?.id, placementId, placementIds)} />;
+          return <PiecePlanCard key={sourceKey} entry={entry} displayName={displayName} completedPlacementIds={resolvePlacementCompletionIds(job?.completedPlacementIds, pieceCompletionOverrides[sourceKey])} onTogglePlacementComplete={(placementId, placementIds) => void togglePiecePlacementComplete(sourceKey, job?.id, placementId, placementIds)} />;
         })}
       </View>
     </>}

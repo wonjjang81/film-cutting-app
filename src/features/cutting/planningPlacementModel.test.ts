@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion } from './planningPlacementModel';
+import { findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, resolvePlacementCompletionIds } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
@@ -20,6 +20,12 @@ describe('planning placement model', () => {
     expect(nextPlacementCompletion([1], 2, [1, 2, 3])).toEqual({ completedIds: [1, 2], complete: false });
     expect(nextPlacementCompletion([1, 2], 3, [1, 2, 3])).toEqual({ completedIds: [1, 2, 3], complete: true });
     expect(nextPlacementCompletion([1, 2, 3], 2, [1, 2, 3])).toEqual({ completedIds: [1, 3], complete: false });
+  });
+
+  it('uses a temporary completion state until a plan is persisted', () => {
+    expect(resolvePlacementCompletionIds(undefined, [1, 3])).toEqual([1, 3]);
+    expect(resolvePlacementCompletionIds([2], [1, 3])).toEqual([2]);
+    expect(resolvePlacementCompletionIds(undefined, undefined)).toEqual([]);
   });
 
   it('finds the latest saved merged job for the current plan sources', () => {

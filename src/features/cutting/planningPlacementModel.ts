@@ -40,6 +40,11 @@ export function nextPlacementCompletion(
   return { completedIds: normalized, complete: available.size > 0 && normalized.length === available.size };
 }
 
+/** Prefers persisted completion state and falls back to the current-session state for unsaved plans. */
+export function resolvePlacementCompletionIds(persistedIds?: readonly number[], temporaryIds?: readonly number[]): number[] {
+  return [...(persistedIds ?? temporaryIds ?? [])].sort((left, right) => left - right);
+}
+
 /** Resolves the newest persisted completion state for the current merged plan. */
 export function findLatestMergedJob<T extends SavedMergedJobSource>(plan: MergedPlanSource, jobs: readonly T[]): T | undefined {
   const expected = new Set(plan.sourceIds);
