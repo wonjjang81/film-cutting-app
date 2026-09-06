@@ -42,11 +42,11 @@ export function subgroupPieceNamePart(groupName: string, subgroupName: string, p
 }
 
 /**
- * Keeps the subgroup visible without making it part of the editable piece ID.
- * This also normalizes legacy IDs such as `그룹 1_B_01` to `B - 그룹 1_01`.
+ * Keeps the subgroup visible without making the big-group name part of the
+ * compact piece label. Legacy IDs such as `그룹 1_B_01` become `B_01`.
  */
 export function subgroupPieceDisplayName(groupName: string, subgroupName: string, pieceId: string): string {
   const normalizedGroup = groupName.trim();
   const normalizedSubgroup = subgroupName.trim() || 'A';
-  return `${normalizedSubgroup} - ${composePieceId(normalizedGroup, subgroupPieceNamePart(normalizedGroup, normalizedSubgroup, pieceId))}`;
+  return `${normalizedSubgroup}_${subgroupPieceNamePart(normalizedGroup, normalizedSubgroup, pieceId)}`;
 }

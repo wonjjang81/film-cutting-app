@@ -38,8 +38,8 @@ describe('subgroup card normalization', () => {
   });
 
   it('shows the subgroup and canonical group-prefixed piece name together', () => {
-    expect(subgroupPieceDisplayName('그룹 1', 'A', '그룹 1_01')).toBe('A - 그룹 1_01');
-    expect(subgroupPieceDisplayName('그룹 1', 'B', '그룹 1_B_01')).toBe('B - 그룹 1_01');
+    expect(subgroupPieceDisplayName('그룹 1', 'A', '그룹 1_01')).toBe('A_01');
+    expect(subgroupPieceDisplayName('그룹 1', 'B', '그룹 1_B_01')).toBe('B_01');
     expect(subgroupPieceNamePart('그룹 1', 'B', '그룹 1_B_01')).toBe('01');
   });
 });
