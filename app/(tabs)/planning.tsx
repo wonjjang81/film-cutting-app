@@ -37,12 +37,12 @@ export default function PlanningScreen() {
     } finally { setLoading(false); }
   }, []);
 
-  const toggleMergedPlacementComplete = useCallback(async (mergeGroupId: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
+  const toggleMergedPlacementComplete = useCallback(async (planKey: string, mergeGroupId: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
     setLoading(true); setError(null);
     try {
       const loaded = await repository.load();
       const current = jobId ? loaded.document.mergedJobs.find((job) => job.id === jobId) : undefined;
-      const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, mergedCompletionOverrides[mergeGroupId]);
+      const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, mergedCompletionOverrides[planKey]);
       const next = nextPlacementCompletion(completedIds, placementId, placementIds);
       const now = new Date().toISOString();
       if (current) {
@@ -55,7 +55,7 @@ export default function PlanningScreen() {
         };
         await repository.saveMergedJob(updated);
       } else {
-        setMergedCompletionOverrides((existing) => ({ ...existing, [mergeGroupId]: next.completedIds }));
+        setMergedCompletionOverrides((existing) => ({ ...existing, [planKey]: next.completedIds }));
       }
       await refresh();
     } catch (caught) {
@@ -114,8 +114,9 @@ export default function PlanningScreen() {
         {currentPlan.mergedPlans.map((plan) => {
           const job = findLatestMergedJob(plan, library.mergedJobs);
           const placementIds = plan.result.placements.map((placement) => placement.id);
-          const completedPlacementIds = resolvePlacementCompletionIds(job?.completedPlacementIds, mergedCompletionOverrides[plan.mergeGroupId]);
-          return <MergedRollPreview key={`merged-${plan.mergeGroupId}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(plan.mergeGroupId, job?.id, placementId, placementIds)} hideLegend />;
+          const planKey = mergedPlanKey(plan.mergeGroupId, plan.sourceIds);
+          const completedPlacementIds = resolvePlacementCompletionIds(job?.completedPlacementIds, mergedCompletionOverrides[planKey]);
+          return <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds)} hideLegend />;
         })}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
@@ -126,6 +127,10 @@ export default function PlanningScreen() {
       </View>
     </>}
   </ScrollView>;
+}
+
+function mergedPlanKey(mergeGroupId: string, sourceIds: readonly string[]): string {
+  return `${mergeGroupId}::${sourceIds.join('|')}`;
 }
 
 function PiecePlanCard({ entry, displayName, completedPlacementIds, onTogglePlacementComplete }: { entry: GroupedPiecePlan; displayName?: string; completedPlacementIds?: readonly number[]; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void }) {

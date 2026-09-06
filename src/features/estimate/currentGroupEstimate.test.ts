@@ -36,6 +36,27 @@ describe('current group estimate', () => {
     expect(estimate.mergedJobs).toHaveLength(1);
   });
 
+  it('splits merged placement by major group even when merge numbers match', () => {
+    const snapshot = createCurrentEstimateSnapshot([
+      { id: 'g1', name: '그룹 1', mergeGroupId: 'auto', pieces: [
+        { id: 'g1-p1', name: '조각 1', form: form('500', '1000') },
+        { id: 'g1-p2', name: '조각 2', form: form('300', '800') },
+      ] },
+      { id: 'g2', name: '그룹 2', mergeGroupId: 'auto', pieces: [
+        { id: 'g2-p1', name: '조각 1', form: form('500', '1000') },
+        { id: 'g2-p2', name: '조각 2', form: form('300', '800') },
+      ] },
+    ]);
+
+    const result = calculateCurrentGroupPlan(snapshot);
+
+    expect(result.mergedPlans).toHaveLength(2);
+    expect(result.mergedPlans.map((plan) => plan.sourceIds)).toEqual([
+      ['g1-g1-p1', 'g1-g1-p2'],
+      ['g2-g2-p1', 'g2-g2-p2'],
+    ]);
+  });
+
   it('uses the subgroup piece name in the material plan', () => {
     const snapshot = createCurrentEstimateSnapshot([{
       id: 'g1',

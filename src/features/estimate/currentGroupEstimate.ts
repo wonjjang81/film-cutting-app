@@ -92,7 +92,14 @@ export function calculateCurrentGroupPlan(snapshot: CurrentEstimateSnapshot): Cu
   const pieceNamesBySourceId = Object.fromEntries(requests.map((request) => [`${request.groupId}-${request.pieceId}`, request.pieceName]));
   const subgroupNamesBySourceId = Object.fromEntries(snapshot.pieces.flatMap((group) => (group.subgroups ?? []).flatMap((subgroup) => subgroup.pieceIds.map((pieceId) => [`${group.id}-${pieceId}`, subgroup.name] as const))));
   if (requests.length === 0) return { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
-  return { groupedPlans: planGroupedPieces(requests, []), mergedPlans: planMergedGroups(requests, 1_220, [], false), pieceNamesBySourceId, subgroupNamesBySourceId };
+  // Keep each major group on its own physical roll. A matching merge number
+  // is still meaningful within a major group, but must not combine pieces
+  // from another major group in the planning screen.
+  const mergedPlans = snapshot.pieces.flatMap((group) => {
+    const groupRequests = requests.filter((entry) => entry.groupId === group.id);
+    return planMergedGroups(groupRequests, 1_220, [], false);
+  });
+  return { groupedPlans: planGroupedPieces(requests, []), mergedPlans, pieceNamesBySourceId, subgroupNamesBySourceId };
 }
 
 /** Calculates the current input groups in memory; it never writes project history. */
