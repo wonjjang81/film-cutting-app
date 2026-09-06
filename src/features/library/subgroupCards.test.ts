@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -48,5 +48,9 @@ describe('subgroup card normalization', () => {
     expect(normalizeSubgroupNameDraft('  새  이름  ')).toBe(' 새 이름 ');
     expect(commitSubgroupName('', 'A')).toBe('A');
     expect(commitSubgroupName('  새  이름  ', 'A')).toBe('새 이름');
+  });
+
+  it('uses one unit hint for all compact piece fields', () => {
+    expect(PIECE_INPUT_UNIT_HINT).toBe('단위: 폭·길이 mm · 수량 개');
   });
 });

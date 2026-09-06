@@ -3,6 +3,7 @@ import { composePieceId, pieceNamePart } from './pieceIds';
 export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
+export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';
 
 export function flattenSubgroupCards(groups: readonly SubgroupCardGroup[]): IndependentSubgroupCard[] {
   return groups.flatMap((group) => group.subgroups.map((subgroup) => ({
