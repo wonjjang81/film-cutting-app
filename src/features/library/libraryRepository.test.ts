@@ -256,6 +256,27 @@ describe('library repository', () => {
     expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-3']);
   });
 
+  it('exports and imports one project bundle while replacing the existing project records', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const first = job(1, { name: '현장 A · 기존 조각' });
+    const project: SavedProject = { id: 'project-1', name: '현장 A', jobIds: [first.id], mergedJobIds: [], materialCostPerM: 10_000, constructionCostPerM2: 15_000, createdAt: timestamp, updatedAt: timestamp };
+    await repository.saveProjectBundle(project, [first], []);
+
+    const raw = await repository.exportProject(project.id);
+    const replacement = job(2, { name: '현장 A · 가져온 조각' });
+    const imported = JSON.stringify({
+      kind: 'film-cutting-project', version: 1, exportedAt: timestamp,
+      project: { ...project, jobIds: [replacement.id], updatedAt: '2026-09-06T00:01:00.000Z' },
+      jobs: [replacement], mergedJobs: [],
+    });
+    expect(JSON.parse(raw).kind).toBe('film-cutting-project');
+    await repository.importProject(imported);
+
+    const loaded = await repository.load();
+    expect(loaded.document.projects).toEqual([expect.objectContaining({ id: project.id, jobIds: [replacement.id] })]);
+    expect(loaded.document.jobs.map((item) => item.id)).toEqual([replacement.id]);
+  });
+
   it('replays a mutation once after an optimistic concurrency conflict', async () => {
     let value: string | null = null;
     let conflicts = 0;

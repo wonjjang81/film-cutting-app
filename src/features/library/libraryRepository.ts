@@ -11,6 +11,7 @@ import {
   type SavedRemnantSummary,
   type SavedProject,
 } from './models';
+import { createProjectExport, parseProjectExport, serializeProjectExport } from './projectTransfer';
 
 export const LIBRARY_STORAGE_KEY = 'film-cutting-library-v1';
 const MAX_SAVED_JOBS = 20;
@@ -32,8 +33,12 @@ export type LibraryRepository = {
   load(): Promise<LibraryLoadResult>;
   /** Returns the validated library document as a portable JSON file body. */
   exportDocument(): Promise<string>;
+  /** Returns one validated project and its cutting records as a portable JSON file body. */
+  exportProject(projectId: string): Promise<string>;
   /** Replaces the library with a validated document from a portable JSON file body. */
   importDocument(raw: string): Promise<LibraryLoadResult>;
+  /** Merges one validated project file, replacing records with the same project ID. */
+  importProject(raw: string): Promise<LibraryLoadResult>;
   savePreset(preset: FilmPreset): Promise<void>;
   deletePreset(id: string): Promise<void>;
   saveJob(job: SavedCuttingJob): Promise<void>;
@@ -572,6 +577,20 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       return JSON.stringify(loaded.document, null, 2);
     },
 
+    async exportProject(projectId: string): Promise<string> {
+      assertId(projectId);
+      const loaded = await read();
+      if (loaded.warnings.length > 0) throw new Error(loaded.warnings.join(' '));
+      const project = (loaded.document.projects ?? []).find((item) => item.id === projectId);
+      if (project === undefined) throw new Error('내보낼 프로젝트를 찾을 수 없습니다.');
+      const jobs = loaded.document.jobs.filter((job) => project.jobIds.includes(job.id));
+      const mergedJobs = loaded.document.mergedJobs.filter((job) => project.mergedJobIds.includes(job.id));
+      if (jobs.length !== project.jobIds.length || mergedJobs.length !== project.mergedJobIds.length) {
+        throw new Error('프로젝트에 연결된 작업 데이터가 손상되었습니다. 전체 백업을 확인해 주세요.');
+      }
+      return serializeProjectExport(createProjectExport(project, jobs, mergedJobs));
+    },
+
     async importDocument(raw: string): Promise<LibraryLoadResult> {
       if (typeof raw !== 'string' || raw.trim().length === 0) throw new Error('가져올 프로젝트 파일이 비어 있습니다.');
       const parsed = parseDocument(raw);
@@ -585,6 +604,33 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         document.projects = orderProjects(parsed.document.projects ?? []);
       });
       return { document: clone(parsed.document), warnings: [] };
+    },
+
+    async importProject(raw: string): Promise<LibraryLoadResult> {
+      const parsed = parseProjectExport(raw);
+      const project = assertValid(parsed.project, validateProject, 'project');
+      const jobs = parsed.jobs.map((item) => assertValid(item, validateJob, 'job'));
+      const mergedJobs = parsed.mergedJobs.map((item) => assertValid(item, validateMergedJob, 'merged cutting job'));
+      const jobIds = new Set(jobs.map((item) => item.id));
+      const mergedIds = new Set(mergedJobs.map((item) => item.id));
+      if (jobIds.size !== jobs.length || mergedIds.size !== mergedJobs.length
+        || jobIds.size !== project.jobIds.length || mergedIds.size !== project.mergedJobIds.length
+        || project.jobIds.some((id) => !jobIds.has(id)) || project.mergedJobIds.some((id) => !mergedIds.has(id))) {
+        throw new Error('프로젝트 파일의 작업 목록이 프로젝트 정보와 일치하지 않습니다.');
+      }
+      await mutate((document) => {
+        const previous = (document.projects ?? []).find((item) => item.id === project.id);
+        const previousJobIds = new Set(previous?.jobIds ?? []);
+        const previousMergedIds = new Set(previous?.mergedJobIds ?? []);
+        if (document.jobs.some((item) => jobIds.has(item.id) && !previousJobIds.has(item.id))
+          || document.mergedJobs.some((item) => mergedIds.has(item.id) && !previousMergedIds.has(item.id))) {
+          throw new Error('가져온 프로젝트의 작업 ID가 기존 데이터와 충돌합니다.');
+        }
+        document.jobs = orderJobs([...document.jobs.filter((item) => !previousJobIds.has(item.id)), ...jobs]);
+        document.mergedJobs = orderMergedJobs([...document.mergedJobs.filter((item) => !previousMergedIds.has(item.id)), ...mergedJobs]);
+        document.projects = orderProjects(replaceById(document.projects ?? [], project));
+      });
+      return await read();
     },
 
     async savePreset(preset): Promise<void> {
