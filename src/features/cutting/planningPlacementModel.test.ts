@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, resolvePlacementCompletionIds } from './planningPlacementModel';
+import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
@@ -52,5 +52,13 @@ describe('planning placement model', () => {
       { id: 'displayed', name: '그룹 1 · A_01 작업', updatedAt: '2026-01-02T00:00:00.000Z' },
     ];
     expect(findLatestPieceJob('그룹 1', 'group-1-piece-1', jobs, 'A_01')?.id).toBe('displayed');
+  });
+
+  it('toggles every placement list together', () => {
+    expect(areAllPlacementListsCollapsed(['a', 'b'], {})).toBe(false);
+    expect(toggleAllPlacementLists(['a', 'b'], {})).toEqual({ a: true, b: true });
+    expect(areAllPlacementListsCollapsed(['a', 'b'], { a: true, b: true })).toBe(true);
+    expect(toggleAllPlacementLists(['a', 'b'], { a: true, b: true })).toEqual({ a: false, b: false });
+    expect(toggleAllPlacementLists([], { stale: true })).toEqual({});
   });
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, normalizeSubgroupNameDraft, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -75,5 +75,11 @@ describe('subgroup card normalization', () => {
 
   it('uses one unit hint for all compact piece fields', () => {
     expect(PIECE_INPUT_UNIT_HINT).toBe('단위: 폭·길이 mm · 수량 개');
+  });
+
+  it('toggles every subgroup card between expanded and collapsed states', () => {
+    expect(toggleAllSubgroupCards(['a', 'b'], {})).toEqual({ a: true, b: true });
+    expect(toggleAllSubgroupCards(['a', 'b'], { a: true, b: true })).toEqual({ a: false, b: false });
+    expect(toggleAllSubgroupCards([], { stale: true })).toEqual({});
   });
 });

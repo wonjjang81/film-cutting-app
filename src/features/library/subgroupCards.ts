@@ -6,6 +6,12 @@ export type SubgroupCardGroup = { id: string; displayId: string; subgroups: Subg
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
 export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';
 
+/** Returns the next collapsed state for every visible subgroup card. */
+export function toggleAllSubgroupCards(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): Record<string, boolean> {
+  const allExpanded = ids.length > 0 && ids.every((id) => collapsed[id] !== true);
+  return Object.fromEntries(ids.map((id) => [id, allExpanded]));
+}
+
 export function flattenSubgroupCards(groups: readonly SubgroupCardGroup[]): IndependentSubgroupCard[] {
   return groups.flatMap((group) => group.subgroups.map((subgroup) => ({
     groupId: group.id,

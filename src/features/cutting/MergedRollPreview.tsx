@@ -20,6 +20,8 @@ type Props = {
   completedPlacementIds?: readonly number[];
   sourceLabels?: Record<string, string>;
   sourceSubgroups?: Record<string, string>;
+  placementListCollapsed?: boolean;
+  onTogglePlacementList?(): void;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -27,7 +29,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, placementListCollapsed, onTogglePlacementList }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -138,7 +140,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         </View>
       </Modal>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} />}
+      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} placementListCollapsed={placementListCollapsed} onTogglePlacementList={onTogglePlacementList} />}
     </View>
   );
 }
@@ -147,17 +149,21 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
  * The merged-roll piece list lives in the material-plan section so it has the
  * same placement-list position as a single-piece calculation.
  */
-export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete'>) {
+export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete' | 'placementListCollapsed' | 'onTogglePlacementList'>) {
   const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({});
+  const [localCollapsed, setLocalCollapsed] = React.useState(false);
+  const collapsed = placementListCollapsed ?? localCollapsed;
+  const toggleCollapsed = onTogglePlacementList ?? (() => setLocalCollapsed((value) => !value));
   const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {});
   return <View style={styles.listSection}>
-    <Text style={styles.listTitle}>배치 목록</Text>
-    <Text style={styles.listSubtitle}>총 {plan.result.placements.length}개 조각 · 소그룹 {placementGroups.length}개 · 병합 롤</Text>
-    <View style={styles.list}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 목록 ${collapsed ? '펼치기' : '접기'}`} onPress={toggleCollapsed} style={styles.listHeader}>
+      <View><Text style={styles.listTitle}>배치 목록</Text><Text style={styles.listSubtitle}>총 {plan.result.placements.length}개 조각 · 소그룹 {placementGroups.length}개 · 병합 롤</Text></View><Text style={styles.listToggle}>{collapsed ? '▶' : '▼'}</Text>
+    </TouchableOpacity>
+    {!collapsed && <View style={styles.list}>
       {placementGroups.map((group) => {
         const collapsed = collapsedGroups[group.id] === true;
         const completedCount = group.items.filter((placement) => completedPlacementIds.has(placement.id)).length;
@@ -174,7 +180,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           })}
         </View>;
       })}
-    </View>
+    </View>}
   </View>;
 }
 
@@ -187,6 +193,6 @@ const styles = StyleSheet.create({
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalClose: { minHeight: 40, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
-  listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, list: { gap: 7, marginTop: 8 }, subgroupBlock: { gap: 5 }, subgroupHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, subgroupTitle: { fontSize: 11, fontWeight: '900', color: '#0f766e' }, subgroupMeta: { marginTop: 2, fontSize: 9, color: '#0f766e' }, subgroupToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
+  listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, listToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, list: { gap: 7, marginTop: 8 }, subgroupBlock: { gap: 5 }, subgroupHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, subgroupTitle: { fontSize: 11, fontWeight: '900', color: '#0f766e' }, subgroupMeta: { marginTop: 2, fontSize: 9, color: '#0f766e' }, subgroupToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
   completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },
 });

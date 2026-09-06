@@ -10,6 +10,17 @@ export type PlacementSubgroup<T extends PlacementSource> = {
   items: T[];
 };
 
+/** Returns whether every currently rendered placement list is collapsed. */
+export function areAllPlacementListsCollapsed(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): boolean {
+  return ids.length > 0 && ids.every((id) => collapsed[id] === true);
+}
+
+/** Toggles all currently rendered placement lists while ignoring stale keys. */
+export function toggleAllPlacementLists(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): Record<string, boolean> {
+  const allCollapsed = areAllPlacementListsCollapsed(ids, collapsed);
+  return Object.fromEntries(ids.map((id) => [id, !allCollapsed]));
+}
+
 /** Groups placement rows by the subgroup assigned to their source piece. */
 export function groupPlacementsBySubgroup<T extends PlacementSource>(
   placements: readonly T[],
