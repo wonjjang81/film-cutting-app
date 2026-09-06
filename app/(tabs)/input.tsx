@@ -40,7 +40,8 @@ const initialForm: CuttingFormState = {
   quantity: '1', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
-type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
+type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean };
+type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string };
 type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
 type SavedPiecePlanView = {
   plan: RemnantPlan | null;
@@ -62,13 +63,19 @@ function newPieceDraft(groupName: string, index: number): CuttingPieceDraft {
   const id = defaultPieceId(groupName, index);
   return { id, name: id, form: { ...initialForm } };
 }
+function subgroupNameForIndex(index: number): string {
+  let value = Math.max(0, index);
+  let name = '';
+  do { name = String.fromCharCode(65 + (value % 26)) + name; value = Math.floor(value / 26) - 1; } while (value >= 0);
+  return name;
+}
 function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDraft {
   // The legacy app opened each group with three editable piece rows. Keep
   // those rows available while allowing untouched 0×0 rows to be ignored by
   // calculation, just as the legacy group estimator did.
   const groupName = `그룹 ${index}`;
   const pieces = withInitialPieces ? [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex)) : [];
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '' };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -202,7 +209,7 @@ export default function FilmCutInputScreen() {
       const pieceName = pieceLabel.join(' · ').replace(/ 작업$/, '').trim() || `조각 ${index + 1}`;
       let group = groupsByName.get(groupName);
       if (!group) {
-        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, displayId: String(restoredGroups.length + 1), name: groupName, form: formFromSavedJob(job), pieces: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
+        group = { id: `${project.id}-group-${restoredGroups.length + 1}`, displayId: String(restoredGroups.length + 1), name: groupName, form: formFromSavedJob(job), pieces: [], subgroups: [], mergeGroupId: mergeGroupByName.get(groupName) ?? AUTO_MERGE_GROUP_ID, filmName: job.filmName ?? '', materialCostPerM: job.materialCostPerM === undefined ? '' : String(job.materialCostPerM), constructionCostPerM2: job.constructionCostPerM2 === undefined ? '' : String(job.constructionCostPerM2) };
         groupsByName.set(groupName, group); restoredGroups.push(group);
       }
       // Saved jobs use a generated storage ID, while the legacy UI exposes
@@ -215,6 +222,7 @@ export default function FilmCutInputScreen() {
       group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
       group.form = group.pieces[0]!.form;
     });
+    restoredGroups.forEach((group) => { group.subgroups = [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true }]; });
     const firstGroup = restoredGroups[0]!;
     const firstPiece = firstGroup.pieces[0]!;
     setProjectId(project.id); setProjectName(project.name); setGroups(restoredGroups); setActiveGroupId(firstGroup.id); setActivePieceId(firstPiece.id); setForm(firstPiece.form);
@@ -274,23 +282,46 @@ export default function FilmCutInputScreen() {
     saveActivePlanView();
     setActivePieceId(piece.id); setForm(piece.form); setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: piece.form } : item)); restorePlanView(activeGroupId, piece.id);
   };
-  const addPiece = () => {
+  const addPiece = (subgroupId?: string) => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
-    const next = newPieceDraft(group.name, group.pieces.length + 1);
-    next.id = nextPieceId(group.pieces, group.name);
+    const targetSubgroup = group.subgroups.find((subgroup) => subgroup.id === subgroupId)
+      ?? group.subgroups.find((subgroup) => subgroup.pieceIds.includes(activePieceId))
+      ?? group.subgroups[0];
+    if (!targetSubgroup) { addSubgroup(); return; }
+    const next = newPieceDraft(`${group.name}_${targetSubgroup.name}`, targetSubgroup.pieceIds.length + 1);
+    next.id = nextPieceId(group.pieces, `${group.name}_${targetSubgroup.name}`);
     next.name = next.id;
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: next.form, pieces: [...item.pieces, next] } : item));
+    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: next.form, pieces: [...item.pieces, next], subgroups: item.subgroups.map((subgroup) => subgroup.id === targetSubgroup.id ? { ...subgroup, pieceIds: [...subgroup.pieceIds, next.id], expanded: true } : subgroup) } : item));
     setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
   };
   const addSubgroup = () => {
-    addPiece();
-    setNotice('소그룹 입력 단위를 추가했습니다. 폭·길이·수량을 입력해 주세요.');
+    const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
+    const subgroupName = subgroupNameForIndex(group.subgroups.length);
+    const subgroupId = `${group.id}-subgroup-${subgroupName}`;
+    const pieces = [1, 2, 3].map((index) => newPieceDraft(`${group.name}_${subgroupName}`, index));
+    const usedIds = new Set(group.pieces.map((piece) => piece.id));
+    const uniquePieces = pieces.map((piece, index) => {
+      const id = usedIds.has(piece.id) ? `${piece.id}-${index + 1}` : piece.id;
+      usedIds.add(id);
+      return { ...piece, id, name: id };
+    });
+    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: uniquePieces[0]!.form, pieces: [...item.pieces, ...uniquePieces], subgroups: [...item.subgroups, { id: subgroupId, name: subgroupName, pieceIds: uniquePieces.map((piece) => piece.id), expanded: true }] } : item));
+    setActivePieceId(uniquePieces[0]!.id); setForm(uniquePieces[0]!.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setNotice(`소그룹 ${subgroupName}과 기본 조각 3개를 추가했습니다.`);
+  };
+  const renameSubgroup = (groupId: string, subgroupId: string, value: string) => {
+    const nextName = value.trim().replace(/\s+/g, ' ');
+    if (!nextName) return;
+    setGroups((items) => items.map((group) => {
+      if (group.id !== groupId || group.subgroups.some((subgroup) => subgroup.id !== subgroupId && subgroup.name === nextName)) return group;
+      return { ...group, subgroups: group.subgroups.map((subgroup) => subgroup.id === subgroupId ? { ...subgroup, name: nextName } : subgroup) };
+    }));
   };
   const deletePiece = (id: string) => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group || group.pieces.length <= 1) return;
     const remaining = group.pieces.filter((piece) => piece.id !== id);
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, pieces: remaining, form: remaining[0]!.form } : item));
-    if (id === activePieceId) selectPiece(remaining[0]!);
+    const subgroups = group.subgroups.map((subgroup) => ({ ...subgroup, pieceIds: subgroup.pieceIds.filter((pieceId) => pieceId !== id) })).filter((subgroup) => subgroup.pieceIds.length > 0);
+    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, pieces: remaining, form: remaining[0]!.form, subgroups } : item));
+    if (id === activePieceId) { const nextPiece = remaining[0]; if (nextPiece) selectPiece(nextPiece); else { setActivePieceId(''); setForm(group.form); } }
   };
   const addGroup = () => {
     const next = newGroupDraft(groups.length + 1, false);
@@ -310,15 +341,16 @@ export default function FilmCutInputScreen() {
     const source = groups.find((group) => group.id === sourceGroupId);
     const target = groups.find((group) => group.displayId === targetDisplayId);
     if (!source || !target || source.id === target.id) return;
-    if (source.pieces.length <= 1) { setError('대그룹에는 최소 1개의 소그룹 조각이 필요합니다.'); return; }
+    if (source.pieces.length <= 1) { setError('대그룹에는 최소 1개의 조각이 필요합니다.'); return; }
     const sourcePiece = source.pieces.find((piece) => piece.id === pieceId);
     if (!sourcePiece) return;
+    const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true };
     const nextPieceIdValue = composePieceId(target.name, pieceNamePart(source.name, sourcePiece.id));
     if (target.pieces.some((piece) => piece.id === nextPieceIdValue)) { setError('대상 대그룹에 같은 조각 이름이 이미 있습니다.'); return; }
     const movedPiece = { ...sourcePiece, id: nextPieceIdValue, name: nextPieceIdValue, form: { ...sourcePiece.form, brand: target.form.brand, productNumber: target.form.productNumber } };
     setGroups((items) => items.map((group) => {
-      if (group.id === source.id) { const pieces = group.pieces.filter((piece) => piece.id !== pieceId); return { ...group, pieces, form: pieces[0]!.form }; }
-      if (group.id === target.id) return { ...group, pieces: [...group.pieces, movedPiece] };
+      if (group.id === source.id) { const pieces = group.pieces.filter((piece) => piece.id !== pieceId); const subgroups = group.subgroups.map((subgroup) => ({ ...subgroup, pieceIds: subgroup.pieceIds.filter((id) => id !== pieceId) })).filter((subgroup) => subgroup.pieceIds.length > 0); return { ...group, pieces, form: pieces[0]!.form, subgroups }; }
+      if (group.id === target.id) return { ...group, pieces: [...group.pieces, movedPiece], subgroups: group.subgroups.length > 0 ? group.subgroups.map((subgroup, index) => index === 0 ? { ...subgroup, pieceIds: [...subgroup.pieceIds, movedPiece.id] } : subgroup) : [{ ...targetSubgroup, pieceIds: [movedPiece.id] }] };
       return group;
     }));
     if (activeGroupId === source.id && activePieceId === pieceId) { setActiveGroupId(target.id); setActivePieceId(nextPieceIdValue); setForm(movedPiece.form); }
@@ -335,7 +367,7 @@ export default function FilmCutInputScreen() {
     setError(null);
     setNotice('조각 이름이 변경되었습니다. 배치 계산을 다시 실행해 주세요.');
     setGroups((items) => items.map((item) => item.id === groupId
-      ? { ...item, pieces: item.pieces.map((piece) => piece.id === pieceId ? { ...piece, id: nextId, name: nextId } : piece) }
+      ? { ...item, pieces: item.pieces.map((piece) => piece.id === pieceId ? { ...piece, id: nextId, name: nextId } : piece), subgroups: item.subgroups.map((subgroup) => ({ ...subgroup, pieceIds: subgroup.pieceIds.map((id) => id === pieceId ? nextId : id) })) }
       : item));
     // A source ID is part of every calculated plan. Clear stale results so a
     // renamed piece can never be confirmed under the previous ID.
@@ -909,7 +941,7 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onAddSubgroup={addSubgroup} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} onChangeForm={(pieceId, updater) => updatePieceForm(activeGroupId, pieceId, updater)} />
+          <PieceInputPanel group={groups.find((group) => group.id === activeGroupId)!} activePieceId={activePieceId} onSelect={selectPiece} onAdd={addPiece} onAddSubgroup={addSubgroup} onDelete={deletePiece} onRename={(pieceId, nextId) => renamePieceId(activeGroupId, pieceId, nextId)} onRenameSubgroup={(subgroupId, name) => renameSubgroup(activeGroupId, subgroupId, name)} onChangeForm={(pieceId, updater) => updatePieceForm(activeGroupId, pieceId, updater)} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -953,28 +985,36 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, o
     </View>)}</View>
   </View>;
 }
-function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onChangeForm }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(): void; onAddSubgroup(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void; onChangeForm(pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
+function PieceInputPanel({ group, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onChangeForm }: { group: CuttingGroupDraft; activePieceId: string; onSelect(piece: CuttingPieceDraft): void; onAdd(subgroupId?: string): void; onAddSubgroup(): void; onDelete(id: string): void; onRename(pieceId: string, nextId: string): void; onRenameSubgroup(subgroupId: string, name: string): void; onChangeForm(pieceId: string, updater: React.SetStateAction<CuttingFormState>): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingError, setEditingError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(true);
+  const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
   const finishRename = (pieceId: string) => {
     const nextId = editingValue.trim();
     if (!nextId) { setEditingError('조각 이름을 입력해 주세요.'); return; }
     onRename(pieceId, nextId);
     setEditingId(null); setEditingError(null);
   };
+  const renderPiece = (piece: CuttingPieceDraft, index: number) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
+    <View style={styles.pieceRowContent}>
+      {editingId === piece.id
+        ? <View style={styles.pieceEditRow}><View style={styles.pieceEditPrefix}><Text style={styles.pieceEditPrefixText}>{group.name}_</Text></View><TextInput accessibilityLabel={`${piece.id} 조각 이름`} autoFocus value={editingValue} onChangeText={(value) => { setEditingValue(value.replace(/[\s_]+/g, '')); setEditingError(null); }} onSubmitEditing={() => finishRename(piece.id)} returnKeyType="done" style={styles.pieceIdInput} /><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 저장`} onPress={() => finishRename(piece.id)} style={styles.pieceEditAction}><Text style={styles.pieceEditActionText}>저장</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="조각 이름 변경 취소" onPress={() => { setEditingId(null); setEditingError(null); }} style={styles.pieceEditCancel}><Text style={styles.pieceEditCancelText}>취소</Text></TouchableOpacity></View>
+        : <><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${piece.id} 선택`} accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]} numberOfLines={1}>{piece.id}</Text></View></TouchableOpacity><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 변경`} onPress={() => { setEditingId(piece.id); setEditingValue(pieceNamePart(group.name, piece.id)); setEditingError(null); }} style={styles.pieceEditButton}><Text style={styles.pieceEditButtonText}>✎</Text></TouchableOpacity><View style={styles.pieceCardFields}><NumericField compact label="재단 폭" unit="mm" value={piece.form.pieceWidth} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceWidth: value }))} /><NumericField compact label="재단 길이" unit="mm" value={piece.form.pieceLength} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceLength: value }))} /><NumericField compact label="필요 수량" unit="개" value={piece.form.quantity} integer step={1} min={1} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, quantity: value }))} /></View></>}
+      {editingId !== piece.id && group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.id} 삭제`} onPress={() => onDelete(piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}
+    </View>
+    {editingError && editingId === piece.id && <Text style={styles.pieceEditError}>{editingError}</Text>}
+  </View>;
   return <View style={styles.pieceInputPanel}>
-    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>대그룹 ID {group.displayId}</Text><Text style={styles.pieceInputHint}>{group.name} · 소그룹별 조각 폭·길이·수량을 입력합니다.</Text></View><View style={styles.pieceHeaderActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 소그룹 추가`} onPress={onAddSubgroup} style={styles.addSubgroupButton}><Text style={styles.addSubgroupButtonText}>＋ 소그룹 추가</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? `${group.name} 조각 입력 접기` : `${group.name} 조각 입력 펼치기`} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View></View>
-    {expanded && <><View style={styles.pieceRows}>{group.pieces.map((piece, index) => <View key={piece.id} style={[styles.pieceRowCard, piece.id === activePieceId && styles.pieceRowCardActive]}>
-      <View style={styles.pieceRowContent}>
-        {editingId === piece.id
-          ? <View style={styles.pieceEditRow}><View style={styles.pieceEditPrefix}><Text style={styles.pieceEditPrefixText}>{group.name}_</Text></View><TextInput accessibilityLabel={`${group.name} 조각 이름`} autoFocus value={editingValue} onChangeText={(value) => { setEditingValue(value.replace(/[\s_]+/g, '')); setEditingError(null); }} onSubmitEditing={() => finishRename(piece.id)} returnKeyType="done" style={styles.pieceIdInput} /><TouchableOpacity accessibilityLabel={`${group.name} 조각 이름 저장`} onPress={() => finishRename(piece.id)} style={styles.pieceEditAction}><Text style={styles.pieceEditActionText}>저장</Text></TouchableOpacity><TouchableOpacity accessibilityLabel="조각 이름 변경 취소" onPress={() => { setEditingId(null); setEditingError(null); }} style={styles.pieceEditCancel}><Text style={styles.pieceEditCancelText}>취소</Text></TouchableOpacity></View>
-          : <><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${piece.id} 선택`} accessibilityState={{ selected: piece.id === activePieceId }} onPress={() => onSelect(piece)} style={styles.pieceRowMain}><Text style={[styles.pieceIndex, piece.id === activePieceId && styles.pieceIndexActive]}>{index + 1}</Text><View style={styles.pieceCopy}><Text style={[styles.pieceName, piece.id === activePieceId && styles.pieceNameActive]} numberOfLines={1}>{piece.id}</Text></View></TouchableOpacity><TouchableOpacity accessibilityLabel={`${piece.id} 조각 이름 변경`} onPress={() => { setEditingId(piece.id); setEditingValue(pieceNamePart(group.name, piece.id)); setEditingError(null); }} style={styles.pieceEditButton}><Text style={styles.pieceEditButtonText}>✎</Text></TouchableOpacity><View style={styles.pieceCardFields}><NumericField compact label="재단 폭" unit="mm" value={piece.form.pieceWidth} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceWidth: value }))} /><NumericField compact label="재단 길이" unit="mm" value={piece.form.pieceLength} step={50} min={0} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, pieceLength: value }))} /><NumericField compact label="필요 수량" unit="개" value={piece.form.quantity} integer step={1} min={1} onChange={(value) => onChangeForm(piece.id, (current) => ({ ...current, quantity: value }))} /></View></>}
-        {editingId !== piece.id && group.pieces.length > 1 && <TouchableOpacity accessibilityLabel={`${piece.id} 삭제`} onPress={() => onDelete(piece.id)} style={styles.pieceDelete}><Text style={styles.pieceDeleteText}>×</Text></TouchableOpacity>}
-      </View>
-      {editingError && editingId === piece.id && <Text style={styles.pieceEditError}>{editingError}</Text>}
-    </View>)}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 조각 추가`} onPress={onAdd} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}
+    <View style={styles.pieceInputHeader}><View style={styles.pieceHeaderCopy}><Text style={styles.pieceInputTitle}>대그룹 ID {group.displayId}</Text><Text style={styles.pieceInputHint}>{group.name} · 소그룹별 조각 폭·길이·수량을 입력합니다.</Text></View><View style={styles.pieceHeaderActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.name} 소그룹 추가`} onPress={onAddSubgroup} style={styles.addSubgroupButton}><Text style={styles.addSubgroupButtonText}>＋ 소그룹 추가</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? `${group.name} 소그룹 입력 접기` : `${group.name} 소그룹 입력 펼치기`} onPress={() => setExpanded((current) => !current)} style={styles.collapseButton}><Text style={styles.collapseButtonText}>{expanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View></View>
+    {expanded && (group.subgroups.length === 0
+      ? <View style={styles.emptySubgroup}><Text style={styles.emptySubgroupText}>소그룹이 없습니다. 위의 소그룹 추가 버튼으로 시작하세요.</Text></View>
+      : group.subgroups.map((subgroup) => {
+        const pieces = subgroup.pieceIds.map((id) => group.pieces.find((piece) => piece.id === id)).filter((piece): piece is CuttingPieceDraft => Boolean(piece));
+        const isExpanded = collapsedSubgroups[subgroup.id] !== true;
+        return <View key={subgroup.id} style={styles.subgroupCard}><View style={styles.subgroupHeader}><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroup.name} onChangeText={(value) => onRenameSubgroup(subgroup.id, value)} style={styles.subgroupNameInput} /><Text style={styles.subgroupMeta}>{pieces.length}개 조각</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{isExpanded && <><View style={styles.pieceRows}>{pieces.map(renderPiece)}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
+      }))}
   </View>;
 }
 function NumericField({ label, unit, value, onChange, integer = false, step = 1, min = 0, compact = false }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean; step?: number; min?: number; compact?: boolean }) {
@@ -1096,7 +1136,7 @@ async function withBusy(operation: () => Promise<void>, setBusy: (value: boolean
 const shadow = { shadowColor: '#0f172a', shadowOpacity: 0.08, shadowRadius: 22, shadowOffset: { width: 0, height: 8 }, elevation: 3 } as const;
 const styles = StyleSheet.create({
   productionSettingsCard: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#f8fbff', overflow: 'hidden' }, productionSettingsHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }, productionSettingsTitle: { fontSize: 13, fontWeight: '900', color: '#1e3a8a' }, productionSettingsHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, productionSettingsToggle: { fontSize: 20, color: '#2563eb' }, productionSettingsBody: { paddingHorizontal: 10, paddingBottom: 10 },
-  pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' },
+  pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, subgroupCard: { marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, subgroupHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 }, subgroupNameInput: { flex: 1, minHeight: 32, paddingHorizontal: 8, borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, fontWeight: '800', color: '#115e59' }, subgroupMeta: { fontSize: 10, color: '#64748b' }, subgroupToggle: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#e2e8f0' }, subgroupToggleText: { fontSize: 9, fontWeight: '800', color: '#475569' }, emptySubgroup: { marginTop: 10, padding: 16, alignItems: 'center', borderRadius: 9, backgroundColor: '#f8fafc' }, emptySubgroupText: { fontSize: 11, color: '#64748b' },
   groupRows: { gap: 6, marginTop: 10 }, groupRow: { minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 92, minWidth: 55, height: 32, flexShrink: 1, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
   mergedPreviewNotice: { flex: 1, minHeight: 360, marginTop: 14, padding: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, mergedPreviewNoticeTitle: { fontSize: 16, fontWeight: '900', color: '#115e59', textAlign: 'center' }, mergedPreviewNoticeText: { maxWidth: 420, marginTop: 8, fontSize: 12, lineHeight: 19, color: '#0f766e', textAlign: 'center' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, pageContent: { width: '100%', maxWidth: 1400, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, pageContentSmall: { paddingHorizontal: 12, paddingTop: 20 },
