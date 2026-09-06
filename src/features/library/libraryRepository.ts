@@ -240,6 +240,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
+  if (value.groupId !== undefined && typeof value.groupId !== 'string') return undefined;
   if (value.filmName !== undefined && typeof value.filmName !== 'string') return undefined;
   if (value.subgroupName !== undefined && typeof value.subgroupName !== 'string') return undefined;
   if (value.difficulty !== undefined && value.difficulty !== 'low' && value.difficulty !== 'medium' && value.difficulty !== 'high') return undefined;
@@ -251,6 +252,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   if (completedPlacementIds !== undefined && (!Array.isArray(completedPlacementIds) || !completedPlacementIds.every((id) => positiveInteger(id)))) return undefined;
   return {
     id: value.id, name: value.name, brand: value.brand, productNumber: value.productNumber,
+    ...(value.groupId === undefined ? {} : { groupId: value.groupId }),
     createdAt, updatedAt, input,
     ...(value.filmName === undefined ? {} : { filmName: value.filmName }),
     ...(value.subgroupName === undefined ? {} : { subgroupName: value.subgroupName }),

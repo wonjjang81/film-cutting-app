@@ -67,6 +67,7 @@ function overallStatus(plan: RemnantPlan): SavedCuttingJob['result']['optimizati
 export type BuildSavedCuttingJobOptions = {
   id: string;
   name: string;
+  groupId?: string;
   createdAt: string;
   request: RemnantPlanRequest;
   plan: RemnantPlan;
@@ -82,6 +83,7 @@ export type BuildSavedCuttingJobOptions = {
 export function buildSavedCuttingJob({
   id,
   name,
+  groupId,
   createdAt,
   request,
   plan,
@@ -127,6 +129,7 @@ export function buildSavedCuttingJob({
   return {
     id,
     name: name.trim() || (productNumber ? `${brand} ${productNumber} 작업` : `${brand} 작업`),
+    ...(groupId?.trim() ? { groupId: groupId.trim() } : {}),
     brand,
     productNumber,
     ...(filmName?.trim() ? { filmName: filmName.trim() } : {}),

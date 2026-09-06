@@ -102,6 +102,7 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
   const jobs = planned.map((entry, index) => buildSavedCuttingJob({
     id: `current-estimate-${entry.groupId}-${entry.pieceId}-${index}`,
     name: `${entry.groupName} · ${entry.pieceName}`,
+    groupId: entry.groupId,
     createdAt: new Date(0).toISOString(),
     request: entry.request,
     plan: entry.plan,

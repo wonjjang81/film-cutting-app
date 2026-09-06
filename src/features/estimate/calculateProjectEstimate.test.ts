@@ -54,6 +54,25 @@ describe('calculateProjectEstimate', () => {
     expect(result.constructionCost).toBe(122_000);
   });
 
+  it('applies independent material rates per major group', () => {
+    const first = { ...job('group-one-piece', 1000), groupId: 'group-1' };
+    const second = { ...job('group-two-piece', 1000), groupId: 'group-2' };
+    const result = calculateProjectEstimate([first, second], 10_000, 15_000, 0, [], {
+      materialRatesByGroupId: { 'group-1': 12_000, 'group-2': 28_000 },
+    });
+    expect(result.jobs.map((line) => line.rates.materialCostPerM)).toEqual([12_000, 28_000]);
+    expect(result.materialCost).toBe(40_000);
+  });
+
+  it('keeps a piece-level material override above its major-group rate', () => {
+    const piece = { ...job('piece-override', 1000), groupId: 'group-1' };
+    const result = calculateProjectEstimate([piece], 10_000, 15_000, 0, [], {
+      materialRatesByGroupId: { 'group-1': 20_000 },
+      materialRatesByJobId: { 'piece-override': 35_000 },
+    });
+    expect(result.jobs[0]?.rates.materialCostPerM).toBe(35_000);
+  });
+
   it('allocates a mixed merged roll to each source group rate', () => {
     const first = { ...job('source-a', 510), materialCostPerM: 10_000, constructionCostPerM2: 10_000 };
     const second = { ...job('source-b', 310), materialCostPerM: 20_000, constructionCostPerM2: 20_000 };

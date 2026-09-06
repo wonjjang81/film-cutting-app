@@ -61,6 +61,8 @@ export type SavedCuttingResultSummary = {
 export type SavedCuttingJob = {
   id: string;
   name: string;
+  /** Stable input-screen group identifier used for group-level pricing. */
+  groupId?: string;
   brand: string;
   productNumber: string;
   filmName?: string;

@@ -21,18 +21,27 @@ export type ProjectEstimate = Estimate & {
   totalRange: { min: number; max: number };
 };
 
-type RateOptions = { rateMode?: EstimateRateMode };
+export type RateOptions = {
+  rateMode?: EstimateRateMode;
+  /** Optional material rate entered once for every major group. */
+  materialRatesByGroupId?: Record<string, number | undefined>;
+  /** Optional piece-level rates take precedence over the major-group rate. */
+  materialRatesByJobId?: Record<string, number | undefined>;
+};
 
 function finiteRate(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value !== undefined && value >= 0 ? value : fallback;
 }
 
-function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructionCostPerM2: number, mode: EstimateRateMode): EstimateRateSummary {
+function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructionCostPerM2: number, mode: EstimateRateMode, options: RateOptions): EstimateRateSummary {
   const hasDifficultyContext = job.difficulty !== undefined || job.subgroupName !== undefined;
   const effectiveConstructionCost = job.constructionCostPerM2 ?? (hasDifficultyContext ? constructionRateForDifficulty(job.difficulty) : constructionCostPerM2);
+  const jobMaterialRate = options.materialRatesByJobId?.[job.id];
+  const groupMaterialRate = job.groupId === undefined ? undefined : options.materialRatesByGroupId?.[job.groupId];
+  const effectiveMaterialCost = jobMaterialRate ?? groupMaterialRate ?? job.materialCostPerM ?? materialCostPerM;
   return mode === 'global'
     ? { materialCostPerM, constructionCostPerM2 }
-    : { materialCostPerM: finiteRate(job.materialCostPerM, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2) };
+    : { materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2) };
 }
 
 function sumEstimates(items: readonly Estimate[]): Estimate {
@@ -69,7 +78,7 @@ export function calculateProjectEstimate(
   }, 0);
   const mergedSourceIds = new Set(mergedJobs.flatMap((mergedJob) => mergedJob.sourceJobIds));
   const details = jobs.filter((job) => !mergedSourceIds.has(job.id)).map((job) => {
-    const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode);
+    const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
     return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0) };
   });
   const mergedDetails = mergedJobs.flatMap((mergedJob) => {
@@ -86,7 +95,7 @@ export function calculateProjectEstimate(
     const totalBasis = allocationBasis.reduce((sum, area) => sum + area, 0);
     const sourceDetails = sources.map((job, index) => {
       const share = totalBasis > 0 ? allocationBasis[index]! / totalBasis : 1 / sources.length;
-      const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode);
+      const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
       const estimate = calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, {
         materialLengthMm: mergedJob.usedLengthMm * share,
         materialWidthMm: mergedJob.rollWidthMm,

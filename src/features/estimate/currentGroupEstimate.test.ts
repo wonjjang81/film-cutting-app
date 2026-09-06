@@ -57,6 +57,6 @@ describe('current group estimate', () => {
       pieces: [{ id: 'p1', name: 'p1', form: form('500', '1000') }],
     }]);
     const result = calculateCurrentGroupEstimate(snapshot);
-    expect(result.jobs[0]).toMatchObject({ subgroupName: 'A', difficulty: 'high' });
+    expect(result.jobs[0]).toMatchObject({ groupId: 'g1', subgroupName: 'A', difficulty: 'high' });
   });
 });

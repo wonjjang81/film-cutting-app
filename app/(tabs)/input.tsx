@@ -523,6 +523,7 @@ export default function FilmCutInputScreen() {
     const nextJob = buildSavedCuttingJob({
       id: preferredJobId ?? createUniqueUiId('job', timestampMs, inventory.jobs.map((job) => job.id)),
       name: request.productNumber ? `${request.brand} ${request.productNumber} 작업` : `${request.brand} 작업`, createdAt, request, plan: nextPlan, inventory: inventory.remnants,
+      groupId: activeGroup?.id,
       filmName: activeGroup?.filmName,
       subgroupName: activeSubgroup?.name,
       difficulty: activeSubgroup?.difficulty,
@@ -596,7 +597,7 @@ export default function FilmCutInputScreen() {
         generatedIds.push(id);
         savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
-        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         jobsToSave.push(job);
       }
       const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
@@ -666,7 +667,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request);
     const createdAt = new Date().toISOString();
-      const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setCandidateComparison(entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : []);
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
