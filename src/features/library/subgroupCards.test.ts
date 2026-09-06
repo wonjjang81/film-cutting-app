@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { flattenSubgroupCards, hasAssignedSubgroups, type SubgroupCardGroup } from './subgroupCards';
+import { flattenSubgroupCards, hasAssignedSubgroups, renameSubgroupPieces, subgroupCardStackIndex, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -23,5 +23,17 @@ describe('subgroup card normalization', () => {
 
     expect(hasAssignedSubgroups(groups, 'group-1')).toBe(true);
     expect(hasAssignedSubgroups(groups, 'group-2')).toBe(false);
+  });
+
+  it('updates piece IDs when a subgroup name changes', () => {
+    expect(renameSubgroupPieces('그룹 1', 'A', '창짝', ['그룹 1_A_01', '그룹 1_A_02'])).toEqual([
+      '그룹 1_창짝_01',
+      '그룹 1_창짝_02',
+    ]);
+  });
+
+  it('puts earlier cards above later cards so dropdowns are not covered', () => {
+    expect(subgroupCardStackIndex(4, 0)).toBe(4);
+    expect(subgroupCardStackIndex(4, 3)).toBe(1);
   });
 });
