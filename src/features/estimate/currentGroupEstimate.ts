@@ -1,6 +1,6 @@
 import { buildSavedCuttingJob } from '../library/uiWorkflowHelpers';
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
-import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPieceRequest } from '../remnants/planGroupedPieces';
+import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
 
 export const CURRENT_GROUP_ESTIMATE_STORAGE_KEY = 'film-cutting-current-group-estimate';
@@ -16,6 +16,7 @@ export type CurrentEstimateGroupSource = {
 };
 
 export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[] };
+export type CurrentEstimatePlan = { groupedPlans: GroupedPiecePlan[]; mergedPlans: MergedGroupPlan[] };
 
 export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[]): CurrentEstimateSnapshot {
   return { pieces: groups.map((group) => ({ ...group, pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })) })) };
@@ -39,7 +40,7 @@ function optionalCost(value: string | undefined): number | undefined {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
 }
 
-function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRequest[] {
+export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRequest[] {
   return snapshot.pieces.flatMap((group) => group.pieces.map((piece) => ({
     groupId: group.id,
     groupName: group.name,
@@ -65,14 +66,19 @@ function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRe
   })));
 }
 
-/** Calculates the current input groups in memory; it never writes project history. */
-export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot): { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] } {
+/** Calculates the current input layout details without writing project history. */
+export function calculateCurrentGroupPlan(snapshot: CurrentEstimateSnapshot): CurrentEstimatePlan {
   const requests = requestsFromSnapshot(snapshot).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
     && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
     && Number.isInteger(request.quantity) && request.quantity > 0);
-  if (requests.length === 0) return { jobs: [], mergedJobs: [] };
-  const merged = planMergedGroups(requests, 1_220, [], false);
-  const planned = planGroupedPieces(requests, []);
+  if (requests.length === 0) return { groupedPlans: [], mergedPlans: [] };
+  return { groupedPlans: planGroupedPieces(requests, []), mergedPlans: planMergedGroups(requests, 1_220, [], false) };
+}
+
+/** Calculates the current input groups in memory; it never writes project history. */
+export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot): { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] } {
+  const { groupedPlans: planned, mergedPlans: merged } = calculateCurrentGroupPlan(snapshot);
+  if (planned.length === 0) return { jobs: [], mergedJobs: [] };
   const jobs = planned.map((entry, index) => buildSavedCuttingJob({
     id: `current-estimate-${entry.groupId}-${entry.pieceId}-${index}`,
     name: `${entry.groupName} · ${entry.pieceName}`,

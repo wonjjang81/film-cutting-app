@@ -1,6 +1,7 @@
 import { Tabs } from 'expo-router';
 import {
   CircleHelp,
+  ClipboardList,
   FolderOpen,
   ReceiptText,
   Scissors,
@@ -57,6 +58,14 @@ export default function TabsLayout() {
           title: '재단 계산',
           href: '/input',
           tabBarIcon: ({ color, size }) => <TabIcon Icon={Scissors} color={color} size={size} />,
+        }}
+      />
+      <Tabs.Screen
+        name="planning"
+        options={{
+          title: '배치 계획',
+          href: '/planning',
+          tabBarIcon: ({ color, size }) => <TabIcon Icon={ClipboardList} color={color} size={size} />,
         }}
       />
       <Tabs.Screen
