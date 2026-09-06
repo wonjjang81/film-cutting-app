@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCurrentGroupEstimate, createCurrentEstimateSnapshot, parseCurrentEstimateSnapshot } from './currentGroupEstimate';
+import { calculateCurrentGroupEstimate, calculateCurrentGroupPlan, createCurrentEstimateSnapshot, parseCurrentEstimateSnapshot } from './currentGroupEstimate';
 import { calculateProjectEstimate } from './calculateProjectEstimate';
 
 const form = (pieceWidth: string, pieceLength: string, quantity = '1') => ({
@@ -34,5 +34,18 @@ describe('current group estimate', () => {
     expect(result.mergedJobs).toHaveLength(1);
     expect(estimate.jobs).toHaveLength(0);
     expect(estimate.mergedJobs).toHaveLength(1);
+  });
+
+  it('uses the subgroup piece name in the material plan', () => {
+    const snapshot = createCurrentEstimateSnapshot([{
+      id: 'g1',
+      name: '그룹 1',
+      subgroups: [{ id: 'sg-a', name: 'A', pieceIds: ['group-1-그룹 1_01'], expanded: true }],
+      pieces: [{ id: 'group-1-그룹 1_01', name: 'group-1-그룹 1_01', form: form('500', '1000') }],
+    } as any]);
+    const plan = calculateCurrentGroupPlan(snapshot);
+    expect(plan.groupedPlans[0]?.pieceName).toBe('A_01');
+    expect(plan.pieceNamesBySourceId['g1-group-1-그룹 1_01']).toBe('A_01');
+    expect(plan.subgroupNamesBySourceId['g1-group-1-그룹 1_01']).toBe('A');
   });
 });

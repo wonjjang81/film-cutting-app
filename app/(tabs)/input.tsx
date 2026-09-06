@@ -134,14 +134,6 @@ export default function FilmCutInputScreen() {
     ].reduce((sum, placement) => sum + placement.width * placement.height, 0);
     return { materialLengthMm: activeMergedPlan.result.usedLengthMm, productAreaM2: placedAreaMm2 / 1_000_000 };
   }, [activeMergedPlan]);
-  const activeMergedUtilizationPercent = useMemo(() => {
-    if (!activeMergedPlan) return undefined;
-    const productAreaMm2 = activeMergedUsage?.productAreaM2 ?? 0;
-    const materialAreaMm2 = activeMergedPlan.result.usedLengthMm * FIXED_ROLL_WIDTH_MM
-      + activeMergedPlan.remnantUses.reduce((sum, use) => sum + use.widthMm * use.result.usedLengthMm, 0);
-    return materialAreaMm2 > 0 ? Math.round((productAreaMm2 * 1_000_000 / materialAreaMm2) * 1000) / 10 : 0;
-  }, [activeMergedPlan, activeMergedUsage]);
-
   const saveActivePlanView = useCallback(() => {
     if (!plan && !planRequest && !draftJob && !batchPlans && mergedGroupPlans.length === 0) return;
     setSavedGroupPlanViews((current) => {
@@ -977,11 +969,11 @@ export default function FilmCutInputScreen() {
 
   const plannedUses: PlannedRemnantSummary[] = plan?.remnantUses.map((use) => ({ remnantId: use.remnantId, producedQuantity: use.producedQuantity, savedNewRollLengthMm: use.savedNewRollLengthMm, optimizationStatus: use.result.optimizationStatus })) ?? [];
   const resultStatus = draftJob ? statusCopy[draftJob.result.optimizationStatus] : null;
-  const displayedNewRollLengthMm = activeMergedPlan?.result.usedLengthMm ?? plan?.newRollResult?.usedLengthMm ?? 0;
-  const displayedNewRollQuantity = activeMergedPlan?.result.producedQuantity ?? plan?.newRollQuantity ?? 0;
-  const displayedRemnantCount = activeMergedPlan?.remnantUses.length ?? plan?.remnantUses.length ?? 0;
-  const displayedUtilizationPercent = activeMergedUtilizationPercent ?? draftJob?.result.utilizationPercent ?? 0;
-
+  const sourceLabels = useMemo(() => Object.fromEntries(groups.flatMap((group) => group.pieces.map((piece) => {
+    const subgroup = group.subgroups.find((candidate) => candidate.pieceIds.includes(piece.id));
+    return [`${group.id}-${piece.id}`, subgroup ? subgroupPieceDisplayName(group.name, subgroup.name, piece.id) : piece.name] as const;
+  }))), [groups]);
+  const sourceSubgroups = useMemo(() => Object.fromEntries(groups.flatMap((group) => group.subgroups.flatMap((subgroup) => subgroup.pieceIds.map((pieceId) => [`${group.id}-${pieceId}`, subgroup.name] as const)))), [groups]);
   return (
     <ScrollView style={styles.page} contentContainerStyle={[styles.pageContent, width < 420 && styles.pageContentSmall]} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
       <View style={styles.header}>
@@ -1002,13 +994,12 @@ export default function FilmCutInputScreen() {
       </View>
 
       {plan && draftJob && resultStatus && <View style={styles.resultSection} accessibilityRole="summary">
-        <View style={styles.resultHeading}><View><Text style={styles.eyebrow}>MATERIAL PLAN</Text><Text style={styles.resultTitle}>원단 사용 계획</Text></View><View style={[styles.statusBadge, { backgroundColor: resultStatus.bg }]}><Text style={[styles.statusText, { color: resultStatus.tone }]}>{resultStatus.title}</Text></View></View>
+        <View style={styles.resultHeading}><View><Text style={styles.eyebrow}>CUTTING RESULT</Text><Text style={styles.resultTitle}>재단 결과</Text></View><View style={[styles.statusBadge, { backgroundColor: resultStatus.bg }]}><Text style={[styles.statusText, { color: resultStatus.tone }]}>{resultStatus.title}</Text></View></View>
         <Text style={styles.statusDetail}>{resultStatus.detail}</Text>
-        <View style={styles.metrics}><Metric label="자투리 사용" value={`${displayedRemnantCount}개`} accent="#0f766e" /><Metric label="새 롤 재단 수량" value={`${displayedNewRollQuantity}개`} accent="#2563eb" /><Metric label="총 새 롤 사용 길이" value={`${displayedNewRollLengthMm.toLocaleString()} mm`} accent="#7c3aed" /><Metric label="전체 면적 수율" value={`${displayedUtilizationPercent}%`} accent="#059669" />{plan.newRollResult?.optimizationStatus === 'approximate' && <Metric label="물리 하한과 차이" value={`${Math.round(plan.newRollResult.optimalityGapMm).toLocaleString()} mm`} accent="#f59e0b" />}</View>
         {candidateComparison.length > 1 && <View style={styles.candidateCard}><View style={styles.candidateHeader}><Text style={styles.candidateTitle}>대규모 입력 배치 후보 비교</Text><Text style={styles.candidateHint}>최적 혼합 결과를 기준으로 방향별 새 롤 절감량을 비교합니다.</Text></View>{candidateComparison.map((candidate) => <View key={candidate.name} style={[styles.candidateRow, candidate.name === '최적 혼합' && styles.candidateRowBest]}><Text style={styles.candidateName}>{candidate.name}</Text><Text style={styles.candidateValue}>{candidate.result.producedQuantity.toLocaleString()}개 · {Math.round(candidate.result.usedLengthMm).toLocaleString()}mm</Text><Text style={[styles.candidateSaving, candidate.name === '최적 혼합' && styles.candidateSavingBest]}>{candidate.name === '최적 혼합' ? '기준 결과' : `혼합 대비 ${Math.round(candidate.savedLengthMm).toLocaleString()}mm 절감`}</Text></View>)}</View>}
         {batchPlans && <BatchPlanSummary plans={batchPlans} mergedPlans={mergedGroupPlans} mergedJobs={[...library.mergedJobs, ...(pendingBatchSave?.mergedJobs ?? [])]} busy={busy} onConfirmBatch={() => void confirmBatch()} onConfirmMergedInventory={(id) => void confirmMergedInventory(id)} />}
         {plan.remnantUses.length > 0 && <View style={styles.useList}>{plan.remnantUses.map((use, index) => <Text key={`${use.remnantId}-${index}`} style={styles.useLine}>• {use.remnantId} · {use.producedQuantity}개 생산 · 새 롤 {use.savedNewRollLengthMm.toLocaleString()}mm 절감 · {statusCopy[use.result.optimizationStatus].title}</Text>)}</View>}
-        {activeMergedPlan ? <><MergedRollPlacementList plan={activeMergedPlan} job={activeMergedJob} busy={busy} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /><View style={styles.mergedSourceNotice}><Text style={styles.mergedSourceNoticeTitle}>병합 롤 전체 조각</Text><Text style={styles.mergedSourceNoticeText}>현재 조각은 병합 롤에 포함되어 개별 수동 배치·확정하지 않습니다. 원단 사용 계획의 배치 목록에서 전체 재단 완료와 재고 확정을 진행하세요.</Text></View></> : <>{previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
+        {activeMergedPlan ? <><MergedRollPlacementList plan={activeMergedPlan} job={activeMergedJob} busy={busy} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={activeMergedJob ? (placementId) => void toggleMergedPlacementComplete(activeMergedJob.id, placementId) : undefined} /><View style={styles.mergedSourceNotice}><Text style={styles.mergedSourceNoticeTitle}>병합 롤 전체 조각</Text><Text style={styles.mergedSourceNoticeText}>현재 조각은 병합 롤에 포함되어 개별 수동 배치·확정하지 않습니다. 원단 사용 계획의 배치 목록에서 전체 재단 완료와 재고 확정을 진행하세요.</Text></View></> : <>{previewResult && <PlacementList result={previewResult} rollWidthMm={preview?.widthMm ?? Number(form.rollWidth)} sideMarginMm={preview?.sideMarginMm ?? Number(form.sideMargin)} startEndMarginMm={preview?.startEndMarginMm ?? Number(form.startEndMargin)} onPlacementsChange={setManualPlacements} onCheckedIdsChange={setCheckedPlacementIds} checkedPlacementIds={checkedPlacementIds} />}
           <View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View>
           <View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View></>}
         <EstimateSummary job={draftJob} compact discountRateOverride={0} usageOverride={activeMergedUsage} />

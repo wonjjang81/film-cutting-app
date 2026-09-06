@@ -2,6 +2,7 @@ import { buildSavedCuttingJob } from '../library/uiWorkflowHelpers';
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
+import { subgroupPieceDisplayName } from '../library/subgroupCards';
 
 export const CURRENT_GROUP_ESTIMATE_STORAGE_KEY = 'film-cutting-current-group-estimate';
 
@@ -12,11 +13,17 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
 export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[] };
-export type CurrentEstimatePlan = { groupedPlans: GroupedPiecePlan[]; mergedPlans: MergedGroupPlan[] };
+export type CurrentEstimatePlan = {
+  groupedPlans: GroupedPiecePlan[];
+  mergedPlans: MergedGroupPlan[];
+  pieceNamesBySourceId: Record<string, string>;
+  subgroupNamesBySourceId: Record<string, string>;
+};
 
 export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[]): CurrentEstimateSnapshot {
   return { pieces: groups.map((group) => ({ ...group, pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })) })) };
@@ -45,7 +52,7 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     groupId: group.id,
     groupName: group.name,
     pieceId: piece.id,
-    pieceName: piece.name,
+    pieceName: displayPieceName(group, piece),
     mergeGroupId: group.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
     filmName: group.filmName,
     materialCostPerM: optionalCost(group.materialCostPerM),
@@ -66,13 +73,20 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
   })));
 }
 
+function displayPieceName(group: CurrentEstimateGroupSource, piece: CurrentEstimateGroupSource['pieces'][number]): string {
+  const subgroup = group.subgroups?.find((candidate) => candidate.pieceIds.includes(piece.id));
+  return subgroup ? subgroupPieceDisplayName(group.name, subgroup.name, piece.id) : piece.name;
+}
+
 /** Calculates the current input layout details without writing project history. */
 export function calculateCurrentGroupPlan(snapshot: CurrentEstimateSnapshot): CurrentEstimatePlan {
   const requests = requestsFromSnapshot(snapshot).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
     && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
     && Number.isInteger(request.quantity) && request.quantity > 0);
-  if (requests.length === 0) return { groupedPlans: [], mergedPlans: [] };
-  return { groupedPlans: planGroupedPieces(requests, []), mergedPlans: planMergedGroups(requests, 1_220, [], false) };
+  const pieceNamesBySourceId = Object.fromEntries(requests.map((request) => [`${request.groupId}-${request.pieceId}`, request.pieceName]));
+  const subgroupNamesBySourceId = Object.fromEntries(snapshot.pieces.flatMap((group) => (group.subgroups ?? []).flatMap((subgroup) => subgroup.pieceIds.map((pieceId) => [`${group.id}-${pieceId}`, subgroup.name] as const))));
+  if (requests.length === 0) return { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
+  return { groupedPlans: planGroupedPieces(requests, []), mergedPlans: planMergedGroups(requests, 1_220, [], false), pieceNamesBySourceId, subgroupNamesBySourceId };
 }
 
 /** Calculates the current input groups in memory; it never writes project history. */

@@ -6,27 +6,57 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
+import { findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
+import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
+import type { LibraryDocument, SavedMergedCuttingJob } from '../../src/features/library/models';
 import type { GroupedPiecePlan } from '../../src/features/remnants/planGroupedPieces';
 
-const emptyPlan: CurrentEstimatePlan = { groupedPlans: [], mergedPlans: [] };
+const repository = createAppLibraryRepository();
+const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
+const emptyPlan: CurrentEstimatePlan = { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
 
 export default function PlanningScreen() {
   const [currentPlan, setCurrentPlan] = useState<CurrentEstimatePlan>(emptyPlan);
+  const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const raw = await AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY);
+      const [raw, loaded] = await Promise.all([AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY), repository.load()]);
       const snapshot = parseCurrentEstimateSnapshot(raw);
+      setLibrary(loaded.document);
       setCurrentPlan(snapshot ? calculateCurrentGroupPlan(snapshot) : emptyPlan);
     } catch (caught) {
       setCurrentPlan(emptyPlan);
       setError(caught instanceof Error ? caught.message : '배치 계획을 불러오지 못했습니다.');
     } finally { setLoading(false); }
   }, []);
+
+  const toggleMergedPlacementComplete = useCallback(async (jobId: string, placementId: number) => {
+    setLoading(true); setError(null);
+    try {
+      const loaded = await repository.load();
+      const current = loaded.document.mergedJobs.find((job) => job.id === jobId);
+      if (!current) { setLoading(false); return; }
+      const next = nextPlacementCompletion(current.completedPlacementIds ?? [], placementId, current.placements.map((placement) => placement.id));
+      const now = new Date().toISOString();
+      const updated: SavedMergedCuttingJob = {
+        ...current,
+        isCuttingComplete: next.complete,
+        cuttingCompletedAt: next.complete ? now : undefined,
+        updatedAt: now,
+        completedPlacementIds: next.completedIds,
+      };
+      await repository.saveMergedJob(updated);
+      await refresh();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : '재단 완료 상태를 저장하지 못했습니다.');
+      setLoading(false);
+    }
+  }, [refresh]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
@@ -48,16 +78,22 @@ export default function PlanningScreen() {
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>MATERIAL PLAN</Text><Text style={styles.sectionTitle}>원단 사용 계획</Text></View><Text style={styles.summaryStatus}>임시 계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>자투리 사용 여부와 재단 완료·작업 확정은 재단계산 탭의 기존 workflow에서 이어서 처리할 수 있습니다.</Text></View>
       <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><Text style={styles.sectionHint}>병합 롤은 한 번만 표시합니다.</Text></View>
-        {currentPlan.mergedPlans.map((plan) => <MergedRollPreview key={`merged-${plan.mergeGroupId}`} plan={plan} />)}
-        {independentPlans.map((entry) => <PiecePlanCard key={`${entry.groupId}-${entry.pieceId}`} entry={entry} />)}
+        {currentPlan.mergedPlans.map((plan) => {
+          const job = findLatestMergedJob(plan, library.mergedJobs);
+          return <MergedRollPreview key={`merged-${plan.mergeGroupId}`} plan={plan} job={job} busy={loading} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={job ? (placementId) => void toggleMergedPlacementComplete(job.id, placementId) : undefined} hideLegend />;
+        })}
+        {independentPlans.map((entry) => {
+          const job = findLatestPieceJob(entry.groupName, entry.pieceId, library.jobs);
+          return <PiecePlanCard key={`${entry.groupId}-${entry.pieceId}`} entry={entry} displayName={currentPlan.pieceNamesBySourceId[`${entry.groupId}-${entry.pieceId}`]} completedPlacementIds={job?.completedPlacementIds} />;
+        })}
       </View>
     </>}
   </ScrollView>;
 }
 
-function PiecePlanCard({ entry }: { entry: GroupedPiecePlan }) {
+function PiecePlanCard({ entry, displayName, completedPlacementIds }: { entry: GroupedPiecePlan; displayName?: string; completedPlacementIds?: readonly number[] }) {
   const result = entry.plan.newRollResult;
-  return <View style={styles.pieceCard}><View style={styles.pieceHeader}><View><Text style={styles.pieceTitle}>{entry.groupName} · {entry.pieceName}</Text><Text style={styles.pieceMeta}>{entry.request.pieceWidthMm}×{entry.request.pieceLengthMm}mm · 필요 {entry.request.quantity}개</Text></View><Text style={styles.pieceStatus}>{producedForPiecePlan(entry)}개 생산</Text></View>{result ? <FilmLayoutPreview result={result} rollWidthMm={entry.request.rollWidthMm} sideMarginMm={entry.request.sideMarginMm} startEndMarginMm={entry.request.startEndMarginMm} /> : <View style={styles.remnantOnly}><Text style={styles.remnantOnlyTitle}>자투리에서 전량 생산</Text><Text style={styles.remnantOnlyText}>새 원본 롤 사용 없이 저장된 자투리로 배치되었습니다.</Text></View>}{entry.plan.remnantUses.length > 0 && <Text style={styles.remnantLine}>자투리 {entry.plan.remnantUses.length}개 사용 · 새 롤 {Math.round(entry.plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()}mm</Text>}</View>;
+  return <View style={styles.pieceCard}><View style={styles.pieceHeader}><View><Text style={styles.pieceTitle}>{entry.groupName} · {displayName ?? entry.pieceName}</Text><Text style={styles.pieceMeta}>{entry.request.pieceWidthMm}×{entry.request.pieceLengthMm}mm · 필요 {entry.request.quantity}개</Text></View><Text style={styles.pieceStatus}>{producedForPiecePlan(entry)}개 생산</Text></View>{result ? <FilmLayoutPreview result={result} rollWidthMm={entry.request.rollWidthMm} sideMarginMm={entry.request.sideMarginMm} startEndMarginMm={entry.request.startEndMarginMm} completedPlacementIds={completedPlacementIds} pieceLabel={displayName ?? entry.pieceName} /> : <View style={styles.remnantOnly}><Text style={styles.remnantOnlyTitle}>자투리에서 전량 생산</Text><Text style={styles.remnantOnlyText}>새 원본 롤 사용 없이 저장된 자투리로 배치되었습니다.</Text></View>}{entry.plan.remnantUses.length > 0 && <Text style={styles.remnantLine}>자투리 {entry.plan.remnantUses.length}개 사용 · 새 롤 {Math.round(entry.plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()}mm</Text>}</View>;
 }
 
 function producedForPiecePlan(entry: GroupedPiecePlan): number {

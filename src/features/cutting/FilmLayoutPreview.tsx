@@ -3,6 +3,7 @@ import * as React from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
+import { formatPlacementAnnotation } from './previewAnnotationModel';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
 
@@ -14,9 +15,10 @@ type Props = {
   sideMarginMm?: number;
   startEndMarginMm?: number;
   completedPlacementIds?: readonly number[];
+  pieceLabel?: string;
 };
 
-export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [] }: Props) {
+export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel }: Props) {
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [zoom, setZoom] = React.useState(1);
   if (!result) {
@@ -82,16 +84,23 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           ))}
           {result.placements.map((item) => (
             <G key={item.id}>
+              {(() => {
+                const annotation = formatPlacementAnnotation(pieceLabel ?? `조각 #${item.id}`, item.width, item.height, item.rotated);
+                const labelFontSize = Math.max(11, Math.min(30, Math.min(item.width, item.height) * 0.2));
+                const dimensionFontSize = Math.max(9, Math.min(22, labelFontSize * 0.62));
+                const centerX = item.x + item.width / 2;
+                const centerY = item.y + item.height / 2;
+                return <>
               <Rect x={item.x} y={item.y} width={item.width} height={item.height} rx={2}
                 fill={item.rotated ? '#ccfbf1' : '#dbeafe'} stroke={item.rotated ? '#0f766e' : '#1d4ed8'} strokeWidth={Math.max(0.8, rollWidthMm / 700)} />
-              <SvgText x={item.x + item.width / 2} y={item.y + item.height / 2 + Math.min(item.width, item.height) * 0.08}
-                textAnchor="middle" fontSize={Math.max(16, Math.min(64, Math.min(item.width * 0.34, item.height * 0.42)))} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>
-                {item.id}{item.rotated ? ' ↻' : ''}
-              </SvgText>
+              <SvgText x={centerX} y={centerY - dimensionFontSize * 0.15} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>{annotation.label}</SvgText>
+              <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
               {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>
                 <Line x1={item.x + item.width * 0.15} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.85} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
                 <Line x1={item.x + item.width * 0.85} y1={item.y + item.height * 0.15} x2={item.x + item.width * 0.15} y2={item.y + item.height * 0.85} stroke="#dc2626" strokeWidth={Math.max(2, rollWidthMm / 180)} strokeLinecap="round" />
               </G>}
+                </>;
+              })()}
             </G>
           ))}
         </Svg>

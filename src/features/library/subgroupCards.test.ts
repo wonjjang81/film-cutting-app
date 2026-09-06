@@ -43,6 +43,11 @@ describe('subgroup card normalization', () => {
     expect(subgroupPieceNamePart('그룹 1', 'B', '그룹 1_B_01')).toBe('01');
   });
 
+  it('normalizes legacy IDs that include an extra group prefix', () => {
+    expect(subgroupPieceNamePart('그룹 1', 'A', 'group-1-그룹 1_01')).toBe('01');
+    expect(subgroupPieceDisplayName('그룹 1', 'A', 'group-1-그룹 1_01')).toBe('A_01');
+  });
+
   it('allows an empty name while editing and restores the previous name on commit', () => {
     expect(normalizeSubgroupNameDraft('')).toBe('');
     expect(normalizeSubgroupNameDraft('  새  이름  ')).toBe(' 새 이름 ');

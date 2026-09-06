@@ -48,7 +48,16 @@ export function subgroupCardStackIndex(total: number, index: number): number {
  */
 export function subgroupPieceNamePart(groupName: string, subgroupName: string, pieceId: string): string {
   const subgroupPrefix = `${subgroupName.trim()}_`;
-  const suffix = pieceNamePart(groupName, pieceId);
+  const normalizedGroup = groupName.trim();
+  const normalizedPieceId = pieceId.trim();
+  const groupPrefixes = normalizedGroup ? [`${normalizedGroup}_`, `${normalizedGroup}-`] : [];
+  const groupPrefix = groupPrefixes
+    .map((prefix) => ({ prefix, index: normalizedPieceId.lastIndexOf(prefix) }))
+    .filter(({ index }) => index >= 0)
+    .sort((left, right) => right.index - left.index)[0];
+  const suffix = groupPrefix
+    ? normalizedPieceId.slice(groupPrefix.index + groupPrefix.prefix.length)
+    : pieceNamePart(groupName, pieceId);
   return suffix.startsWith(subgroupPrefix) ? suffix.slice(subgroupPrefix.length) || '01' : suffix || '01';
 }
 
