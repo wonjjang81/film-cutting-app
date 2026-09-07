@@ -20,6 +20,13 @@ export function compactFieldAffixes(label: string, unit: string): { label: strin
   };
 }
 
+/** Keeps the site-count stepper narrow while the piece dimension fields remain fluid. */
+export function compactFieldLayout(label: string): { fixed: boolean; inputWidth: number | undefined } {
+  return label === '개소'
+    ? { fixed: true, inputWidth: 24 }
+    : { fixed: false, inputWidth: undefined };
+}
+
 /** Normalizes the number of installation locations for a subgroup. */
 export function normalizeSubgroupSiteCount(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);

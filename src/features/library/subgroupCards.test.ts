@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, compactFieldLayout, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -86,6 +86,11 @@ describe('subgroup card normalization', () => {
     expect(compactFieldAffixes('개소', '개소')).toEqual({ label: '', unit: '개소' });
     expect(compactFieldAffixes('재단 폭', 'mm')).toEqual({ label: '폭', unit: '' });
     expect(compactFieldAffixes('필요 수량', '개')).toEqual({ label: '수량', unit: '' });
+  });
+
+  it('keeps the site-count stepper fixed to a two-digit input width', () => {
+    expect(compactFieldLayout('개소')).toEqual({ fixed: true, inputWidth: 24 });
+    expect(compactFieldLayout('재단 폭')).toEqual({ fixed: false, inputWidth: undefined });
   });
 
   it('toggles every subgroup card between expanded and collapsed states', () => {
