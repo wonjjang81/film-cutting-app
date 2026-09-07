@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -75,6 +75,17 @@ describe('subgroup card normalization', () => {
 
   it('uses one unit hint for all compact piece fields', () => {
     expect(PIECE_INPUT_UNIT_HINT).toBe('단위: 폭·길이 mm · 수량 개');
+  });
+
+  it('shows only the numeric big-group ID in a subgroup selector', () => {
+    expect(subgroupGroupSelectLabel('1')).toBe('1');
+    expect(subgroupGroupSelectLabel('')).toBe('—');
+  });
+
+  it('places the site-count unit after the compact stepper', () => {
+    expect(compactFieldAffixes('개소', '개소')).toEqual({ label: '', unit: '개소' });
+    expect(compactFieldAffixes('재단 폭', 'mm')).toEqual({ label: '폭', unit: '' });
+    expect(compactFieldAffixes('필요 수량', '개')).toEqual({ label: '수량', unit: '' });
   });
 
   it('toggles every subgroup card between expanded and collapsed states', () => {

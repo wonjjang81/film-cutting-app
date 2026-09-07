@@ -6,6 +6,20 @@ export type SubgroupCardGroup = { id: string; displayId: string; subgroups: Subg
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
 export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';
 
+/** Keeps subgroup assignment controls compact by showing the display ID only. */
+export function subgroupGroupSelectLabel(displayId: string): string {
+  return displayId.trim() || '—';
+}
+
+/** Places the site-count unit after its compact stepper while preserving piece labels. */
+export function compactFieldAffixes(label: string, unit: string): { label: string; unit: string } {
+  if (label === '개소') return { label: '', unit };
+  return {
+    label: label === '재단 폭' ? '폭' : label === '재단 길이' ? '길이' : '수량',
+    unit: '',
+  };
+}
+
 /** Normalizes the number of installation locations for a subgroup. */
 export function normalizeSubgroupSiteCount(value: unknown): number {
   const parsed = typeof value === 'number' ? value : Number(value);
