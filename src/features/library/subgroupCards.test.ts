@@ -66,6 +66,15 @@ describe('subgroup card normalization', () => {
     expect(subgroupPieceDisplayName('그룹 1', 'A', 'group-1-그룹 1_01')).toBe('A_01');
   });
 
+  it('removes a stale default subgroup letter after a subgroup was renamed', () => {
+    expect(subgroupPieceNamePart('그룹 1', '안방문', '그룹 1_안방문_B_01')).toBe('01');
+    expect(subgroupPieceDisplayName('그룹 1', '안방문', '그룹 1_안방문_B_01')).toBe('안방문_01');
+    expect(subgroupPieceDisplayName('그룹 1', '안방화장실문', '그룹 1_안방화장실문_C-04')).toBe('안방화장실문_04');
+    expect(renameSubgroupPieceDrafts('그룹 1', '안방문', '침실문', [{ id: '그룹 1_안방문_B_01', name: '그룹 1_안방문_B_01' }])).toEqual([
+      { id: '그룹 1_침실문_01', name: '그룹 1_침실문_01' },
+    ]);
+  });
+
   it('allows an empty name while editing and restores the previous name on commit', () => {
     expect(normalizeSubgroupNameDraft('')).toBe('');
     expect(normalizeSubgroupNameDraft('  새  이름  ')).toBe(' 새 이름 ');

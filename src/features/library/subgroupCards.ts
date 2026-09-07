@@ -73,15 +73,9 @@ export function commitSubgroupName(value: string, fallback: string): string {
 
 export function renameSubgroupPieces(groupName: string, previousName: string, nextName: string, pieceIds: readonly string[]): string[] {
   const normalizedGroup = groupName.trim();
-  const previousPrefix = `${normalizedGroup}_${previousName.trim()}_`;
-  const groupPrefix = `${normalizedGroup}_`;
   const normalizedName = nextName.trim();
   return pieceIds.map((pieceId) => {
-    const suffix = pieceId.startsWith(previousPrefix)
-      ? pieceId.slice(previousPrefix.length)
-      : pieceId.startsWith(groupPrefix)
-        ? pieceId.slice(groupPrefix.length)
-        : subgroupPieceNamePart(normalizedGroup, previousName, pieceId);
+    const suffix = subgroupPieceNamePart(normalizedGroup, previousName, pieceId);
     return composePieceId(groupName, `${normalizedName}_${suffix || '01'}`);
   });
 }
@@ -112,7 +106,9 @@ export function subgroupPieceNamePart(groupName: string, subgroupName: string, p
   const suffix = groupPrefix
     ? normalizedPieceId.slice(groupPrefix.index + groupPrefix.prefix.length)
     : pieceNamePart(groupName, pieceId);
-  return suffix.startsWith(subgroupPrefix) ? suffix.slice(subgroupPrefix.length) || '01' : suffix || '01';
+  const subgroupSuffix = suffix.startsWith(subgroupPrefix) ? suffix.slice(subgroupPrefix.length) : suffix;
+  const normalizedSuffix = subgroupSuffix.replace(/^[A-Z](?:_|-)/, '');
+  return normalizedSuffix || '01';
 }
 
 /**
