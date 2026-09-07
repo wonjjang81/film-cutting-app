@@ -20,11 +20,15 @@ export function compactFieldAffixes(label: string, unit: string): { label: strin
   };
 }
 
-/** Keeps the site-count stepper narrow while the piece dimension fields remain fluid. */
-export function compactFieldLayout(label: string): { fixed: boolean; inputWidth: number | undefined } {
+type FixedCompactStyle = { flexGrow: 0; flexShrink: 0; flexBasis: 'auto'; width: number };
+type CompactFieldLayout = { field: FixedCompactStyle; inputWrap: FixedCompactStyle; input: FixedCompactStyle };
+
+/** Keeps the site-count stepper narrow without web flex-basis shrinking its fixed width. */
+export function compactFieldLayout(label: string): CompactFieldLayout | null {
+  const fixed = (width: number): FixedCompactStyle => ({ flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width });
   return label === '개소'
-    ? { fixed: true, inputWidth: 24 }
-    : { fixed: false, inputWidth: undefined };
+    ? { field: fixed(82), inputWrap: fixed(60), input: fixed(24) }
+    : null;
 }
 
 /** Normalizes the number of installation locations for a subgroup. */

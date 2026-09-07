@@ -89,8 +89,12 @@ describe('subgroup card normalization', () => {
   });
 
   it('keeps the site-count stepper fixed to a two-digit input width', () => {
-    expect(compactFieldLayout('개소')).toEqual({ fixed: true, inputWidth: 24 });
-    expect(compactFieldLayout('재단 폭')).toEqual({ fixed: false, inputWidth: undefined });
+    expect(compactFieldLayout('개소')).toEqual({
+      field: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: 82 },
+      inputWrap: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: 60 },
+      input: { flexGrow: 0, flexShrink: 0, flexBasis: 'auto', width: 24 },
+    });
+    expect(compactFieldLayout('재단 폭')).toBeNull();
   });
 
   it('toggles every subgroup card between expanded and collapsed states', () => {
