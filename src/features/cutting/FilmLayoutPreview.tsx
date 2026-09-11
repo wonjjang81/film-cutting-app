@@ -3,7 +3,7 @@ import * as React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
 import { placementCompletionControl } from './planningPlacementModel';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
@@ -96,9 +96,8 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           {result.placements.map((item) => (
             <G key={item.id} onPress={() => setSelectedId((current) => current === item.id ? null : item.id)} accessibilityLabel={`조각 ${item.id} 상세 보기`}>
               {(() => {
-                const annotation = formatPlacementAnnotation(pieceLabel ?? `조각 #${item.id}`, item.width, item.height, item.rotated);
-                const labelFontSize = Math.max(11, Math.min(30, Math.min(item.width, item.height) * 0.2));
-                const dimensionFontSize = Math.max(9, Math.min(22, labelFontSize * 0.62));
+                const annotation = formatPlacementPreview(item.id, item.width, item.height, item.rotated);
+                const { labelFontSize, dimensionFontSize } = placementTextMetrics(item.width, item.height);
                 const centerX = item.x + item.width / 2;
                 const centerY = item.y + item.height / 2;
                 return <>
@@ -110,8 +109,8 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
                 {(() => {
                   const cross = completionCrossMetrics(item.width, item.height);
                   return <>
-                    <Line x1={item.x + cross.inset} y1={item.y + cross.inset} x2={item.x + item.width - cross.inset} y2={item.y + item.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-                    <Line x1={item.x + item.width - cross.inset} y1={item.y + cross.inset} x2={item.x + cross.inset} y2={item.y + item.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                    <Line x1={item.x + cross.insetX} y1={item.y + cross.insetY} x2={item.x + item.width - cross.insetX} y2={item.y + item.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                    <Line x1={item.x + item.width - cross.insetX} y1={item.y + cross.insetY} x2={item.x + cross.insetX} y2={item.y + item.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
                   </>;
                 })()}
               </G>}

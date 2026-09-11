@@ -4,7 +4,7 @@ import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'rea
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
 import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacementsBySubgroup, placementCompletionControl } from './planningPlacementModel';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -55,9 +55,8 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
         const active = selectedId === placement.id;
-        const annotation = formatPlacementAnnotation(`${labelBySource.get(placement.sourceId) ?? '조각'} #${placement.id}`, placement.width, placement.height, placement.rotated);
-        const labelFontSize = Math.max(11, Math.min(30, Math.min(placement.width, placement.height) * 0.2));
-        const dimensionFontSize = Math.max(9, Math.min(22, labelFontSize * 0.62));
+        const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
+        const { labelFontSize, dimensionFontSize } = placementTextMetrics(placement.width, placement.height);
         const centerX = placement.x + placement.width / 2;
         const centerY = placement.y + placement.height / 2;
         return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
@@ -68,8 +67,8 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
             {(() => {
               const cross = completionCrossMetrics(placement.width, placement.height);
               return <>
-                <Line x1={placement.x + cross.inset} y1={placement.y + cross.inset} x2={placement.x + placement.width - cross.inset} y2={placement.y + placement.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-                <Line x1={placement.x + placement.width - cross.inset} y1={placement.y + cross.inset} x2={placement.x + cross.inset} y2={placement.y + placement.height - cross.inset} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                <Line x1={placement.x + cross.insetX} y1={placement.y + cross.insetY} x2={placement.x + placement.width - cross.insetX} y2={placement.y + placement.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
+                <Line x1={placement.x + placement.width - cross.insetX} y1={placement.y + cross.insetY} x2={placement.x + cross.insetX} y2={placement.y + placement.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
               </>;
             })()}
           </G>}
@@ -116,14 +115,14 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
             <Svg width="100%" height={remnantHeight} viewBox={`0 0 ${Math.max(use.widthMm, 1)} ${Math.max(use.result.usedLengthMm, 1)}`} accessibilityLabel={`${use.remnantId} 자투리 배치 도면`}>
               <Rect x={0} y={0} width={use.widthMm} height={Math.max(use.result.usedLengthMm, 1)} fill="#f0fdfa" stroke="#0f766e" strokeWidth={2} rx={4} />
               {use.placements.map((placement) => {
-                const annotation = formatPlacementAnnotation(`${labelBySource.get(placement.sourceId) ?? '조각'} #${placement.id}`, placement.width, placement.height, placement.rotated);
+                const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
                 const centerX = placement.x + placement.width / 2;
                 const centerY = placement.y + placement.height / 2;
-                const labelFontSize = Math.max(10, Math.min(24, Math.min(placement.width, placement.height) * 0.2));
+                const { labelFontSize, dimensionFontSize } = placementTextMetrics(placement.width, placement.height);
                 return <G key={placement.id}>
                 <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds)}22`} stroke={colorFor(placement.sourceId, sourceIds)} strokeWidth={2} />
                 <SvgText x={centerX} y={centerY} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds)}>{annotation.label}</SvgText>
-                <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={Math.max(8, labelFontSize * 0.6)} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
+                <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
               </G>;
               })}
             </Svg>

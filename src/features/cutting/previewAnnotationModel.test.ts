@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
+import {
+  completionCrossMetrics,
+  formatPlacementAnnotation,
+  formatPlacementInfo,
+  formatPlacementPreview,
+  gridLinePositions,
+  placementTextMetrics,
+} from './previewAnnotationModel';
 
 describe('preview annotation model', () => {
   it('formats a piece name and actual placed dimensions', () => {
@@ -16,9 +23,21 @@ describe('preview annotation model', () => {
     });
   });
 
-  it('sizes completion crosses to fill the placement without an outer box', () => {
-    expect(completionCrossMetrics(100, 450)).toEqual({ inset: 4, strokeWidth: 12 });
-    expect(completionCrossMetrics(20, 20)).toEqual({ inset: 1, strokeWidth: 4 });
+  it('shows only the numeric placement id in the preview', () => {
+    expect(formatPlacementPreview(7, 1000, 500, true)).toEqual({
+      label: '#7 ↻',
+      dimensions: '1,000×500mm',
+    });
+  });
+
+  it('uses a larger but bounded dimension label', () => {
+    expect(placementTextMetrics(100, 450)).toEqual({ labelFontSize: 20, dimensionFontSize: 16 });
+    expect(placementTextMetrics(500, 1000)).toEqual({ labelFontSize: 30, dimensionFontSize: 23 });
+  });
+
+  it('insets completion crosses by 10% on every edge', () => {
+    expect(completionCrossMetrics(100, 450)).toEqual({ insetX: 10, insetY: 45, strokeWidth: 12 });
+    expect(completionCrossMetrics(20, 20)).toEqual({ insetX: 2, insetY: 2, strokeWidth: 4 });
   });
 
   it('places 100mm grid lines inside the film boundary', () => {

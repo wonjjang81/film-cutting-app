@@ -8,6 +8,21 @@ export function formatPlacementAnnotation(label: string, width: number, height: 
   };
 }
 
+/** Keeps the drawing compact while the detail popup retains the full piece name. */
+export function formatPlacementPreview(id: number, width: number, height: number, rotated: boolean): PlacementAnnotation {
+  return formatPlacementAnnotation(`#${id}`, width, height, rotated);
+}
+
+/** Returns readable, bounded text sizes for labels drawn inside a placement. */
+export function placementTextMetrics(width: number, height: number): { labelFontSize: number; dimensionFontSize: number } {
+  const minDimension = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
+  const labelFontSize = Math.max(11, Math.min(30, minDimension * 0.2));
+  return {
+    labelFontSize,
+    dimensionFontSize: Math.max(11, Math.min(26, Math.round(labelFontSize * 0.78))),
+  };
+}
+
 export type PlacementInfo = PlacementAnnotation & { rotation: string; position: string };
 
 export function formatPlacementInfo(label: string, width: number, height: number, rotated: boolean, x: number, y: number): PlacementInfo {
@@ -18,11 +33,14 @@ export function formatPlacementInfo(label: string, width: number, height: number
   };
 }
 
-/** Returns the inset and stroke width for a prominent completion cross. */
-export function completionCrossMetrics(width: number, height: number): { inset: number; strokeWidth: number } {
+/** Returns a completion cross covering 80% of the placement without crossing its edges. */
+export function completionCrossMetrics(width: number, height: number): { insetX: number; insetY: number; strokeWidth: number } {
+  const normalizedWidth = Math.max(1, Math.abs(width));
+  const normalizedHeight = Math.max(1, Math.abs(height));
   const minDimension = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
   return {
-    inset: Math.max(1, Math.round(minDimension * 0.04)),
+    insetX: Math.max(1, Math.round(normalizedWidth * 0.1)),
+    insetY: Math.max(1, Math.round(normalizedHeight * 0.1)),
     strokeWidth: Math.max(4, Math.round(minDimension * 0.12)),
   };
 }
