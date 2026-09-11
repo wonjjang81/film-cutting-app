@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
-import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
+import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
@@ -103,9 +103,9 @@ export default function PlanningScreen() {
     + currentPlan.mergedPlans.reduce((sum, plan) => sum + plan.producedQuantity, 0);
   const hasPlan = pieceCount > 0;
   const placementListKeys = useMemo(() => [
-    ...currentPlan.mergedPlans.map((plan) => `merged:${mergedPlanKey(plan.mergeGroupId, plan.sourceIds)}`),
+    ...currentPlan.mergedPlans.flatMap((plan) => groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => JSON.stringify([mergedPlanKey(plan.mergeGroupId, plan.sourceIds), group.id]))),
     ...independentPlans.map((entry) => `piece:${entry.groupId}-${entry.pieceId}`),
-  ], [currentPlan.mergedPlans, independentPlans]);
+  ], [currentPlan.mergedPlans, currentPlan.subgroupNamesBySourceId, independentPlans]);
   const allPlacementListsCollapsed = areAllPlacementListsCollapsed(placementListKeys, collapsedPlacementLists);
 
   return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
@@ -122,15 +122,16 @@ export default function PlanningScreen() {
           const placementIds = plan.result.placements.map((placement) => placement.id);
           const planKey = mergedPlanKey(plan.mergeGroupId, plan.sourceIds);
           const completedPlacementIds = resolvePlacementCompletionIds(job?.completedPlacementIds, mergedCompletionOverrides[planKey]);
-          const placementListKey = `merged:${planKey}`;
-          return <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds)} placementListCollapsed={collapsedPlacementLists[placementListKey] === true} onTogglePlacementList={() => setCollapsedPlacementLists((current) => ({ ...current, [placementListKey]: !(current[placementListKey] === true) }))} hideLegend />;
+          const subgroupIds = groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => group.id);
+          const subgroupKey = (id: string) => JSON.stringify([planKey, id]);
+          return <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds)} collapsedSubgroups={Object.fromEntries(subgroupIds.map((id) => [id, collapsedPlacementLists[subgroupKey(id)] === true]))} onChangeCollapsedSubgroups={(next) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }))} hideLegend />;
         })}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
           const displayName = currentPlan.pieceNamesBySourceId[sourceKey] ?? entry.pieceName;
           const job = findLatestPieceJob(entry.groupName, entry.pieceId, library.jobs, displayName);
           const placementListKey = `piece:${sourceKey}`;
-          return <PiecePlanCard key={sourceKey} entry={entry} displayName={displayName} completedPlacementIds={resolvePlacementCompletionIds(job?.completedPlacementIds, pieceCompletionOverrides[sourceKey])} onTogglePlacementComplete={(placementId, placementIds) => void togglePiecePlacementComplete(sourceKey, job?.id, placementId, placementIds)} placementListCollapsed={collapsedPlacementLists[placementListKey] === true} onTogglePlacementList={() => setCollapsedPlacementLists((current) => ({ ...current, [placementListKey]: !(current[placementListKey] === true) }))} />;
+          return <PiecePlanCard key={sourceKey} entry={entry} displayName={displayName} busy={loading} completedPlacementIds={resolvePlacementCompletionIds(job?.completedPlacementIds, pieceCompletionOverrides[sourceKey])} onTogglePlacementComplete={(placementId, placementIds) => void togglePiecePlacementComplete(sourceKey, job?.id, placementId, placementIds)} placementListCollapsed={collapsedPlacementLists[placementListKey] === true} onTogglePlacementList={() => setCollapsedPlacementLists((current) => ({ ...current, [placementListKey]: !(current[placementListKey] === true) }))} />;
         })}
       </View>
     </>}
@@ -141,9 +142,9 @@ function mergedPlanKey(mergeGroupId: string, sourceIds: readonly string[]): stri
   return `${mergeGroupId}::${sourceIds.join('|')}`;
 }
 
-function PiecePlanCard({ entry, displayName, completedPlacementIds, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: { entry: GroupedPiecePlan; displayName?: string; completedPlacementIds?: readonly number[]; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void; placementListCollapsed?: boolean; onTogglePlacementList?(): void }) {
+function PiecePlanCard({ entry, displayName, busy = false, completedPlacementIds, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: { entry: GroupedPiecePlan; displayName?: string; busy?: boolean; completedPlacementIds?: readonly number[]; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void; placementListCollapsed?: boolean; onTogglePlacementList?(): void }) {
   const result = entry.plan.newRollResult;
-  return <View style={styles.pieceCard}><View style={styles.pieceHeader}><View><Text style={styles.pieceTitle}>{entry.groupName} · {displayName ?? entry.pieceName}</Text><Text style={styles.pieceMeta}>{entry.request.pieceWidthMm}×{entry.request.pieceLengthMm}mm · 필요 {entry.request.quantity}개</Text></View><Text style={styles.pieceStatus}>{producedForPiecePlan(entry)}개 생산</Text></View>{result ? <><FilmLayoutPreview result={result} rollWidthMm={entry.request.rollWidthMm} sideMarginMm={entry.request.sideMarginMm} startEndMarginMm={entry.request.startEndMarginMm} completedPlacementIds={completedPlacementIds} pieceLabel={displayName ?? entry.pieceName} /><IndependentPlacementList result={result} completedPlacementIds={completedPlacementIds} pieceLabel={displayName ?? entry.pieceName} onTogglePlacementComplete={onTogglePlacementComplete} placementListCollapsed={placementListCollapsed} onTogglePlacementList={onTogglePlacementList} /></> : <View style={styles.remnantOnly}><Text style={styles.remnantOnlyTitle}>자투리에서 전량 생산</Text><Text style={styles.remnantOnlyText}>새 원본 롤 사용 없이 저장된 자투리로 배치되었습니다.</Text></View>}{entry.plan.remnantUses.length > 0 && <Text style={styles.remnantLine}>자투리 {entry.plan.remnantUses.length}개 사용 · 새 롤 {Math.round(entry.plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()}mm</Text>}</View>;
+  return <View style={styles.pieceCard}><View style={styles.pieceHeader}><View><Text style={styles.pieceTitle}>{entry.groupName} · {displayName ?? entry.pieceName}</Text><Text style={styles.pieceMeta}>{entry.request.pieceWidthMm}×{entry.request.pieceLengthMm}mm · 필요 {entry.request.quantity}개</Text></View><Text style={styles.pieceStatus}>{producedForPiecePlan(entry)}개 생산</Text></View>{result ? <><FilmLayoutPreview result={result} rollWidthMm={entry.request.rollWidthMm} sideMarginMm={entry.request.sideMarginMm} startEndMarginMm={entry.request.startEndMarginMm} completedPlacementIds={completedPlacementIds} pieceLabel={displayName ?? entry.pieceName} completionBusy={busy} onTogglePlacementComplete={(placementId) => onTogglePlacementComplete(placementId, result.placements.map((placement) => placement.id))} /><IndependentPlacementList result={result} completedPlacementIds={completedPlacementIds} pieceLabel={displayName ?? entry.pieceName} onTogglePlacementComplete={onTogglePlacementComplete} placementListCollapsed={placementListCollapsed} onTogglePlacementList={onTogglePlacementList} /></> : <View style={styles.remnantOnly}><Text style={styles.remnantOnlyTitle}>자투리에서 전량 생산</Text><Text style={styles.remnantOnlyText}>새 원본 롤 사용 없이 저장된 자투리로 배치되었습니다.</Text></View>}{entry.plan.remnantUses.length > 0 && <Text style={styles.remnantLine}>자투리 {entry.plan.remnantUses.length}개 사용 · 새 롤 {Math.round(entry.plan.newRollResult?.usedLengthMm ?? 0).toLocaleString()}mm</Text>}</View>;
 }
 
 function IndependentPlacementList({ result, completedPlacementIds = [], pieceLabel, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: { result: NonNullable<GroupedPiecePlan['plan']['newRollResult']>; completedPlacementIds?: readonly number[]; pieceLabel: string; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void; placementListCollapsed?: boolean; onTogglePlacementList?(): void }) {

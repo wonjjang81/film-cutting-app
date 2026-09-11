@@ -1,6 +1,6 @@
 import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
-import { MAX_NEW_ROLL_LENGTH_MM, planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
+import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
 export type GroupedPieceRequest = {
@@ -217,7 +217,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     .map((source, sourceIndex) => ({ source, sourceIndex }))
     .filter(({ source }) => source.id.trim().length > 0 && source.widthMm > 0 && source.lengthMm > 0 && source.quantity > 0 && entries.some((entry) => matchesRemnant(entry, source)));
   const condition = { gapMm: first.request.gapMm, sideMarginMm: first.request.sideMarginMm, startEndMarginMm: first.request.startEndMarginMm };
-  const maxNewRollLengthMm = first.request.maxLengthMm ?? MAX_NEW_ROLL_LENGTH_MM;
+  const maxNewRollLengthMm = first.request.maxLengthMm;
   let remainingUnits = candidates.map(({ source }) => source.quantity);
   while ([...remaining.values()].some((quantity) => quantity > 0)) {
     const options = candidates.flatMap(({ source, sourceIndex }, candidateIndex) => {

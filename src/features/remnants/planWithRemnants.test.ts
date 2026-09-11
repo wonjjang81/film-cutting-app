@@ -95,7 +95,7 @@ describe('planWithRemnants', () => {
     expect(plan.newRollResult).toMatchObject({ producedQuantity: 0, usedLengthMm: 0 });
   });
 
-  it('caps an unrestricted new roll at the 25m production maximum', () => {
+  it('extends an unrestricted new roll beyond 25m to fit every piece', () => {
     const result = planWithRemnants({
       ...baseRequest,
       pieceWidthMm: 60,
@@ -104,8 +104,8 @@ describe('planWithRemnants', () => {
       allowRotation: false,
     }, []);
 
-    expect(result.newRollResult?.usedLengthMm).toBeLessThanOrEqual(25_000);
-    expect(result.newRollResult?.producedQuantity).toBeLessThan(30);
+    expect(result.newRollResult?.usedLengthMm).toBe(30_000);
+    expect(result.newRollResult?.producedQuantity).toBe(30);
   });
 
   it('returns only bounded, non-overlapping residual rectangles that can fit a piece', () => {

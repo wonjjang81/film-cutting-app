@@ -3,8 +3,8 @@ import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
-import { groupPlacementsBySubgroup } from './planningPlacementModel';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacementsBySubgroup, placementCompletionControl } from './planningPlacementModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -20,8 +20,8 @@ type Props = {
   completedPlacementIds?: readonly number[];
   sourceLabels?: Record<string, string>;
   sourceSubgroups?: Record<string, string>;
-  placementListCollapsed?: boolean;
-  onTogglePlacementList?(): void;
+  collapsedSubgroups?: Record<string, boolean>;
+  onChangeCollapsedSubgroups?(collapsed: Record<string, boolean>): void;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -29,7 +29,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, placementListCollapsed, onTogglePlacementList }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -43,9 +43,15 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const viewBoxX = (1220 - viewBoxWidth) / 2;
   const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
+  const gridXPositions = gridLinePositions(1220);
+  const gridYPositions = gridLinePositions(safeLength);
   const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
     <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
       <Rect x={0} y={0} width={1220} height={safeLength} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
+      <G accessibilityLabel="100mm 모눈">
+        {gridXPositions.map((x) => <Line key={`grid-x-${x}`} x1={x} y1={0} x2={x} y2={safeLength} stroke="#94a3b8" strokeWidth={1.35} strokeDasharray="10 10" opacity={0.35} />)}
+        {gridYPositions.map((y) => <Line key={`grid-y-${y}`} x1={0} y1={y} x2={1220} y2={y} stroke="#94a3b8" strokeWidth={1.35} strokeDasharray="10 10" opacity={0.35} />)}
+      </G>
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
         const active = selectedId === placement.id;
@@ -128,19 +134,21 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         <View style={styles.modalBackdrop}>
           {selected && (() => {
             const info = formatPlacementInfo(labelBySource.get(selected.sourceId) ?? selected.sourceId, selected.width, selected.height, selected.rotated, selected.x, selected.y);
+            const completion = placementCompletionControl(completedPlacementIds.has(selected.id), busy, Boolean(onTogglePlacementComplete));
             return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="병합 조각 정보 팝업">
               <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
               <Text style={styles.modalTitle}>조각 정보</Text>
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => onTogglePlacementComplete?.(selected.id)} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.disabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="조각 정보 팝업 닫기" onPress={() => setSelectedId(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
             </View>;
           })()}
         </View>
       </Modal>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} placementListCollapsed={placementListCollapsed} onTogglePlacementList={onTogglePlacementList} />}
+      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} collapsedSubgroups={collapsedSubgroups} onChangeCollapsedSubgroups={onChangeCollapsedSubgroups} />}
     </View>
   );
 }
@@ -149,26 +157,28 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
  * The merged-roll piece list lives in the material-plan section so it has the
  * same placement-list position as a single-piece calculation.
  */
-export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete' | 'placementListCollapsed' | 'onTogglePlacementList'>) {
+export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete, collapsedSubgroups, onChangeCollapsedSubgroups }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete' | 'collapsedSubgroups' | 'onChangeCollapsedSubgroups'>) {
   const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
-  const [collapsedGroups, setCollapsedGroups] = React.useState<Record<string, boolean>>({});
-  const [localCollapsed, setLocalCollapsed] = React.useState(false);
-  const collapsed = placementListCollapsed ?? localCollapsed;
-  const toggleCollapsed = onTogglePlacementList ?? (() => setLocalCollapsed((value) => !value));
+  const [localCollapsedGroups, setLocalCollapsedGroups] = React.useState<Record<string, boolean>>({});
+  const collapsedGroups = collapsedSubgroups ?? localCollapsedGroups;
+  const setCollapsedGroups = onChangeCollapsedSubgroups ?? setLocalCollapsedGroups;
   const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {});
+  const subgroupIds = placementGroups.map((group) => group.id);
+  const collapsed = areAllPlacementListsCollapsed(subgroupIds, collapsedGroups);
+  const toggleCollapsed = () => setCollapsedGroups(toggleAllPlacementLists(subgroupIds, collapsedGroups));
   return <View style={styles.listSection}>
-    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 목록 ${collapsed ? '펼치기' : '접기'}`} onPress={toggleCollapsed} style={styles.listHeader}>
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 목록 소그룹 모두 ${collapsed ? '펼치기' : '접기'}`} onPress={toggleCollapsed} style={styles.listHeader}>
       <View><Text style={styles.listTitle}>배치 목록</Text><Text style={styles.listSubtitle}>총 {plan.result.placements.length}개 조각 · 소그룹 {placementGroups.length}개 · 병합 롤</Text></View><Text style={styles.listToggle}>{collapsed ? '▶' : '▼'}</Text>
     </TouchableOpacity>
-    {!collapsed && <View style={styles.list}>
+    <View style={styles.list}>
       {placementGroups.map((group) => {
         const collapsed = collapsedGroups[group.id] === true;
         const completedCount = group.items.filter((placement) => completedPlacementIds.has(placement.id)).length;
         return <View key={group.id} style={styles.subgroupBlock}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.title} 소그룹 ${collapsed ? '펼치기' : '접기'}`} onPress={() => setCollapsedGroups((current) => ({ ...current, [group.id]: !collapsed }))} style={styles.subgroupHeader}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${group.title} 소그룹 ${collapsed ? '펼치기' : '접기'}`} onPress={() => setCollapsedGroups({ ...collapsedGroups, [group.id]: !collapsed })} style={styles.subgroupHeader}>
             <View><Text style={styles.subgroupTitle}>{group.title}</Text><Text style={styles.subgroupMeta}>{group.items.length}개 조각 · 완료 {completedCount}개</Text></View><Text style={styles.subgroupToggle}>{collapsed ? '▶' : '▼'}</Text>
           </TouchableOpacity>
           {!collapsed && group.items.map((placement) => {
@@ -180,7 +190,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           })}
         </View>;
       })}
-    </View>}
+    </View>
   </View>;
 }
 
@@ -191,7 +201,7 @@ const styles = StyleSheet.create({
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
-  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalClose: { minHeight: 40, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalComplete: { minHeight: 42, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 9, backgroundColor: '#f0fdfa' }, modalCompleteDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, modalCompleteText: { fontSize: 13, fontWeight: '900', color: '#0f766e' }, modalCompleteTextDone: { color: '#15803d' }, modalClose: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
   listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, listToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, list: { gap: 7, marginTop: 8 }, subgroupBlock: { gap: 5 }, subgroupHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, subgroupTitle: { fontSize: 11, fontWeight: '900', color: '#0f766e' }, subgroupMeta: { marginTop: 2, fontSize: 9, color: '#0f766e' }, subgroupToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },
   completeButton: { minHeight: 40, alignItems: 'center', justifyContent: 'center', marginTop: 10, borderRadius: 8, backgroundColor: '#047857' }, completeButtonDone: { backgroundColor: '#dcfce7' }, completeButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, completeButtonTextDone: { color: '#166534' }, disabled: { opacity: 0.45 },

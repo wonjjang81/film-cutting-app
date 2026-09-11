@@ -10,6 +10,21 @@ export type PlacementSubgroup<T extends PlacementSource> = {
   items: T[];
 };
 
+export type PlacementCompletionControl = {
+  checked: boolean;
+  disabled: boolean;
+  label: '재단 완료' | '완료 해제';
+};
+
+/** Builds the completion action shared by placement lists and detail popups. */
+export function placementCompletionControl(completed: boolean, busy: boolean, available: boolean): PlacementCompletionControl {
+  return {
+    checked: completed,
+    disabled: busy || !available,
+    label: completed ? '완료 해제' : '재단 완료',
+  };
+}
+
 /** Returns whether every currently rendered placement list is collapsed. */
 export function areAllPlacementListsCollapsed(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): boolean {
   return ids.length > 0 && ids.every((id) => collapsed[id] === true);

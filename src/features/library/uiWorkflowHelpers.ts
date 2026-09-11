@@ -2,7 +2,6 @@ import type { RemnantPlan, RemnantPlanRequest } from '../remnants/planWithRemnan
 import type { FilmRemnant, SavedCuttingJob } from './models';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
-export const MAX_ROLL_LENGTH_MM = 25_000;
 
 export type CuttingFormState = {
   brand: string;
@@ -39,7 +38,6 @@ export function toRemnantPlanRequest(
     sideMarginMm: Number(form.sideMargin),
     startEndMarginMm: Number(form.startEndMargin),
     allowRotation: form.allowRotation,
-    maxLengthMm: MAX_ROLL_LENGTH_MM,
     remnants: remnants.map((remnant) => ({ ...remnant })),
   };
 }
@@ -154,7 +152,7 @@ export function buildSavedCuttingJob({
       sideMarginMm: request.sideMarginMm,
       startEndMarginMm: request.startEndMarginMm,
       allowRotation: request.allowRotation,
-      maxLengthMm: request.maxLengthMm ?? MAX_ROLL_LENGTH_MM,
+      ...(request.maxLengthMm === undefined ? {} : { maxLengthMm: request.maxLengthMm }),
     },
     remnantIds: [...orderedIds],
     remnantSummary: orderedIds.map((remnantId) => {

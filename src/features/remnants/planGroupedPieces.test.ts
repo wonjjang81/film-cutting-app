@@ -48,7 +48,7 @@ describe('planGroupedPieces', () => {
     expect(plan?.newRollQuantity).toBe(2);
   });
 
-  it('caps merged new-roll layouts at the 25m production maximum', () => {
+  it('extends merged new-roll layouts beyond 25m to fit every piece', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', mergeGroupId: 'merge', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 1_200, pieceLengthMm: 1_000, quantity: 30, allowRotation: false } },
       { groupId: 'g2', groupName: '그룹 2', pieceId: 'p2', pieceName: '조각 2', mergeGroupId: 'merge', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 1_200, pieceLengthMm: 1_000, quantity: 30, allowRotation: false } },
@@ -56,7 +56,9 @@ describe('planGroupedPieces', () => {
 
     const [plan] = planMergedGroups(requests, 1220, [], false);
 
-    expect(plan?.result.usedLengthMm).toBeLessThanOrEqual(25_000);
+    expect(plan?.result.usedLengthMm).toBe(60_010);
+    expect(plan?.result.placements).toHaveLength(60);
+    expect(plan?.producedQuantity).toBe(60);
   });
 
   it('does not use a remnant from another brand or product in a merged group', () => {

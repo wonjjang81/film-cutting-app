@@ -26,3 +26,10 @@ export function completionCrossMetrics(width: number, height: number): { inset: 
     strokeWidth: Math.max(4, Math.round(minDimension * 0.12)),
   };
 }
+
+/** Returns internal grid positions at the requested real-world interval. */
+export function gridLinePositions(extentMm: number, intervalMm = 100): number[] {
+  if (!Number.isFinite(extentMm) || !Number.isFinite(intervalMm) || extentMm <= intervalMm || intervalMm <= 0) return [];
+  const count = Math.ceil(extentMm / intervalMm) - 1;
+  return Array.from({ length: count }, (_, index) => (index + 1) * intervalMm);
+}

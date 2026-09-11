@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
+import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, placementCompletionControl, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
@@ -26,6 +26,12 @@ describe('planning placement model', () => {
     expect(resolvePlacementCompletionIds(undefined, [1, 3])).toEqual([1, 3]);
     expect(resolvePlacementCompletionIds([2], [1, 3])).toEqual([2]);
     expect(resolvePlacementCompletionIds(undefined, undefined)).toEqual([]);
+  });
+
+  it('shows the inverse completion action and blocks it while saving', () => {
+    expect(placementCompletionControl(false, false, true)).toEqual({ checked: false, disabled: false, label: '재단 완료' });
+    expect(placementCompletionControl(true, true, true)).toEqual({ checked: true, disabled: true, label: '완료 해제' });
+    expect(placementCompletionControl(false, false, false).disabled).toBe(true);
   });
 
   it('finds the latest saved merged job for the current plan sources', () => {

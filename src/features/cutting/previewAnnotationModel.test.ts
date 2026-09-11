@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
 
 describe('preview annotation model', () => {
   it('formats a piece name and actual placed dimensions', () => {
@@ -19,5 +19,11 @@ describe('preview annotation model', () => {
   it('sizes completion crosses to fill the placement without an outer box', () => {
     expect(completionCrossMetrics(100, 450)).toEqual({ inset: 4, strokeWidth: 12 });
     expect(completionCrossMetrics(20, 20)).toEqual({ inset: 1, strokeWidth: 4 });
+  });
+
+  it('places 100mm grid lines inside the film boundary', () => {
+    expect(gridLinePositions(350)).toEqual([100, 200, 300]);
+    expect(gridLinePositions(100)).toEqual([]);
+    expect(gridLinePositions(99)).toEqual([]);
   });
 });

@@ -3,7 +3,8 @@ import * as React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
-import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo } from './previewAnnotationModel';
+import { completionCrossMetrics, formatPlacementAnnotation, formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
+import { placementCompletionControl } from './planningPlacementModel';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
 
@@ -16,9 +17,11 @@ type Props = {
   startEndMarginMm?: number;
   completedPlacementIds?: readonly number[];
   pieceLabel?: string;
+  completionBusy?: boolean;
+  onTogglePlacementComplete?(placementId: number): void;
 };
 
-export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel }: Props) {
+export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel, completionBusy = false, onTogglePlacementComplete }: Props) {
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [zoom, setZoom] = React.useState(1);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -51,6 +54,9 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
   const rowSeparators = continuous
     ? (result as ContinuousRollResult).rowSequence.map((row) => ({ label: row.pattern, y: row.endY }))
     : [];
+  const gridXPositions = gridLinePositions(rollWidthMm);
+  const gridYPositions = gridLinePositions(displayLengthMm);
+  const gridStrokeWidth = Math.max(1, rollWidthMm / 900);
 
   return (
     <View style={styles.previewWrap}>
@@ -73,6 +79,10 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
         <View style={[styles.canvas, { height: drawingHeight, width: viewportWidth }]}>
         <Svg width={viewportWidth} height={drawingHeight} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${displayLengthMm}`} accessibilityLabel="필름 자동배치 도면">
           <Rect x={0} y={0} width={rollWidthMm} height={displayLengthMm} fill="#f8fafc" stroke="#334155" strokeWidth={Math.max(1, rollWidthMm / 350)} rx={4} />
+          <G accessibilityLabel="100mm 모눈">
+            {gridXPositions.map((x) => <Line key={`grid-x-${x}`} x1={x} y1={0} x2={x} y2={displayLengthMm} stroke="#94a3b8" strokeWidth={gridStrokeWidth} strokeDasharray="10 10" opacity={0.35} />)}
+            {gridYPositions.map((y) => <Line key={`grid-y-${y}`} x1={0} y1={y} x2={rollWidthMm} y2={y} stroke="#94a3b8" strokeWidth={gridStrokeWidth} strokeDasharray="10 10" opacity={0.35} />)}
+          </G>
           {(horizontalMarginMm > 0 || verticalMarginMm > 0) && (
             <Rect x={horizontalMarginMm} y={verticalMarginMm} width={rollWidthMm - horizontalMarginMm * 2} height={displayLengthMm - verticalMarginMm * 2}
               fill="none" stroke="#f59e0b" strokeDasharray="8 5" strokeWidth={Math.max(1, rollWidthMm / 500)} />
@@ -119,12 +129,14 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
             const selected = result.placements.find((item) => item.id === selectedId);
             if (!selected) return null;
             const info = formatPlacementInfo(pieceLabel ?? `조각 #${selected.id}`, selected.width, selected.height, selected.rotated, selected.x, selected.y);
+            const completion = placementCompletionControl(completedPlacementIds.includes(selected.id), completionBusy, Boolean(onTogglePlacementComplete));
             return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="조각 정보 팝업">
               <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
               <Text style={styles.modalTitle}>조각 정보</Text>
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => onTogglePlacementComplete?.(selected.id)} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.modalCompleteDisabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="조각 정보 팝업 닫기" onPress={() => setSelectedId(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
             </View>;
           })()}
@@ -149,5 +161,5 @@ const styles = StyleSheet.create({
   canvasScrollContent: { flexGrow: 1, alignItems: 'center' },
   canvas: { minHeight: 300, overflow: 'hidden', borderRadius: 12, backgroundColor: '#f8fafc' },
   caption: { marginTop: 10, textAlign: 'center', fontSize: 12, color: '#64748b' },
-  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#1d4ed8' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#1e3a8a' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalClose: { minHeight: 40, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#1d4ed8' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#1e3a8a' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalComplete: { minHeight: 42, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, backgroundColor: '#eff6ff' }, modalCompleteDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, modalCompleteDisabled: { opacity: 0.55 }, modalCompleteText: { fontSize: 13, fontWeight: '900', color: '#1d4ed8' }, modalCompleteTextDone: { color: '#15803d' }, modalClose: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
 });
