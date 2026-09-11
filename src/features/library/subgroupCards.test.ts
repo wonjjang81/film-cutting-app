@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, compactFieldLayout, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
+import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, compactFieldLayout, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, renameSubgroupPieces, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, subgroupTotalPieceQuantity, toggleAllSubgroupCards, type SubgroupCardGroup } from './subgroupCards';
 
 describe('subgroup card normalization', () => {
   it('flattens subgroups into independent cards while preserving their big-group assignment', () => {
@@ -118,5 +118,10 @@ describe('subgroup card normalization', () => {
     expect(normalizeSubgroupSiteCount(0)).toBe(1);
     expect(normalizeSubgroupSiteCount('invalid')).toBe(1);
     expect(multiplyPieceQuantityBySiteCount(2, 3)).toBe(6);
+  });
+
+  it('totals every piece quantity and applies the subgroup site count', () => {
+    expect(subgroupTotalPieceQuantity(['2', 3, 'invalid', 0], '2')).toBe(10);
+    expect(subgroupTotalPieceQuantity(['1', '4'], undefined)).toBe(5);
   });
 });

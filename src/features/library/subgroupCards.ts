@@ -43,6 +43,15 @@ export function multiplyPieceQuantityBySiteCount(quantity: number, siteCount: un
   return normalizedQuantity * normalizeSubgroupSiteCount(siteCount);
 }
 
+/** Totals a subgroup's per-location piece quantities and applies its site count. */
+export function subgroupTotalPieceQuantity(quantities: readonly unknown[], siteCount: unknown): number {
+  const perLocationTotal = quantities.reduce<number>((total, value) => {
+    const quantity = typeof value === 'number' ? value : Number(value);
+    return total + (Number.isInteger(quantity) && quantity > 0 ? quantity : 0);
+  }, 0);
+  return perLocationTotal * normalizeSubgroupSiteCount(siteCount);
+}
+
 /** Returns the next collapsed state for every visible subgroup card. */
 export function toggleAllSubgroupCards(ids: readonly string[], collapsed: Readonly<Record<string, boolean>>): Record<string, boolean> {
   const allExpanded = ids.length > 0 && ids.every((id) => collapsed[id] !== true);
