@@ -11,6 +11,7 @@
     "build:web": "npx expo export --platform web --output-dir dist",
     "cloudflare:preflight": "node scripts/cloudflare-preflight.mjs",
     "auth:schema-check": "node scripts/auth-schema-check.mjs",
+    "auth:migration-check": "node scripts/validate-auth-migration.mjs",
     "start": "expo start --web",
     "check": "tsc --noEmit",
     "lint": "expo lint",

@@ -12,6 +12,8 @@
 
 `.github/workflows/cloudflare-pages.yml`은 `main` 푸시 또는 수동 실행 시 설정 preflight를 통과한 뒤 `cloudflare/wrangler-action@v3`로 Pages를 배포합니다. GitHub 저장소에 다음 Actions secrets를 등록해야 합니다: `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_PROJECT_NAME`. 앱의 서버 저장 모드를 활성화하려면 Repository variable `CLOUDFLARE_API_URL`도 등록해야 합니다. 누락 시 배포를 의도적으로 중단합니다.
 
+운영 마이그레이션 전에는 `wrangler d1 export film-cutting-library --remote --output <복구경로>.sql`로 전체 백업을 만들고, `scripts/verify-d1-backup.mjs`와 `scripts/validate-auth-migration.mjs`로 해시·무결성·기존 `libraries` 행/ID 보존을 확인합니다. 백업 SQL과 실제 Wrangler 설정은 커밋하지 않습니다.
+
 `/api/library`는 서버 세션과 tenant membership을 확인한 뒤 내부 사용자 ID별로 문서를 분리합니다. Google `sub`는 로그인 시 계정 연결에만 사용하며 클라이언트 응답에는 노출하지 않습니다. `If-Match`와 D1의 `updated_at` 조건을 함께 사용해 다른 기기의 덮어쓰기를 차단합니다.
 
 세션은 서버에 해시만 저장하며 브라우저에는 `Secure`, `HttpOnly`, `SameSite=Lax` 쿠키를 사용합니다. 절대 만료는 7일, 유휴 만료는 24시간입니다. 최초 소유자만 `AUTH_OWNER_EMAIL`과 정확히 일치할 때 생성되고 이후 사용자는 소유자가 먼저 이메일을 등록·승인해야 합니다.
