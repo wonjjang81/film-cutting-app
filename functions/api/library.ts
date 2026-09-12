@@ -1,4 +1,4 @@
-import { createRemoteJWKSet, jwtVerify } from 'jose';
+import type { AuthIdentity } from '../_auth';
 import type { CloudflareEnv, D1Database, PagesContext } from '../_types';
 import { jsonResponse } from '../_types';
 
@@ -6,7 +6,7 @@ const EMPTY_DOCUMENT = { version: 1, presets: [], jobs: [], remnants: [], merged
 const MAX_DOCUMENT_BYTES = 2_000_000;
 
 type LibraryRow = { user_id: string; user_email: string; document_json: string; updated_at: string };
-type Identity = { subject: string; email: string };
+type Identity = AuthIdentity;
 
 class ApiError extends Error {
   constructor(public readonly status: number, message: string) { super(message); }
@@ -26,20 +26,6 @@ function corsHeaders(request: Request, env: CloudflareEnv): Record<string, strin
   return headers;
 }
 
-async function identityFromAccess(request: Request, env: CloudflareEnv): Promise<Identity> {
-  if (!env.ACCESS_TEAM_DOMAIN || !env.ACCESS_AUD) throw new ApiError(503, 'Cloudflare Access 설정이 완료되지 않았습니다.');
-  const token = request.headers.get('cf-access-jwt-assertion');
-  if (!token) throw new ApiError(401, 'Cloudflare Access 인증 토큰이 없습니다.');
-  try {
-    const keySet = createRemoteJWKSet(new URL(`${env.ACCESS_TEAM_DOMAIN}/cdn-cgi/access/certs`));
-    const { payload } = await jwtVerify(token, keySet, { issuer: env.ACCESS_TEAM_DOMAIN, audience: env.ACCESS_AUD });
-    if (typeof payload.sub !== 'string' || payload.sub.trim().length === 0) throw new Error('subject missing');
-    return { subject: payload.sub, email: typeof payload.email === 'string' ? payload.email : payload.sub };
-  } catch {
-    throw new ApiError(403, 'Cloudflare Access 인증 토큰이 유효하지 않습니다.');
-  }
-}
-
 function database(env: CloudflareEnv): D1Database {
   if (!env.DB) throw new ApiError(503, 'D1 데이터베이스 바인딩이 설정되지 않았습니다.');
   return env.DB;
@@ -52,7 +38,7 @@ function validDocument(value: unknown): value is Record<string, unknown> & { ver
 }
 
 async function readRow(db: D1Database, identity: Identity): Promise<LibraryRow | null> {
-  return db.prepare('SELECT user_id, user_email, document_json, updated_at FROM libraries WHERE user_id = ?1').bind(identity.subject).first<LibraryRow>();
+  return db.prepare('SELECT user_id, user_email, document_json, updated_at FROM libraries WHERE user_id = ?1').bind(identity.userId).first<LibraryRow>();
 }
 
 function responseForDocument(document: unknown, updatedAt: string, request: Request, env: CloudflareEnv): Response {
@@ -69,9 +55,9 @@ export async function onRequestOptions({ request, env }: PagesContext<Cloudflare
   return new Response(null, { status: 204, headers: corsHeaders(request, env) });
 }
 
-export async function onRequestGet({ request, env }: PagesContext<CloudflareEnv>): Promise<Response> {
+export async function onRequestGet({ request, env, data }: PagesContext<CloudflareEnv, { auth?: AuthIdentity }>): Promise<Response> {
   try {
-    const identity = await identityFromAccess(request, env);
+    const identity = data.auth!;
     const row = await readRow(database(env), identity);
     if (!row) return responseForDocument(EMPTY_DOCUMENT, '', request, env);
     let document: unknown;
@@ -83,9 +69,9 @@ export async function onRequestGet({ request, env }: PagesContext<CloudflareEnv>
   }
 }
 
-export async function onRequestPut({ request, env }: PagesContext<CloudflareEnv>): Promise<Response> {
+export async function onRequestPut({ request, env, data }: PagesContext<CloudflareEnv, { auth?: AuthIdentity }>): Promise<Response> {
   try {
-    const identity = await identityFromAccess(request, env);
+    const identity = data.auth!;
     const db = database(env);
     const raw = await request.text();
     if (new TextEncoder().encode(raw).byteLength > MAX_DOCUMENT_BYTES) throw new ApiError(413, '프로젝트 데이터가 너무 큽니다.');
@@ -99,10 +85,10 @@ export async function onRequestPut({ request, env }: PagesContext<CloudflareEnv>
     const now = new Date().toISOString();
     const documentJson = JSON.stringify(document);
     if (current) {
-      const result = await db.prepare('UPDATE libraries SET user_email = ?1, document_json = ?2, updated_at = ?3 WHERE user_id = ?4 AND updated_at = ?5').bind(identity.email, documentJson, now, identity.subject, current.updated_at).run();
+      const result = await db.prepare('UPDATE libraries SET user_email = ?1, document_json = ?2, updated_at = ?3 WHERE user_id = ?4 AND updated_at = ?5').bind(identity.email, documentJson, now, identity.userId, current.updated_at).run();
       if ((result.meta?.changes ?? 0) !== 1) throw new ApiError(409, '다른 기기에서 프로젝트가 변경되었습니다. 다시 불러온 후 저장해 주세요.');
     } else {
-      await db.prepare('INSERT INTO libraries (user_id, user_email, document_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)').bind(identity.subject, identity.email, documentJson, now).run();
+      await db.prepare('INSERT INTO libraries (user_id, user_email, document_json, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)').bind(identity.userId, identity.email, documentJson, now).run();
     }
     return responseForDocument(document, now, request, env);
   } catch (error) {

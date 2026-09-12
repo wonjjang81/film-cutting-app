@@ -5,8 +5,10 @@ import { APP_VERSION, LOCAL_PROFILE_STORAGE_KEY } from '../../src/features/setti
 import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE_KEY, parseCompanyInfo, type CompanyInfo } from '../../src/features/settings/companyInfo';
 import { configuredCloudflareUrl } from '../../src/features/library/libraryRepositoryFactory';
 import { checkCloudflareHealth } from '../../src/features/settings/cloudflareStatus';
+import { useAuthSession } from '../../src/features/auth/AuthSession';
 
 export default function SettingsScreen() {
+  const auth = useAuthSession();
   const [info, setInfo] = useState<CompanyInfo>(emptyCompanyInfo);
   const [profile, setProfile] = useState('');
   const [release, setRelease] = useState<string | null>(null);
@@ -34,6 +36,7 @@ export default function SettingsScreen() {
       <Text style={styles.subtitle}>견적서와 작업 화면에 사용할 정보를 관리합니다.</Text>
       <View style={styles.card}>
         <Text style={styles.cardTitle}>서버 저장소</Text>
+        {auth.user && <><Text style={styles.info}>로그인 계정 {auth.user.email}</Text><Text style={styles.hint}>권한: {auth.user.role === 'owner' ? '관리자' : '일반 사용자'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="Google 계정 로그아웃" onPress={() => void auth.logout()} style={styles.dangerButton}><Text style={styles.dangerText}>로그아웃</Text></TouchableOpacity></>}
         <Text style={styles.info}>{cloudflareUrl ? `API 주소 ${cloudflareUrl}` : 'EXPO_PUBLIC_CLOUDFLARE_API_URL 미설정'}</Text>
         <Text style={styles.hint}>{serverMessage}</Text>
         {cloudflareUrl && <TouchableOpacity accessibilityRole="button" disabled={serverBusy} onPress={() => void checkServer()} style={[styles.updateButton, serverBusy && styles.disabled]}><Text style={styles.updateButtonText}>{serverBusy ? '확인 중…' : 'Cloudflare 연결 확인'}</Text></TouchableOpacity>}

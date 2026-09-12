@@ -1,4 +1,6 @@
-import { Tabs } from 'expo-router';
+import { Redirect, Tabs } from 'expo-router';
+import { ActivityIndicator, View } from 'react-native';
+import { useAuthSession } from '../../src/features/auth/AuthSession';
 import {
   CircleHelp,
   ClipboardList,
@@ -21,6 +23,9 @@ const TabIcon = ({ Icon, color, size }: TabIconProps & { Icon: typeof FolderOpen
 );
 
 export default function TabsLayout() {
+  const auth = useAuthSession();
+  if (auth.state === 'loading') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#2563eb" /></View>;
+  if (auth.state === 'unauthenticated') return <Redirect href="/login" />;
   return (
     <Tabs
       screenOptions={{
@@ -79,7 +84,7 @@ export default function TabsLayout() {
         name="admin"
         options={{
           title: '관리',
-          href: '/admin',
+          href: auth.state === 'local' || auth.user?.role === 'owner' ? '/admin' : null,
           tabBarIcon: ({ color, size }) => <TabIcon Icon={Settings} color={color} size={size} />,
         }}
       />

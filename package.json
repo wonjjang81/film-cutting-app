@@ -10,6 +10,7 @@
     "build": "pnpm build:web",
     "build:web": "npx expo export --platform web --output-dir dist",
     "cloudflare:preflight": "node scripts/cloudflare-preflight.mjs",
+    "auth:schema-check": "node scripts/auth-schema-check.mjs",
     "start": "expo start --web",
     "check": "tsc --noEmit",
     "lint": "expo lint",
