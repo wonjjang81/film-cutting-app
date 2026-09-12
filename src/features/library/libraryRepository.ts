@@ -255,12 +255,15 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
   const inventoryConfirmedAt = value.inventoryConfirmedAt === undefined ? undefined : normalizeTimestamp(value.inventoryConfirmedAt);
   const completedPlacementIds = value.completedPlacementIds === undefined ? undefined : value.completedPlacementIds;
+  const subgroupOverallDimensions = validateSubgroupOverallDimensions(value.subgroupOverallDimensions);
   if (input === undefined || result === undefined || remnantSummary.some((item) => item === undefined)) return undefined;
   if (value.isCuttingComplete !== undefined && typeof value.isCuttingComplete !== 'boolean') return undefined;
   if (value.groupId !== undefined && typeof value.groupId !== 'string') return undefined;
   if (value.filmName !== undefined && typeof value.filmName !== 'string') return undefined;
   if (value.subgroupName !== undefined && typeof value.subgroupName !== 'string') return undefined;
+  if (value.siteCount !== undefined && !positiveInteger(value.siteCount)) return undefined;
   if (value.difficulty !== undefined && value.difficulty !== 'low' && value.difficulty !== 'medium' && value.difficulty !== 'high') return undefined;
+  if (value.subgroupOverallDimensions !== undefined && subgroupOverallDimensions === undefined) return undefined;
   if (value.materialCostPerM !== undefined && !finiteNonnegative(value.materialCostPerM)) return undefined;
   if (value.constructionCostPerM2 !== undefined && !finiteNonnegative(value.constructionCostPerM2)) return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
@@ -273,7 +276,9 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     createdAt, updatedAt, input,
     ...(value.filmName === undefined ? {} : { filmName: value.filmName }),
     ...(value.subgroupName === undefined ? {} : { subgroupName: value.subgroupName }),
+    ...(value.siteCount === undefined ? {} : { siteCount: value.siteCount }),
     ...(value.difficulty === undefined ? {} : { difficulty: value.difficulty }),
+    ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions }),
     ...(value.materialCostPerM === undefined ? {} : { materialCostPerM: value.materialCostPerM }),
     ...(value.constructionCostPerM2 === undefined ? {} : { constructionCostPerM2: value.constructionCostPerM2 }),
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
@@ -283,6 +288,17 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     ...(value.isInventoryConfirmed === undefined ? {} : { isInventoryConfirmed: value.isInventoryConfirmed }),
     ...(inventoryConfirmedAt === undefined ? {} : { inventoryConfirmedAt }),
   };
+}
+
+function validateSubgroupOverallDimensions(value: unknown): SavedCuttingJob['subgroupOverallDimensions'] | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)
+    || !finiteNonnegative(value.widthMm)
+    || !finiteNonnegative(value.heightMm)
+    || !finiteNonnegative(value.depthMm)
+    || !Number.isInteger(value.doorCount)
+    || !finiteNonnegative(value.doorCount)) return undefined;
+  return { widthMm: value.widthMm, heightMm: value.heightMm, depthMm: value.depthMm, doorCount: value.doorCount };
 }
 
 function validateMergedPlacement(value: unknown): SavedMergedPlacement | undefined {

@@ -81,6 +81,15 @@ describe('current group estimate', () => {
     expect(result.jobs[0]).toMatchObject({ groupId: 'g1', subgroupName: 'A', difficulty: 'high' });
   });
 
+  it('carries editable subgroup dimensions into current estimate jobs', () => {
+    const snapshot = createCurrentEstimateSnapshot([{
+      id: 'g1', name: '그룹 1',
+      subgroups: [{ id: 'sg-a', name: '주방', pieceIds: ['p1'], expanded: true, overallDimensions: { widthMm: '2400', heightMm: '900', depthMm: '600', doorCount: '4' } }],
+      pieces: [{ id: 'p1', name: 'p1', form: form('500', '1000') }],
+    }]);
+    expect(calculateCurrentGroupEstimate(snapshot).jobs[0]?.subgroupOverallDimensions).toEqual({ widthMm: 2400, heightMm: 900, depthMm: 600, doorCount: 4 });
+  });
+
   it('multiplies each subgroup piece quantity by its installation site count', () => {
     const snapshot = createCurrentEstimateSnapshot([{
       id: 'g1',

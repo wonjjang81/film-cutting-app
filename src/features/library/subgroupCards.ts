@@ -1,7 +1,7 @@
 import { composePieceId, pieceNamePart } from './pieceIds';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
-export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string };
+export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: { widthMm: number | string; heightMm: number | string; depthMm: number | string; doorCount: number | string } };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
 export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이·재단 여유치 mm · 수량 개';

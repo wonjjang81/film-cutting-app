@@ -149,4 +149,14 @@ describe('buildSavedCuttingJob', () => {
       cutAllowanceMm: 10,
     });
   });
+
+  it('stores subgroup overall dimensions for later rough estimates', () => {
+    const request = toRemnantPlanRequest(form, []);
+    const job = buildSavedCuttingJob({
+      id: 'job-rough', name: '개산견적 작업', createdAt: timestamp,
+      request, plan: planWithRemnants(request), inventory: [], subgroupName: '주방', siteCount: 2,
+      subgroupOverallDimensions: { widthMm: 2400, heightMm: 900, depthMm: 600, doorCount: 4 },
+    });
+    expect(job).toMatchObject({ subgroupName: '주방', siteCount: 2, subgroupOverallDimensions: { widthMm: 2400, heightMm: 900, depthMm: 600, doorCount: 4 } });
+  });
 });

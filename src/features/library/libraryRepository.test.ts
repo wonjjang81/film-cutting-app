@@ -272,6 +272,13 @@ describe('library repository', () => {
     });
   });
 
+  it('preserves subgroup site count and overall dimensions', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    await repository.saveBatchJobs([job(1, { siteCount: 2, subgroupOverallDimensions: { widthMm: 2400, heightMm: 900, depthMm: 600, doorCount: 4 } })], []);
+    const loaded = await repository.load();
+    expect(loaded.document.jobs[0]).toMatchObject({ siteCount: 2, subgroupOverallDimensions: { widthMm: 2400, heightMm: 900, depthMm: 600, doorCount: 4 } });
+  });
+
   it('exports and imports one project bundle while replacing the existing project records', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     const first = job(1, { name: '현장 A · 기존 조각' });

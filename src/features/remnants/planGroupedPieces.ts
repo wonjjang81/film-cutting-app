@@ -2,6 +2,7 @@ import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
+import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
 
 export type GroupedPieceRequest = {
   groupId: string;
@@ -14,6 +15,7 @@ export type GroupedPieceRequest = {
   /** Per-location piece quantity multiplier; defaults to one for legacy data. */
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
+  subgroupOverallDimensions?: SubgroupOverallDimensions;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   request: RemnantPlanRequest;

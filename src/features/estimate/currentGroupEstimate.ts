@@ -4,6 +4,9 @@ import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedP
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
 import { multiplyPieceQuantityBySiteCount, normalizeSubgroupSiteCount, subgroupPieceDisplayName } from '../library/subgroupCards';
 import { normalizeDifficulty, type ConstructionDifficulty } from './difficultyPricing';
+import { normalizeSubgroupOverallDimensions, type SubgroupOverallDimensions } from './subgroupRoughEstimate';
+
+type EditableSubgroupOverallDimensions = { [K in keyof SubgroupOverallDimensions]: number | string };
 
 export const CURRENT_GROUP_ESTIMATE_STORAGE_KEY = 'film-cutting-current-group-estimate';
 
@@ -14,7 +17,7 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
-  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string }[];
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: EditableSubgroupOverallDimensions }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
@@ -27,7 +30,11 @@ export type CurrentEstimatePlan = {
 };
 
 export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[]): CurrentEstimateSnapshot {
-  return { pieces: groups.map((group) => ({ ...group, pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })) })) };
+  return { pieces: groups.map((group) => ({
+    ...group,
+    subgroups: group.subgroups?.map((subgroup) => ({ ...subgroup, pieceIds: [...subgroup.pieceIds], ...(subgroup.overallDimensions === undefined ? {} : { overallDimensions: { ...subgroup.overallDimensions } }) })),
+    pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })),
+  })) };
 }
 
 export function parseCurrentEstimateSnapshot(raw: string | null): CurrentEstimateSnapshot | null {
@@ -62,6 +69,12 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     subgroupName: subgroup?.name,
     siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount),
     difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
+    subgroupOverallDimensions: subgroup?.overallDimensions === undefined ? undefined : normalizeSubgroupOverallDimensions({
+      widthMm: Number(subgroup.overallDimensions.widthMm),
+      heightMm: Number(subgroup.overallDimensions.heightMm),
+      depthMm: Number(subgroup.overallDimensions.depthMm),
+      doorCount: Number(subgroup.overallDimensions.doorCount),
+    }),
     materialCostPerM: optionalCost(group.materialCostPerM),
     constructionCostPerM2: optionalCost(group.constructionCostPerM2),
     request: {
@@ -111,6 +124,7 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     subgroupName: entry.subgroupName,
     siteCount: entry.siteCount,
     difficulty: entry.difficulty,
+    subgroupOverallDimensions: entry.subgroupOverallDimensions,
     materialCostPerM: entry.materialCostPerM,
     constructionCostPerM2: entry.constructionCostPerM2,
   }));
