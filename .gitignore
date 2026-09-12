@@ -8,3 +8,7 @@ web-build/
 *.log
 expo-env.d.ts
 .DS_Store
+cloudflare/backups/
+cloudflare/wrangler.auth-validation.toml
+.wrangler/
+.tmp/

@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
+import { AuthSessionProvider } from '../src/features/auth/AuthSession';
 
 export default function RootLayout() {
   return (
@@ -7,7 +8,7 @@ export default function RootLayout() {
       <Head>
         <title>필름 재단 계산기</title>
       </Head>
-      <Stack screenOptions={{ headerShown: false }} />
+      <AuthSessionProvider><Stack screenOptions={{ headerShown: false }} /></AuthSessionProvider>
     </>
   );
 }
