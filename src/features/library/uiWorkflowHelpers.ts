@@ -1,6 +1,7 @@
 import type { RemnantPlan, RemnantPlanRequest } from '../remnants/planWithRemnants';
 import type { FilmRemnant, SavedCuttingJob } from './models';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
+import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
 import { cutAllowanceDimensions } from '../cutting/cutAllowance';
 
 
@@ -87,6 +88,7 @@ export type BuildSavedCuttingJobOptions = {
   subgroupName?: string;
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
+  subgroupOverallDimensions?: SubgroupOverallDimensions;
 };
 
 /** Builds the storage/export view of a tentative plan without mutating it. */
@@ -104,6 +106,7 @@ export function buildSavedCuttingJob({
   subgroupName,
   siteCount,
   difficulty,
+  subgroupOverallDimensions,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
   const inventoryById = new Map(inventory.map((remnant) => [remnant.id, remnant]));
   const usageCounts = new Map<string, number>();
@@ -149,6 +152,7 @@ export function buildSavedCuttingJob({
     ...(subgroupName?.trim() ? { subgroupName: subgroupName.trim() } : {}),
     ...(siteCount === undefined ? {} : { siteCount }),
     ...(difficulty === undefined ? {} : { difficulty }),
+    ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions: { ...subgroupOverallDimensions } }),
     createdAt,
     updatedAt: createdAt,
     input: {

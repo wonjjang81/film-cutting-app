@@ -1,4 +1,5 @@
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
+import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
 
 /** A reusable cutting specification for one branded film product. */
 export type FilmPreset = {
@@ -76,6 +77,8 @@ export type SavedCuttingJob = {
   /** Number of physical installation locations represented by this subgroup. */
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
+  /** Optional overall measurements used only for the non-binding rough estimate. */
+  subgroupOverallDimensions?: SubgroupOverallDimensions;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   createdAt: string;

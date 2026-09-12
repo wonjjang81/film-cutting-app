@@ -26,6 +26,7 @@ import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } 
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
 import { PIECE_INPUT_UNIT_HINT, commitSubgroupName, compactFieldAffixes, compactFieldLayout, flattenSubgroupCards, hasAssignedSubgroups, multiplyPieceQuantityBySiteCount, normalizeSubgroupNameDraft, normalizeSubgroupSiteCount, renameSubgroupPieceDrafts, subgroupCardStackIndex, subgroupGroupSelectLabel, subgroupPieceDisplayName, subgroupPieceNamePart, subgroupTotalPieceQuantity, toggleAllSubgroupCards } from '../../src/features/library/subgroupCards';
 import { DEFAULT_DIFFICULTY, normalizeDifficulty, type ConstructionDifficulty } from '../../src/features/estimate/difficultyPricing';
+import { calculateSubgroupRoughEstimate, normalizeSubgroupOverallDimensions, type SubgroupOverallDimensions } from '../../src/features/estimate/subgroupRoughEstimate';
 import { applyPatternFixed } from '../../src/features/library/groupSettings';
 import { DEFAULT_CUT_ALLOWANCE_MM, normalizeCutAllowance, restoreCutAllowanceDimensions, summarizeCutAllowances } from '../../src/features/cutting/cutAllowance';
 
@@ -41,7 +42,8 @@ const initialForm: CuttingFormState = {
   cutAllowance: String(DEFAULT_CUT_ALLOWANCE_MM), quantity: '1', gap: String(DEFAULT_GAP_MM), sideMargin: String(DEFAULT_SIDE_MARGIN_MM), startEndMargin: String(DEFAULT_START_END_MARGIN_MM), allowRotation: true,
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
-type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string };
+type EditableSubgroupOverallDimensions = { widthMm: string; heightMm: string; depthMm: string; doorCount: string };
+type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions };
 type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string; patternFixed: boolean };
 type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
 type SavedPiecePlanView = {
@@ -70,13 +72,23 @@ function subgroupNameForIndex(index: number): string {
   do { name = String.fromCharCode(65 + (value % 26)) + name; value = Math.floor(value / 26) - 1; } while (value >= 0);
   return name;
 }
+function emptySubgroupOverallDimensions(): EditableSubgroupOverallDimensions {
+  return { widthMm: '0', heightMm: '0', depthMm: '0', doorCount: '0' };
+}
+function editableSubgroupOverallDimensions(value: SubgroupOverallDimensions | undefined): EditableSubgroupOverallDimensions {
+  const normalized = normalizeSubgroupOverallDimensions(value);
+  return { widthMm: String(normalized.widthMm), heightMm: String(normalized.heightMm), depthMm: String(normalized.depthMm), doorCount: String(normalized.doorCount) };
+}
+function storedSubgroupOverallDimensions(value: { [K in keyof EditableSubgroupOverallDimensions]: string | number }): SubgroupOverallDimensions {
+  return normalizeSubgroupOverallDimensions({ widthMm: Number(value.widthMm), heightMm: Number(value.heightMm), depthMm: Number(value.depthMm), doorCount: Number(value.doorCount) });
+}
 function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDraft {
   // The legacy app opened each group with three editable piece rows. Keep
   // those rows available while allowing untouched 0×0 rows to be ignored by
   // calculation, just as the legacy group estimator did.
   const groupName = `그룹 ${index}`;
   const pieces = withInitialPieces ? [1, 2, 3].map((pieceIndex) => newPieceDraft(groupName, pieceIndex)) : [];
-  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1' }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '', patternFixed: false };
+  return { id: index === 1 ? 'group-1' : `group-${Date.now()}-${index}`, displayId: String(index), name: groupName, form: pieces[0]?.form ?? { ...initialForm }, pieces, subgroups: pieces.length > 0 ? [{ id: `${groupName}-subgroup-A`, name: 'A', pieceIds: pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] : [], mergeGroupId: AUTO_MERGE_GROUP_ID, filmName: '', materialCostPerM: '', constructionCostPerM2: '', patternFixed: false };
 }
 const statusCopy = {
   exact: { title: '완전 최적', detail: '안전 예산 안에서 전체 우선순위를 정확히 계산했습니다.', tone: '#047857', bg: '#ecfdf5' },
@@ -188,7 +200,7 @@ export default function FilmCutInputScreen() {
     });
     const restoredGroups: CuttingGroupDraft[] = [];
     const groupsByName = new Map<string, CuttingGroupDraft>();
-    const subgroupByGroupName = new Map<string, Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string }>>();
+    const subgroupByGroupName = new Map<string, Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions }>>();
     savedJobs.forEach((job, index) => {
       const [groupLabel, ...pieceLabel] = job.name.split(' · ');
       const groupName = groupLabel?.trim() || `그룹 ${index + 1}`;
@@ -207,8 +219,8 @@ export default function FilmCutInputScreen() {
         : restoredPieceId;
       group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
       const subgroupName = job.subgroupName?.trim() || 'A';
-      const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string }>();
-      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)) };
+      const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions }>();
+      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)), overallDimensions: editableSubgroupOverallDimensions(job.subgroupOverallDimensions) };
       subgroup.pieceIds.push(uniquePieceId);
       subgroup.difficulty = normalizeDifficulty(job.difficulty ?? subgroup.difficulty);
       subgroups.set(subgroupName, subgroup);
@@ -219,8 +231,8 @@ export default function FilmCutInputScreen() {
       group.patternFixed = group.pieces.length > 0 && group.pieces.every((piece) => !piece.form.allowRotation);
       const savedSubgroups = subgroupByGroupName.get(group.name);
       group.subgroups = savedSubgroups
-        ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty, siteCount: value.siteCount }))
-        : [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1' }];
+        ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty, siteCount: value.siteCount, overallDimensions: value.overallDimensions }))
+        : [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }];
     });
     const firstGroup = restoredGroups[0]!;
     const firstPiece = firstGroup.pieces[0]!;
@@ -347,7 +359,7 @@ export default function FilmCutInputScreen() {
       usedIds.add(id);
       return { ...piece, id, name: id };
     });
-    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: uniquePieces[0]!.form, pieces: [...item.pieces, ...uniquePieces], subgroups: [...item.subgroups, { id: subgroupId, name: subgroupName, pieceIds: uniquePieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1' }] } : item));
+    setGroups((items) => items.map((item) => item.id === activeGroupId ? { ...item, form: uniquePieces[0]!.form, pieces: [...item.pieces, ...uniquePieces], subgroups: [...item.subgroups, { id: subgroupId, name: subgroupName, pieceIds: uniquePieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : item));
     setActivePieceId(uniquePieces[0]!.id); setForm(uniquePieces[0]!.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setNotice(`소그룹 ${subgroupName}과 기본 조각 3개를 추가했습니다.`);
   };
   const renameSubgroup = (groupId: string, subgroupId: string, value: string) => {
@@ -392,6 +404,12 @@ export default function FilmCutInputScreen() {
       ? { ...group, subgroups: group.subgroups.map((subgroup) => subgroup.id === subgroupId ? { ...subgroup, siteCount: normalized } : subgroup) }
       : group));
     setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false);
+  };
+  const updateSubgroupOverallDimensions = (groupId: string, subgroupId: string, field: keyof EditableSubgroupOverallDimensions, value: string) => {
+    const normalized = value.replace(/[^0-9.]/g, '');
+    setGroups((items) => items.map((group) => group.id === groupId
+      ? { ...group, subgroups: group.subgroups.map((subgroup) => subgroup.id === subgroupId ? { ...subgroup, overallDimensions: { ...subgroup.overallDimensions, [field]: normalized } } : subgroup) }
+      : group));
   };
   const moveSubgroupToGroup = (sourceGroupId: string, subgroupId: string, targetGroupId: string) => {
     if (sourceGroupId === targetGroupId) return;
@@ -458,7 +476,7 @@ export default function FilmCutInputScreen() {
     if (source.pieces.length <= 1) { setError('대그룹에는 최소 1개의 조각이 필요합니다.'); return; }
     const sourcePiece = source.pieces.find((piece) => piece.id === pieceId);
     if (!sourcePiece) return;
-    const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1' };
+    const targetSubgroup = target.subgroups[0] ?? { id: `${target.id}-subgroup-A`, name: 'A', pieceIds: [], expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() };
     const nextPieceIdValue = composePieceId(target.name, pieceNamePart(source.name, sourcePiece.id));
     if (target.pieces.some((piece) => piece.id === nextPieceIdValue)) { setError('대상 대그룹에 같은 조각 이름이 이미 있습니다.'); return; }
     const movedPiece = { ...sourcePiece, id: nextPieceIdValue, name: nextPieceIdValue, form: { ...sourcePiece.form, brand: target.form.brand, productNumber: target.form.productNumber, allowRotation: target.patternFixed ? false : sourcePiece.form.allowRotation } };
@@ -588,6 +606,7 @@ export default function FilmCutInputScreen() {
       subgroupName: activeSubgroup?.name,
       siteCount: normalizeSubgroupSiteCount(activeSubgroup?.siteCount),
       difficulty: activeSubgroup?.difficulty,
+      subgroupOverallDimensions: activeSubgroup ? storedSubgroupOverallDimensions(activeSubgroup.overallDimensions) : undefined,
       materialCostPerM: optionalCost(activeGroup?.materialCostPerM),
       constructionCostPerM2: optionalCost(activeGroup?.constructionCostPerM2),
     });
@@ -625,7 +644,7 @@ export default function FilmCutInputScreen() {
         const normalized = withProductionDefaults({ ...piece.form, allowRotation: group.patternFixed ? false : piece.form.allowRotation });
         const subgroup = group.subgroups.find((item) => item.pieceIds.includes(piece.id));
         const baseRequest = toRemnantPlanRequest(normalized, []);
-        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount), difficulty: subgroup?.difficulty, request: { ...baseRequest, quantity: multiplyPieceQuantityBySiteCount(baseRequest.quantity, subgroup?.siteCount) }, filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
+        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount), difficulty: subgroup?.difficulty, subgroupOverallDimensions: subgroup ? storedSubgroupOverallDimensions(subgroup.overallDimensions) : undefined, request: { ...baseRequest, quantity: multiplyPieceQuantityBySiteCount(baseRequest.quantity, subgroup?.siteCount) }, filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
         && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
         && Number.isInteger(request.quantity) && request.quantity > 0);
@@ -659,7 +678,7 @@ export default function FilmCutInputScreen() {
         generatedIds.push(id);
         savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
-        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         jobsToSave.push(job);
       }
       const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
@@ -729,7 +748,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request, entry.siteCount);
     const createdAt = new Date().toISOString();
-    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setCandidateComparison(entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : []);
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
@@ -1060,7 +1079,7 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onPatternFixedChange={updateGroupPatternFixed} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-          <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} />
+          <PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId) => addPiece(subgroupId, groupId)} onAddSubgroup={addSubgroup} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} />
           <ProductionSettingsCard useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -1095,7 +1114,7 @@ function GroupInputPanel({ groups, activeGroupId, onSelect, onAdd, onRenameId, o
     </View>; })}</View>
   </View>;
 }
-function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onChangeDifficulty, onChangeSiteCount, onMoveSubgroup, onChangeForm, onApplyAllAllowance, onApplySubgroupAllowance }: { groups: CuttingGroupDraft[]; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(groupId: string, piece: CuttingPieceDraft): void; onAdd(groupId: string, subgroupId?: string): void; onAddSubgroup(): void; onDelete(groupId: string, id: string): void; onRename(groupId: string, pieceId: string, nextId: string): void; onRenameSubgroup(groupId: string, subgroupId: string, name: string): void; onChangeDifficulty(groupId: string, subgroupId: string, difficulty: ConstructionDifficulty): void; onChangeSiteCount(groupId: string, subgroupId: string, value: string): void; onMoveSubgroup(sourceGroupId: string, subgroupId: string, targetGroupId: string): void; onChangeForm(groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>): void; onApplyAllAllowance(value: string): void; onApplySubgroupAllowance(groupId: string, subgroupId: string, value: string): void }) {
+function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd, onAddSubgroup, onDelete, onRename, onRenameSubgroup, onChangeDifficulty, onChangeSiteCount, onChangeOverallDimensions, onMoveSubgroup, onChangeForm, onApplyAllAllowance, onApplySubgroupAllowance }: { groups: CuttingGroupDraft[]; groupOptions: { id: string; displayId: string }[]; activePieceId: string; onSelect(groupId: string, piece: CuttingPieceDraft): void; onAdd(groupId: string, subgroupId?: string): void; onAddSubgroup(): void; onDelete(groupId: string, id: string): void; onRename(groupId: string, pieceId: string, nextId: string): void; onRenameSubgroup(groupId: string, subgroupId: string, name: string): void; onChangeDifficulty(groupId: string, subgroupId: string, difficulty: ConstructionDifficulty): void; onChangeSiteCount(groupId: string, subgroupId: string, value: string): void; onChangeOverallDimensions(groupId: string, subgroupId: string, field: keyof EditableSubgroupOverallDimensions, value: string): void; onMoveSubgroup(sourceGroupId: string, subgroupId: string, targetGroupId: string): void; onChangeForm(groupId: string, pieceId: string, updater: React.SetStateAction<CuttingFormState>): void; onApplyAllAllowance(value: string): void; onApplySubgroupAllowance(groupId: string, subgroupId: string, value: string): void }) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingValue, setEditingValue] = useState('');
   const [editingError, setEditingError] = useState<string | null>(null);
@@ -1106,6 +1125,7 @@ function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd,
   const [globalAllowance, setGlobalAllowance] = useState(String(DEFAULT_CUT_ALLOWANCE_MM));
   const [allowanceEditorId, setAllowanceEditorId] = useState<string | null>(null);
   const [allowanceDrafts, setAllowanceDrafts] = useState<Record<string, string>>({});
+  const [expandedDimensionSubgroups, setExpandedDimensionSubgroups] = useState<Record<string, boolean>>({});
   const confirmApply = (message: string, action: () => void) => {
     if (Platform.OS === 'web') {
       if (typeof window !== 'undefined' && window.confirm(message)) action();
@@ -1153,7 +1173,34 @@ function PieceInputPanel({ groups, groupOptions, activePieceId, onSelect, onAdd,
         };
         const allowanceSummary = summarizeCutAllowances(pieces.map((piece) => piece.form.cutAllowance));
         const subgroupAllowance = allowanceDrafts[subgroup.id] ?? (allowanceSummary.kind === 'uniform' ? String(allowanceSummary.valueMm) : '');
-        return <View key={subgroup.id} style={[styles.subgroupCard, { zIndex: cardLayer, elevation: cardLayer }]}><View style={[styles.subgroupHeader, styles.dropdownHeader]}><SubgroupGroupSelect options={groupOptions} value={groupId} onChange={(targetGroupId) => onMoveSubgroup(groupId, subgroup.id, targetGroupId)} onOpenChange={(open) => setOpenSubgroupId(open ? subgroup.id : null)} /><TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroupInputValue} onChangeText={(value) => setSubgroupNameDrafts((current) => ({ ...current, [subgroup.id]: normalizeSubgroupNameDraft(value) }))} onBlur={commitSubgroupDraft} onSubmitEditing={commitSubgroupDraft} returnKeyType="done" multiline={false} style={styles.subgroupNameInput} /><DifficultySelect value={subgroup.difficulty} onChange={(difficulty) => onChangeDifficulty(groupId, subgroup.id, difficulty)} /><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 재단 여유치 설정`} onPress={() => { setAllowanceEditorId((current) => current === subgroup.id ? null : subgroup.id); setAllowanceDrafts((current) => ({ ...current, [subgroup.id]: allowanceSummary.kind === 'uniform' ? String(allowanceSummary.valueMm) : '' })); }} style={styles.allowanceBadge}><Text style={styles.allowanceBadgeText}>{allowanceSummary.kind === 'mixed' ? '여유 혼합' : `+${allowanceSummary.valueMm}`}</Text></TouchableOpacity><View style={styles.subgroupHeaderSpacer} /><NumericField compact label="개소" unit="개소" value={subgroup.siteCount === undefined ? '1' : String(subgroup.siteCount)} integer step={1} min={1} onChange={(value) => onChangeSiteCount(groupId, subgroup.id, value)} /><View accessibilityLabel={`${subgroup.name} 조각 총수 ${totalPieceQuantity}개`} style={styles.subgroupTotalBadge}><Text numberOfLines={1} style={styles.subgroupTotalText}>조각 총수 {totalPieceQuantity.toLocaleString('ko-KR')}개</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity></View>{allowanceEditorId === subgroup.id && <View style={styles.allowanceEditor}><Text style={styles.allowanceEditorLabel}>소그룹 전체 여유치</Text><NumericField compact label="재단 여유치" unit="mm" value={subgroupAllowance} step={10} min={0} onChange={(value) => setAllowanceDrafts((current) => ({ ...current, [subgroup.id]: value }))} /><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 전체 재단 여유치 적용`} onPress={() => confirmApply(`${subgroup.name} 소그룹 ${pieces.length}개 조각의 여유치를 ${subgroupAllowance || '0'}mm로 변경할까요?`, () => { onApplySubgroupAllowance(groupId, subgroup.id, subgroupAllowance); setAllowanceEditorId(null); })} style={styles.allowanceApplyButton}><Text style={styles.allowanceApplyButtonText}>소그룹 적용</Text></TouchableOpacity></View>}{isExpanded && <><View style={[styles.pieceRows, styles.dropdownRows]}>{pieces.map((piece, index) => renderPiece(group, subgroup.name, piece, index))}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(groupId, subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}</View>;
+        const overallDimensions = subgroup.overallDimensions ?? emptySubgroupOverallDimensions();
+        const roughDimensions = storedSubgroupOverallDimensions(overallDimensions);
+        const roughEstimate = calculateSubgroupRoughEstimate(roughDimensions, { siteCount: normalizeSubgroupSiteCount(subgroup.siteCount) });
+        const dimensionsExpanded = expandedDimensionSubgroups[subgroup.id] === true;
+        return <View key={subgroup.id} style={[styles.subgroupCard, { zIndex: cardLayer, elevation: cardLayer }]}>
+          <View style={[styles.subgroupHeader, styles.dropdownHeader]}>
+            <SubgroupGroupSelect options={groupOptions} value={groupId} onChange={(targetGroupId) => onMoveSubgroup(groupId, subgroup.id, targetGroupId)} onOpenChange={(open) => setOpenSubgroupId(open ? subgroup.id : null)} />
+            <TextInput accessibilityLabel={`${subgroup.name} 소그룹 이름`} value={subgroupInputValue} onChangeText={(value) => setSubgroupNameDrafts((current) => ({ ...current, [subgroup.id]: normalizeSubgroupNameDraft(value) }))} onBlur={commitSubgroupDraft} onSubmitEditing={commitSubgroupDraft} returnKeyType="done" multiline={false} style={styles.subgroupNameInput} />
+            <DifficultySelect value={subgroup.difficulty} onChange={(difficulty) => onChangeDifficulty(groupId, subgroup.id, difficulty)} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 재단 여유치 설정`} onPress={() => { setAllowanceEditorId((current) => current === subgroup.id ? null : subgroup.id); setAllowanceDrafts((current) => ({ ...current, [subgroup.id]: allowanceSummary.kind === 'uniform' ? String(allowanceSummary.valueMm) : '' })); }} style={styles.allowanceBadge}><Text style={styles.allowanceBadgeText}>{allowanceSummary.kind === 'mixed' ? '여유 혼합' : `+${allowanceSummary.valueMm}`}</Text></TouchableOpacity>
+            <View style={styles.subgroupHeaderSpacer} />
+            <NumericField compact label="개소" unit="개소" value={subgroup.siteCount === undefined ? '1' : String(subgroup.siteCount)} integer step={1} min={1} onChange={(value) => onChangeSiteCount(groupId, subgroup.id, value)} />
+            <View accessibilityLabel={`${subgroup.name} 조각 총수 ${totalPieceQuantity}개`} style={styles.subgroupTotalBadge}><Text numberOfLines={1} style={styles.subgroupTotalText}>조각 총수 {totalPieceQuantity.toLocaleString('ko-KR')}개</Text></View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={isExpanded ? `${subgroup.name} 접기` : `${subgroup.name} 펼치기`} onPress={() => setCollapsedSubgroups((current) => ({ ...current, [subgroup.id]: isExpanded }))} style={styles.subgroupToggle}><Text style={styles.subgroupToggleText}>{isExpanded ? '접기' : '펼치기'}</Text></TouchableOpacity>
+          </View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 전체 치수 ${dimensionsExpanded ? '접기' : '펼치기'}`} accessibilityState={{ expanded: dimensionsExpanded }} onPress={() => setExpandedDimensionSubgroups((current) => ({ ...current, [subgroup.id]: !dimensionsExpanded }))} style={styles.overallDimensionsToggle}>
+            <View><Text style={styles.overallDimensionsTitle}>전체 치수 · 개산견적</Text><Text style={styles.overallDimensionsSummary}>{roughEstimate.areaM2 > 0 ? `${roughEstimate.areaM2.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}m² · 문 ${roughDimensions.doorCount}개` : '가로·세로·깊이·문 개수 입력'}</Text></View><Text style={styles.overallDimensionsChevron}>{dimensionsExpanded ? '⌃' : '⌄'}</Text>
+          </TouchableOpacity>
+          {dimensionsExpanded && <View style={styles.overallDimensionsBody}>
+            <OverallDimensionField label="가로" unit="mm" value={String(overallDimensions.widthMm)} onChange={(value) => onChangeOverallDimensions(groupId, subgroup.id, 'widthMm', value)} />
+            <OverallDimensionField label="세로" unit="mm" value={String(overallDimensions.heightMm)} onChange={(value) => onChangeOverallDimensions(groupId, subgroup.id, 'heightMm', value)} />
+            <OverallDimensionField label="깊이" unit="mm" value={String(overallDimensions.depthMm)} onChange={(value) => onChangeOverallDimensions(groupId, subgroup.id, 'depthMm', value)} />
+            <OverallDimensionField label="문 개수" unit="개" value={String(overallDimensions.doorCount)} integer onChange={(value) => onChangeOverallDimensions(groupId, subgroup.id, 'doorCount', value)} />
+            <Text style={styles.overallDimensionsHint}>개산 면적은 전면＋양측면＋상·하면 기준이며 개소 수를 반영합니다.</Text>
+          </View>}
+          {allowanceEditorId === subgroup.id && <View style={styles.allowanceEditor}><Text style={styles.allowanceEditorLabel}>소그룹 전체 여유치</Text><NumericField compact label="재단 여유치" unit="mm" value={subgroupAllowance} step={10} min={0} onChange={(value) => setAllowanceDrafts((current) => ({ ...current, [subgroup.id]: value }))} /><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 전체 재단 여유치 적용`} onPress={() => confirmApply(`${subgroup.name} 소그룹 ${pieces.length}개 조각의 여유치를 ${subgroupAllowance || '0'}mm로 변경할까요?`, () => { onApplySubgroupAllowance(groupId, subgroup.id, subgroupAllowance); setAllowanceEditorId(null); })} style={styles.allowanceApplyButton}><Text style={styles.allowanceApplyButtonText}>소그룹 적용</Text></TouchableOpacity></View>}
+          {isExpanded && <><View style={[styles.pieceRows, styles.dropdownRows]}>{pieces.map((piece, index) => renderPiece(group, subgroup.name, piece, index))}</View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${subgroup.name} 조각 추가`} onPress={() => onAdd(groupId, subgroup.id)} style={styles.addPieceBottomButton}><Text style={styles.addPieceButtonText}>＋ 조각 추가</Text></TouchableOpacity></>}
+        </View>;
       }))}
   </View>;
 }
@@ -1165,6 +1212,9 @@ function SubgroupGroupSelect({ options, value, onChange, onOpenChange }: { optio
 function DifficultySelect({ value, onChange }: { value?: ConstructionDifficulty; onChange(value: ConstructionDifficulty): void }) {
   const current = normalizeDifficulty(value);
   return <View style={styles.difficultySelect} accessibilityLabel="소그룹 시공 난이도 선택"><Text style={styles.difficultyLabel}>난이도</Text>{(['low', 'medium', 'high'] as const).map((difficulty) => <TouchableOpacity key={difficulty} accessibilityRole="button" accessibilityState={{ selected: current === difficulty }} accessibilityLabel={`난이도 ${difficulty === 'low' ? '하' : difficulty === 'high' ? '상' : '중'}`} onPress={() => onChange(difficulty)} style={[styles.difficultyOption, current === difficulty && styles.difficultyOptionActive]}><Text style={[styles.difficultyOptionText, current === difficulty && styles.difficultyOptionTextActive]}>{difficulty === 'low' ? '하' : difficulty === 'high' ? '상' : '중'}</Text></TouchableOpacity>)}</View>;
+}
+function OverallDimensionField({ label, unit, value, onChange, integer = false }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean }) {
+  return <View style={styles.overallDimensionField}><Text style={styles.overallDimensionLabel}>{label}</Text><View style={styles.overallDimensionInputWrap}><TextInput accessibilityLabel={`소그룹 전체 ${label}`} inputMode="decimal" keyboardType="numeric" selectTextOnFocus value={value} onChangeText={(text) => onChange(text.replace(integer ? /[^0-9]/g : /[^0-9.]/g, ''))} style={styles.overallDimensionInput} /><Text style={styles.overallDimensionUnit}>{unit}</Text></View></View>;
 }
 function NumericField({ label, unit, value, onChange, integer = false, step = 1, min = 0, compact = false }: { label: string; unit: string; value: string; onChange(value: string): void; integer?: boolean; step?: number; min?: number; compact?: boolean }) {
   const adjust = (direction: -1 | 1) => { const current = Number(value); const base = Number.isFinite(current) ? current : min; onChange(String(Math.max(min, base + direction * step))); };
@@ -1293,6 +1343,7 @@ const styles = StyleSheet.create({
   productionSettingsCard: { marginTop: 18, borderRadius: 12, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#f8fbff', overflow: 'hidden' }, productionSettingsHeader: { minHeight: 58, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14 }, productionSettingsTitle: { fontSize: 13, fontWeight: '900', color: '#1e3a8a' }, productionSettingsHint: { marginTop: 3, fontSize: 10, color: '#64748b' }, productionSettingsToggle: { fontSize: 20, color: '#2563eb' }, productionSettingsBody: { paddingHorizontal: 10, paddingBottom: 10 },
   pieceHeaderCopy: { flex: 1, minWidth: 0 }, pieceHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: 5 }, addSubgroupButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#0f766e' }, addSubgroupButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, collapseButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, collapseButtonText: { fontSize: 10, fontWeight: '800', color: '#475569' }, subgroupCard: { position: 'relative', overflow: 'visible', marginTop: 10, padding: 8, borderRadius: 10, borderWidth: 1, borderColor: '#cbd5e1', backgroundColor: '#f8fafc' }, subgroupHeader: { width: '100%', minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: 6 }, subgroupHeaderSpacer: { flex: 1, minWidth: 0 }, subgroupNameInput: { flexGrow: 1, flexShrink: 1, flexBasis: 100, minWidth: 42, minHeight: 32, paddingHorizontal: 8, borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#fff', fontSize: 12, fontWeight: '800', color: '#115e59' }, subgroupTotalBadge: { minWidth: 0, maxWidth: 88, flexShrink: 1, minHeight: 26, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#ecfdf5' }, subgroupTotalText: { fontSize: 9, fontWeight: '900', color: '#047857' }, subgroupGroupSelectWrap: { position: 'relative', zIndex: 20 }, subgroupGroupSelect: { minHeight: 30, flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, borderWidth: 1, borderColor: '#93c5fd', borderRadius: 6, backgroundColor: '#eff6ff' }, subgroupGroupSelectText: { fontSize: 9, fontWeight: '800', color: '#1d4ed8' }, subgroupGroupSelectChevron: { fontSize: 11, color: '#2563eb' }, subgroupGroupOptions: { position: 'absolute', top: 33, left: 0, minWidth: 85, overflow: 'hidden', borderWidth: 1, borderColor: '#93c5fd', borderRadius: 7, backgroundColor: '#fff', ...shadow }, subgroupGroupOption: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderBottomWidth: 1, borderBottomColor: '#eff6ff' }, subgroupGroupOptionActive: { backgroundColor: '#dbeafe' }, subgroupGroupOptionText: { fontSize: 10, color: '#475569' }, subgroupGroupOptionTextActive: { fontWeight: '800', color: '#1d4ed8' }, difficultySelect: { flexShrink: 0, flexDirection: 'row', alignItems: 'center', gap: 2 }, difficultyLabel: { fontSize: 8, color: '#64748b' }, difficultyOption: { minWidth: 20, minHeight: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 5, backgroundColor: '#fff' }, difficultyOptionActive: { borderColor: '#f59e0b', backgroundColor: '#fffbeb' }, difficultyOptionText: { fontSize: 9, fontWeight: '700', color: '#64748b' }, difficultyOptionTextActive: { color: '#b45309', fontWeight: '900' }, subgroupMeta: { fontSize: 10, color: '#64748b' }, subgroupToggle: { minHeight: 30, flexShrink: 0, justifyContent: 'center', paddingHorizontal: 7, borderRadius: 6, backgroundColor: '#e2e8f0' }, subgroupToggleText: { fontSize: 9, fontWeight: '800', color: '#475569' }, emptySubgroup: { marginTop: 10, padding: 16, alignItems: 'center', borderRadius: 9, backgroundColor: '#f8fafc' }, emptySubgroupText: { fontSize: 11, color: '#64748b' },
   globalAllowanceRow: { marginTop: 10, flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 8, backgroundColor: '#f0fdfa' }, allowanceEditor: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 7, borderTopWidth: 1, borderTopColor: '#ccfbf1', backgroundColor: '#f0fdfa' }, allowanceEditorLabel: { fontSize: 10, fontWeight: '800', color: '#115e59' }, allowanceBadge: { minHeight: 28, minWidth: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5, borderRadius: 6, backgroundColor: '#ccfbf1' }, allowanceBadgeText: { fontSize: 9, fontWeight: '900', color: '#0f766e' }, allowanceApplyButton: { minHeight: 30, flexShrink: 0, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 9, borderRadius: 6, backgroundColor: '#0f766e' }, allowanceApplyButtonText: { fontSize: 9, fontWeight: '900', color: '#fff' },
+  overallDimensionsToggle: { minHeight: 42, marginTop: 7, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderRadius: 8, backgroundColor: '#f0f9ff' }, overallDimensionsTitle: { fontSize: 10, fontWeight: '900', color: '#0c4a6e' }, overallDimensionsSummary: { marginTop: 2, fontSize: 9, color: '#64748b' }, overallDimensionsChevron: { fontSize: 16, fontWeight: '800', color: '#0284c7' }, overallDimensionsBody: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, padding: 9, borderBottomLeftRadius: 8, borderBottomRightRadius: 8, backgroundColor: '#f0f9ff' }, overallDimensionField: { flexGrow: 1, flexBasis: 105, minWidth: 92 }, overallDimensionLabel: { marginBottom: 3, fontSize: 9, fontWeight: '800', color: '#475569' }, overallDimensionInputWrap: { height: 34, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: '#bae6fd', borderRadius: 7, backgroundColor: '#fff' }, overallDimensionInput: { flex: 1, minWidth: 0, height: 32, paddingHorizontal: 8, textAlign: 'right', fontSize: 11, fontWeight: '800', color: '#0f172a' }, overallDimensionUnit: { paddingRight: 7, fontSize: 9, color: '#64748b' }, overallDimensionsHint: { width: '100%', fontSize: 9, lineHeight: 14, color: '#0369a1' },
   groupRows: { gap: 6, marginTop: 10, overflow: 'visible' }, groupRow: { position: 'relative', overflow: 'visible', minHeight: 46, flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 6, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, groupRowActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, groupRowSelect: { flex: 1, minWidth: 48, minHeight: 42, flexDirection: 'row', alignItems: 'center', gap: 5 }, compactBrandField: { width: 82, flexGrow: 0, flexShrink: 0, position: 'relative', zIndex: 30 }, compactSelectButton: { minHeight: 32, paddingHorizontal: 7, borderRadius: 6 }, compactOptionList: { position: 'absolute', top: 38, left: 0, right: 0, marginTop: 0, zIndex: 100 }, groupProductInput: { width: 130, minWidth: 88, height: 32, flexShrink: 1, paddingHorizontal: 8, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 6, fontSize: 10, fontWeight: '700', color: '#0f172a', backgroundColor: '#fff' }, patternFixedControl: { width: 58, flexShrink: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }, patternFixedLabel: { fontSize: 9, fontWeight: '800', color: '#475569' }, groupRowAction: { width: 24, height: 38, flexShrink: 0, alignItems: 'center', justifyContent: 'center' }, addPieceBottomButton: { minHeight: 38, alignItems: 'center', justifyContent: 'center', marginTop: 8, borderRadius: 8, backgroundColor: '#0f766e' },
   mergedPreviewNotice: { flex: 1, minHeight: 360, marginTop: 14, padding: 18, alignItems: 'center', justifyContent: 'center', borderRadius: 12, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, mergedPreviewNoticeTitle: { fontSize: 16, fontWeight: '900', color: '#115e59', textAlign: 'center' }, mergedPreviewNoticeText: { maxWidth: 420, marginTop: 8, fontSize: 12, lineHeight: 19, color: '#0f766e', textAlign: 'center' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, pageContent: { width: '100%', maxWidth: 1400, alignSelf: 'center', paddingHorizontal: 20, paddingTop: 32, paddingBottom: 72 }, pageContentSmall: { paddingHorizontal: 12, paddingTop: 20 },
