@@ -256,6 +256,22 @@ describe('library repository', () => {
     expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-3']);
   });
 
+  it('preserves explicit allowance metadata while keeping legacy jobs valid', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    await repository.saveBatchJobs([
+      job(1),
+      job(2, { input: { ...job(2).input, pieceWidthMm: 110, pieceLengthMm: 210, sourcePieceWidthMm: 100, sourcePieceLengthMm: 200, cutAllowanceMm: 10 } }),
+    ], []);
+
+    const loaded = await repository.load();
+    expect(loaded.document.jobs.find((item) => item.id === 'job-1')?.input.cutAllowanceMm).toBeUndefined();
+    expect(loaded.document.jobs.find((item) => item.id === 'job-2')?.input).toMatchObject({
+      sourcePieceWidthMm: 100,
+      sourcePieceLengthMm: 200,
+      cutAllowanceMm: 10,
+    });
+  });
+
   it('exports and imports one project bundle while replacing the existing project records', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     const first = job(1, { name: '현장 A · 기존 조각' });

@@ -4,7 +4,7 @@ import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 export type SubgroupCard = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string };
 export type SubgroupCardGroup = { id: string; displayId: string; subgroups: SubgroupCard[] };
 export type IndependentSubgroupCard = { groupId: string; groupDisplayId: string; subgroup: SubgroupCard };
-export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이 mm · 수량 개';
+export const PIECE_INPUT_UNIT_HINT = '단위: 폭·길이·재단 여유치 mm · 수량 개';
 
 /** Keeps subgroup assignment controls compact by showing the display ID only. */
 export function subgroupGroupSelectLabel(displayId: string): string {
@@ -15,7 +15,7 @@ export function subgroupGroupSelectLabel(displayId: string): string {
 export function compactFieldAffixes(label: string, unit: string): { label: string; unit: string } {
   if (label === '개소') return { label: '', unit };
   return {
-    label: label === '재단 폭' ? '폭' : label === '재단 길이' ? '길이' : '수량',
+    label: label === '재단 폭' ? '폭' : label === '재단 길이' ? '길이' : label === '재단 여유치' ? '' : '수량',
     unit: '',
   };
 }

@@ -1,6 +1,7 @@
 import type { RemnantPlan, RemnantPlanRequest } from '../remnants/planWithRemnants';
 import type { FilmRemnant, SavedCuttingJob } from './models';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
+import { cutAllowanceDimensions } from '../cutting/cutAllowance';
 
 
 export type CuttingFormState = {
@@ -9,6 +10,7 @@ export type CuttingFormState = {
   rollWidth: string;
   pieceWidth: string;
   pieceLength: string;
+  cutAllowance?: string;
   quantity: string;
   gap: string;
   sideMargin: string;
@@ -27,12 +29,18 @@ export function toRemnantPlanRequest(
   form: CuttingFormState,
   remnants: readonly FilmRemnant[],
 ): RemnantPlanRequest {
+  const dimensions = cutAllowanceDimensions(form.pieceWidth, form.pieceLength, form.cutAllowance);
   return {
     brand: requiredIdentifier(form.brand, '브랜드'),
     productNumber: form.productNumber.trim(),
     rollWidthMm: Number(form.rollWidth),
-    pieceWidthMm: Number(form.pieceWidth),
-    pieceLengthMm: Number(form.pieceLength),
+    pieceWidthMm: dimensions.pieceWidthMm,
+    pieceLengthMm: dimensions.pieceLengthMm,
+    ...(form.cutAllowance === undefined ? {} : {
+      sourcePieceWidthMm: dimensions.sourcePieceWidthMm,
+      sourcePieceLengthMm: dimensions.sourcePieceLengthMm,
+      cutAllowanceMm: dimensions.cutAllowanceMm,
+    }),
     quantity: Number(form.quantity),
     gapMm: Number(form.gap),
     sideMarginMm: Number(form.sideMargin),
@@ -147,6 +155,9 @@ export function buildSavedCuttingJob({
       rollWidthMm: request.rollWidthMm,
       pieceWidthMm: request.pieceWidthMm,
       pieceLengthMm: request.pieceLengthMm,
+      ...(request.sourcePieceWidthMm === undefined ? {} : { sourcePieceWidthMm: request.sourcePieceWidthMm }),
+      ...(request.sourcePieceLengthMm === undefined ? {} : { sourcePieceLengthMm: request.sourcePieceLengthMm }),
+      ...(request.cutAllowanceMm === undefined ? {} : { cutAllowanceMm: request.cutAllowanceMm }),
       quantity: request.quantity,
       gapMm: request.gapMm,
       sideMarginMm: request.sideMarginMm,

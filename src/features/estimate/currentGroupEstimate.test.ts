@@ -93,4 +93,20 @@ describe('current group estimate', () => {
     expect(result.jobs[0]?.siteCount).toBe(3);
     expect(result.jobs[0]?.result.producedQuantity).toBeGreaterThanOrEqual(6);
   });
+
+  it('applies the saved piece allowance to placement and estimate inputs', () => {
+    const snapshot = createCurrentEstimateSnapshot([{
+      id: 'g1', name: '그룹 1', pieces: [
+        { id: 'p1', name: 'p1', form: { ...form('100', '200'), cutAllowance: '50' } },
+      ],
+    }]);
+    const result = calculateCurrentGroupEstimate(snapshot);
+    expect(result.jobs[0]?.input).toMatchObject({
+      sourcePieceWidthMm: 100,
+      sourcePieceLengthMm: 200,
+      cutAllowanceMm: 50,
+      pieceWidthMm: 150,
+      pieceLengthMm: 250,
+    });
+  });
 });

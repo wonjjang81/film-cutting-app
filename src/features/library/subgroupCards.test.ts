@@ -83,7 +83,8 @@ describe('subgroup card normalization', () => {
   });
 
   it('uses one unit hint for all compact piece fields', () => {
-    expect(PIECE_INPUT_UNIT_HINT).toBe('단위: 폭·길이 mm · 수량 개');
+    expect(PIECE_INPUT_UNIT_HINT).toBe('단위: 폭·길이·재단 여유치 mm · 수량 개');
+    expect(compactFieldAffixes('재단 여유치', 'mm')).toEqual({ label: '', unit: '' });
   });
 
   it('shows only the numeric big-group ID in a subgroup selector', () => {

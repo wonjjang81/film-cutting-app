@@ -1,4 +1,4 @@
-import { buildSavedCuttingJob } from '../library/uiWorkflowHelpers';
+import { buildSavedCuttingJob, toRemnantPlanRequest } from '../library/uiWorkflowHelpers';
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
@@ -51,6 +51,7 @@ function optionalCost(value: string | undefined): number | undefined {
 export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRequest[] {
   return snapshot.pieces.flatMap((group) => group.pieces.map((piece) => {
     const subgroup = group.subgroups?.find((candidate) => candidate.pieceIds.includes(piece.id));
+    const request = toRemnantPlanRequest({ ...piece.form, rollWidth: '1220' }, []);
     return ({
     groupId: group.id,
     groupName: group.name,
@@ -64,17 +65,8 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     materialCostPerM: optionalCost(group.materialCostPerM),
     constructionCostPerM2: optionalCost(group.constructionCostPerM2),
     request: {
-      brand: piece.form.brand,
-      productNumber: piece.form.productNumber,
-      rollWidthMm: 1_220,
-      pieceWidthMm: Number(piece.form.pieceWidth),
-      pieceLengthMm: Number(piece.form.pieceLength),
+      ...request,
       quantity: multiplyPieceQuantityBySiteCount(Number(piece.form.quantity), subgroup?.siteCount),
-      gapMm: Number(piece.form.gap),
-      sideMarginMm: Number(piece.form.sideMargin),
-      startEndMarginMm: Number(piece.form.startEndMargin),
-      allowRotation: piece.form.allowRotation,
-      remnants: [],
     },
     });
   }));

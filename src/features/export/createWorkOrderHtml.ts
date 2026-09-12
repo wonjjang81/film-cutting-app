@@ -64,6 +64,8 @@ figcaption { font-weight: 700; margin-bottom: 6px; } .legend { border-left: 4px 
 ${row('브랜드', escapeHtml(job.brand))}
 ${row('제품 번호', escapeHtml(job.productNumber))}
 ${row('원단 폭', dimension(job.input.rollWidthMm))}
+${job.input.cutAllowanceMm === undefined ? '' : row('입력 크기', `${dimension(job.input.sourcePieceWidthMm ?? job.input.pieceWidthMm)} × ${dimension(job.input.sourcePieceLengthMm ?? job.input.pieceLengthMm)}`)}
+${job.input.cutAllowanceMm === undefined ? '' : row('재단 여유치', dimension(job.input.cutAllowanceMm))}
 ${row('제품 크기', `${dimension(job.input.pieceWidthMm)} × ${dimension(job.input.pieceLengthMm)}`)}
 ${row('요청 수량', formatNumber(job.input.quantity))}
 ${row('간격', dimension(job.input.gapMm))}
