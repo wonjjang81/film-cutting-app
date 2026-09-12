@@ -22,6 +22,9 @@ export type RemnantPlanRequest = ContinuousRollInput & {
   brand: string;
   productNumber: string;
   remnants: FilmRemnant[];
+  sourcePieceWidthMm?: number;
+  sourcePieceLengthMm?: number;
+  cutAllowanceMm?: number;
 };
 
 export type RemnantUse = {
@@ -77,7 +80,7 @@ function usableRemnant(remnant: FilmRemnant): boolean {
 }
 
 function rollInput(request: RemnantPlanRequest, quantity: number, remnant?: FilmRemnant): ContinuousRollInput {
-  const { brand: _brand, productNumber: _productNumber, remnants: _remnants, maxLengthMm: _maxLengthMm, ...input } = request;
+  const { brand: _brand, productNumber: _productNumber, remnants: _remnants, maxLengthMm: _maxLengthMm, sourcePieceWidthMm: _sourceWidth, sourcePieceLengthMm: _sourceLength, cutAllowanceMm: _allowance, ...input } = request;
   return {
     ...input,
     quantity,

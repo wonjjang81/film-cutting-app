@@ -58,6 +58,16 @@ describe('toRemnantPlanRequest', () => {
   it('allows a blank product number for placement requests', () => {
     expect(toRemnantPlanRequest({ ...form, productNumber: '  ' }, [])).toMatchObject({ brand: 'Film Co', productNumber: '' });
   });
+
+  it('uses allowance-inclusive dimensions and preserves their source metadata', () => {
+    expect(toRemnantPlanRequest({ ...form, cutAllowance: '50' }, [])).toMatchObject({
+      pieceWidthMm: 110,
+      pieceLengthMm: 90,
+      sourcePieceWidthMm: 60,
+      sourcePieceLengthMm: 40,
+      cutAllowanceMm: 50,
+    });
+  });
 });
 
 describe('createUniqueUiId', () => {
@@ -123,5 +133,20 @@ describe('buildSavedCuttingJob', () => {
     expect(buildSavedCuttingJob({
       id: 'job-2', name: '자투리 작업', createdAt: timestamp, request, plan, inventory: [remnant],
     }).result).toMatchObject({ newRollLengthMm: 0, producedQuantity: 1, overproduction: 0 });
+  });
+
+  it('stores source dimensions and an explicit allowance for future restoration', () => {
+    const request = toRemnantPlanRequest({ ...form, cutAllowance: '10' }, []);
+    const job = buildSavedCuttingJob({
+      id: 'job-allowance', name: '여유치 작업', createdAt: timestamp,
+      request, plan: planWithRemnants(request), inventory: [],
+    });
+    expect(job.input).toMatchObject({
+      pieceWidthMm: 70,
+      pieceLengthMm: 50,
+      sourcePieceWidthMm: 60,
+      sourcePieceLengthMm: 40,
+      cutAllowanceMm: 10,
+    });
   });
 });

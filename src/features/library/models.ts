@@ -8,6 +8,9 @@ export type FilmPreset = {
   rollWidthMm: number;
   pieceWidthMm: number;
   pieceLengthMm: number;
+  sourcePieceWidthMm?: number;
+  sourcePieceLengthMm?: number;
+  cutAllowanceMm?: number;
   gapMm: number;
   sideMarginMm: number;
   startEndMarginMm: number;
@@ -33,6 +36,9 @@ export type SavedContinuousRollInput = {
   rollWidthMm: number;
   pieceWidthMm: number;
   pieceLengthMm: number;
+  sourcePieceWidthMm?: number;
+  sourcePieceLengthMm?: number;
+  cutAllowanceMm?: number;
   quantity: number;
   gapMm: number;
   sideMarginMm: number;

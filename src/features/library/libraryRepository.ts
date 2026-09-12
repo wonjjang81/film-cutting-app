@@ -128,6 +128,9 @@ function validateInput(value: unknown): SavedContinuousRollInput | undefined {
     || !finitePositive(value.rollWidthMm)
     || !finitePositive(value.pieceWidthMm)
     || !finitePositive(value.pieceLengthMm)
+    || (value.sourcePieceWidthMm !== undefined && !finiteNonnegative(value.sourcePieceWidthMm))
+    || (value.sourcePieceLengthMm !== undefined && !finiteNonnegative(value.sourcePieceLengthMm))
+    || (value.cutAllowanceMm !== undefined && !finiteNonnegative(value.cutAllowanceMm))
     || !positiveInteger(value.quantity)
     || !finiteNonnegative(value.gapMm)
     || !finiteNonnegative(value.sideMarginMm)
@@ -143,6 +146,9 @@ function validateInput(value: unknown): SavedContinuousRollInput | undefined {
     sideMarginMm: value.sideMarginMm,
     startEndMarginMm: value.startEndMarginMm,
     allowRotation: value.allowRotation,
+    ...(value.sourcePieceWidthMm === undefined ? {} : { sourcePieceWidthMm: Number(value.sourcePieceWidthMm) }),
+    ...(value.sourcePieceLengthMm === undefined ? {} : { sourcePieceLengthMm: Number(value.sourcePieceLengthMm) }),
+    ...(value.cutAllowanceMm === undefined ? {} : { cutAllowanceMm: Number(value.cutAllowanceMm) }),
     ...(value.maxLengthMm === undefined ? {} : { maxLengthMm: value.maxLengthMm }),
   };
 }
@@ -187,6 +193,9 @@ function validatePreset(value: unknown): FilmPreset | undefined {
     || !finitePositive(value.rollWidthMm)
     || !finitePositive(value.pieceWidthMm)
     || !finitePositive(value.pieceLengthMm)
+    || (value.sourcePieceWidthMm !== undefined && !finiteNonnegative(value.sourcePieceWidthMm))
+    || (value.sourcePieceLengthMm !== undefined && !finiteNonnegative(value.sourcePieceLengthMm))
+    || (value.cutAllowanceMm !== undefined && !finiteNonnegative(value.cutAllowanceMm))
     || !finiteNonnegative(value.gapMm)
     || !finiteNonnegative(value.sideMarginMm)
     || !finiteNonnegative(value.startEndMarginMm)
@@ -196,6 +205,9 @@ function validatePreset(value: unknown): FilmPreset | undefined {
   return {
     id: value.id, brand: value.brand, productNumber: value.productNumber,
     rollWidthMm: value.rollWidthMm, pieceWidthMm: value.pieceWidthMm, pieceLengthMm: value.pieceLengthMm,
+    ...(value.sourcePieceWidthMm === undefined ? {} : { sourcePieceWidthMm: Number(value.sourcePieceWidthMm) }),
+    ...(value.sourcePieceLengthMm === undefined ? {} : { sourcePieceLengthMm: Number(value.sourcePieceLengthMm) }),
+    ...(value.cutAllowanceMm === undefined ? {} : { cutAllowanceMm: Number(value.cutAllowanceMm) }),
     gapMm: value.gapMm, sideMarginMm: value.sideMarginMm, startEndMarginMm: value.startEndMarginMm,
     allowRotation: value.allowRotation, createdAt, updatedAt,
   };

@@ -36,6 +36,11 @@ export function createCsv(job: SavedCuttingJob): string {
   const rows: Array<[string, string, boolean?]> = [
     ['항목', '값'], ['작업 ID', job.id, true], ['작업명', job.name, true], ['생성 시각', job.createdAt, true],
     ['브랜드', job.brand, true], ['제품 번호', job.productNumber, true],
+    ...(job.input.cutAllowanceMm === undefined ? [] : [
+      ['입력 폭 (mm)', formatNumber(job.input.sourcePieceWidthMm ?? job.input.pieceWidthMm)],
+      ['입력 길이 (mm)', formatNumber(job.input.sourcePieceLengthMm ?? job.input.pieceLengthMm)],
+      ['재단 여유치 (mm)', formatNumber(job.input.cutAllowanceMm)],
+    ] as Array<[string, string, boolean?]>),
     ['원단 폭 (mm)', formatNumber(job.input.rollWidthMm)], ['제품 폭 (mm)', formatNumber(job.input.pieceWidthMm)],
     ['제품 길이 (mm)', formatNumber(job.input.pieceLengthMm)], ['요청 수량', formatNumber(job.input.quantity)],
     ['간격 (mm)', formatNumber(job.input.gapMm)], ['좌우 여백 (mm)', formatNumber(job.input.sideMarginMm)],
