@@ -56,6 +56,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
     : [];
   const gridXPositions = gridLinePositions(rollWidthMm);
   const gridYPositions = gridLinePositions(displayLengthMm);
+  const majorLengthGridPositions = gridLinePositions(displayLengthMm, 1_000);
   const gridStrokeWidth = Math.max(1, rollWidthMm / 900);
 
   return (
@@ -82,6 +83,9 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           <G accessibilityLabel="100mm 모눈">
             {gridXPositions.map((x) => <Line key={`grid-x-${x}`} x1={x} y1={0} x2={x} y2={displayLengthMm} stroke="#94a3b8" strokeWidth={gridStrokeWidth} strokeDasharray="10 10" opacity={0.35} />)}
             {gridYPositions.map((y) => <Line key={`grid-y-${y}`} x1={0} y1={y} x2={rollWidthMm} y2={y} stroke="#94a3b8" strokeWidth={gridStrokeWidth} strokeDasharray="10 10" opacity={0.35} />)}
+          </G>
+          <G accessibilityLabel="1000mm 길이 기준선">
+            {majorLengthGridPositions.map((y) => <Line key={`grid-major-y-${y}`} x1={0} y1={y} x2={rollWidthMm} y2={y} stroke="#64748b" strokeWidth={Math.max(gridStrokeWidth * 2.4, 2.8)} strokeDasharray="18 8" opacity={0.62} />)}
           </G>
           {(horizontalMarginMm > 0 || verticalMarginMm > 0) && (
             <Rect x={horizontalMarginMm} y={verticalMarginMm} width={rollWidthMm - horizontalMarginMm * 2} height={displayLengthMm - verticalMarginMm * 2}

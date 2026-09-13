@@ -46,10 +46,12 @@ describe('createLayoutSvgMarkup', () => {
   });
 
   it('adds printable dimensions and a 100mm grid when requested', () => {
-    const svg = createLayoutSvgMarkup({ result, rollWidthMm: 100, displayLengthMm: result.usedLengthMm, showDimensions: true, gridIntervalMm: 100 });
+    const svg = createLayoutSvgMarkup({ result, rollWidthMm: 100, displayLengthMm: 2_100, showDimensions: true, gridIntervalMm: 100 });
 
     expect(svg).toContain('#1');
     expect(svg).toContain('60×40 mm');
     expect(svg).toContain('stroke-dasharray="8 8"');
+    expect(svg.match(/data-grid="major-length"/g)).toHaveLength(2);
+    expect(svg).not.toContain('data-grid="major-width"');
   });
 });

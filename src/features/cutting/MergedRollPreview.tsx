@@ -45,12 +45,16 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const gridXPositions = gridLinePositions(1220);
   const gridYPositions = gridLinePositions(safeLength);
+  const majorLengthGridPositions = gridLinePositions(safeLength, 1_000);
   const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
     <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
       <Rect x={0} y={0} width={1220} height={safeLength} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
       <G accessibilityLabel="100mm 모눈">
         {gridXPositions.map((x) => <Line key={`grid-x-${x}`} x1={x} y1={0} x2={x} y2={safeLength} stroke="#94a3b8" strokeWidth={1.35} strokeDasharray="10 10" opacity={0.35} />)}
         {gridYPositions.map((y) => <Line key={`grid-y-${y}`} x1={0} y1={y} x2={1220} y2={y} stroke="#94a3b8" strokeWidth={1.35} strokeDasharray="10 10" opacity={0.35} />)}
+      </G>
+      <G accessibilityLabel="1000mm 길이 기준선">
+        {majorLengthGridPositions.map((y) => <Line key={`grid-major-y-${y}`} x1={0} y1={y} x2={1220} y2={y} stroke="#64748b" strokeWidth={3.2} strokeDasharray="18 8" opacity={0.62} />)}
       </G>
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
