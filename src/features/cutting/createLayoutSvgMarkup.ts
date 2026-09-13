@@ -1,12 +1,17 @@
-import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
+type PrintableLayoutResult = {
+  placements: readonly { id: number; x: number; y: number; width: number; height: number; rotated: boolean }[];
+  rowSequence?: readonly { endY: number; pattern: string }[];
+};
 
 export type LayoutSvgOptions = {
-  result: ContinuousRollResult;
+  result: PrintableLayoutResult;
   rollWidthMm: number;
   displayLengthMm: number;
   sideMarginMm?: number;
   startEndMarginMm?: number;
   ariaLabel?: string;
+  showDimensions?: boolean;
+  gridIntervalMm?: number;
 };
 
 function escapeXml(value: string): string {
@@ -34,6 +39,8 @@ export function createLayoutSvgMarkup({
   sideMarginMm = 0,
   startEndMarginMm = 0,
   ariaLabel = '필름 자동배치 도면',
+  showDimensions = false,
+  gridIntervalMm,
 }: LayoutSvgOptions): string {
   if (!Number.isFinite(rollWidthMm) || rollWidthMm <= 0
     || !Number.isFinite(displayLengthMm) || displayLengthMm <= 0
@@ -46,7 +53,10 @@ export function createLayoutSvgMarkup({
   const margin = sideMarginMm > 0 || startEndMarginMm > 0
     ? `<rect x="${numeric(sideMarginMm)}" y="${numeric(startEndMarginMm)}" width="${numeric(rollWidthMm - sideMarginMm * 2)}" height="${numeric(displayLengthMm - startEndMarginMm * 2)}" fill="none" stroke="#f59e0b" stroke-dasharray="8 5" stroke-width="${numeric(Math.max(1, rollWidthMm / 500))}" />`
     : '';
-  const separators = result.rowSequence
+  const grid = Number.isFinite(gridIntervalMm) && gridIntervalMm! > 0
+    ? `<g opacity="0.35">${Array.from({ length: Math.floor(rollWidthMm / gridIntervalMm!) }, (_, index) => (index + 1) * gridIntervalMm!).map((position) => `<line x1="${numeric(position)}" y1="0" x2="${numeric(position)}" y2="${numeric(displayLengthMm)}" stroke="#94a3b8" stroke-width="${numeric(strokeWidth * 0.65)}" stroke-dasharray="8 8" />`).join('')}${Array.from({ length: Math.floor(displayLengthMm / gridIntervalMm!) }, (_, index) => (index + 1) * gridIntervalMm!).map((position) => `<line x1="0" y1="${numeric(position)}" x2="${numeric(rollWidthMm)}" y2="${numeric(position)}" stroke="#94a3b8" stroke-width="${numeric(strokeWidth * 0.65)}" stroke-dasharray="8 8" />`).join('')}</g>`
+    : '';
+  const separators = (result.rowSequence ?? [])
     .filter((row) => Number.isFinite(row.endY) && row.endY >= 0 && row.endY <= displayLengthMm)
     .map((row) => `<g><rect x="${numeric(sideMarginMm)}" y="${numeric(row.endY)}" width="${numeric(rollWidthMm - sideMarginMm * 2)}" height="${numeric(Math.max(0.6, rollWidthMm / 1000))}" fill="#94a3b8" opacity="0.7" /><text x="${numeric(rollWidthMm - sideMarginMm)}" y="${numeric(Math.max(0, row.endY - 2))}" text-anchor="end" font-size="${numeric(Math.max(7, fontSize * 0.7))}" fill="#64748b">${escapeXml(row.pattern)}</text></g>`)
     .join('');
@@ -66,9 +76,13 @@ export function createLayoutSvgMarkup({
       const fill = placement.rotated ? '#ccfbf1' : '#dbeafe';
       const stroke = placement.rotated ? '#0f766e' : '#1d4ed8';
       const textFill = placement.rotated ? '#115e59' : '#1e3a8a';
-      return `<g aria-label="제품 ${numeric(placement.id)} · ${direction}"><rect x="${numeric(placement.x)}" y="${numeric(placement.y)}" width="${numeric(placement.width)}" height="${numeric(placement.height)}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="${numeric(strokeWidth)}" /><text x="${numeric(placement.x + placement.width / 2)}" y="${numeric(placement.y + placement.height / 2 + fontSize / 3)}" text-anchor="middle" font-size="${numeric(fontSize)}" font-weight="700" fill="${textFill}">${numeric(placement.id)} · ${direction}</text></g>`;
+      const centerX = placement.x + placement.width / 2;
+      const centerY = placement.y + placement.height / 2;
+      const label = showDimensions ? `#${numeric(placement.id)}` : `${numeric(placement.id)} · ${direction}`;
+      const dimensionLabel = `${numeric(placement.width)}×${numeric(placement.height)} mm${placement.rotated ? ' · ↻' : ''}`;
+      return `<g aria-label="제품 ${numeric(placement.id)} · ${direction}"><rect x="${numeric(placement.x)}" y="${numeric(placement.y)}" width="${numeric(placement.width)}" height="${numeric(placement.height)}" rx="2" fill="${fill}" stroke="${stroke}" stroke-width="${numeric(strokeWidth)}" /><text x="${numeric(centerX)}" y="${numeric(centerY + (showDimensions ? -fontSize * 0.1 : fontSize / 3))}" text-anchor="middle" font-size="${numeric(fontSize)}" font-weight="700" fill="${textFill}">${label}</text>${showDimensions ? `<text x="${numeric(centerX)}" y="${numeric(centerY + fontSize * 1.05)}" text-anchor="middle" font-size="${numeric(Math.max(7, fontSize * 0.78))}" font-weight="600" fill="#334155">${dimensionLabel}</text>` : ''}</g>`;
     })
     .join('');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(ariaLabel)}" viewBox="0 0 ${numeric(rollWidthMm)} ${numeric(displayLengthMm)}" preserveAspectRatio="xMidYMin meet"><rect x="0" y="0" width="${numeric(rollWidthMm)}" height="${numeric(displayLengthMm)}" fill="#f8fafc" stroke="#334155" stroke-width="${numeric(Math.max(1, rollWidthMm / 350))}" rx="4" />${margin}${separators}${placements}</svg>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(ariaLabel)}" viewBox="0 0 ${numeric(rollWidthMm)} ${numeric(displayLengthMm)}" preserveAspectRatio="xMidYMin meet"><rect x="0" y="0" width="${numeric(rollWidthMm)}" height="${numeric(displayLengthMm)}" fill="#f8fafc" stroke="#334155" stroke-width="${numeric(Math.max(1, rollWidthMm / 350))}" rx="4" />${grid}${margin}${separators}${placements}</svg>`;
 }

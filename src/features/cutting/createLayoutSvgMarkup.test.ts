@@ -44,4 +44,12 @@ describe('createLayoutSvgMarkup', () => {
     expect(createLayoutSvgMarkup({ result, rollWidthMm: 0, displayLengthMm: 40 })).toBe('');
     expect(createLayoutSvgMarkup({ result, rollWidthMm: 100, displayLengthMm: Number.NaN })).toBe('');
   });
+
+  it('adds printable dimensions and a 100mm grid when requested', () => {
+    const svg = createLayoutSvgMarkup({ result, rollWidthMm: 100, displayLengthMm: result.usedLengthMm, showDimensions: true, gridIntervalMm: 100 });
+
+    expect(svg).toContain('#1');
+    expect(svg).toContain('60×40 mm');
+    expect(svg).toContain('stroke-dasharray="8 8"');
+  });
 });

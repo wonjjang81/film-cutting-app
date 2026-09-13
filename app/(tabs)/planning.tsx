@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
-import { RefreshCw, Scissors } from 'lucide-react-native';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import * as Sharing from 'expo-sharing';
+import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
+import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
+import { createPlanningPreviewHtml, type PlanningPreviewSection } from '../../src/features/export/createPlanningPreviewHtml';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import type { GroupedPiecePlan } from '../../src/features/remnants/planGroupedPieces';
@@ -20,7 +24,9 @@ export default function PlanningScreen() {
   const [currentPlan, setCurrentPlan] = useState<CurrentEstimatePlan>(emptyPlan);
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
   const [loading, setLoading] = useState(true);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pieceCompletionOverrides, setPieceCompletionOverrides] = useState<Record<string, number[]>>({});
   const [mergedCompletionOverrides, setMergedCompletionOverrides] = useState<Record<string, number[]>>({});
   const [collapsedPlacementLists, setCollapsedPlacementLists] = useState<Record<string, boolean>>({});
@@ -109,7 +115,8 @@ export default function PlanningScreen() {
     plan,
   })), [currentPlan.mergedPlans]);
   const activeMergedPlanKey = resolveActiveMergedPlanKey(mergedPlanTabs.map((tab) => tab.key), selectedMergedPlanKey);
-  const activeMergedPlan = mergedPlanTabs.find((tab) => tab.key === activeMergedPlanKey)?.plan;
+  const activeMergedTab = mergedPlanTabs.find((tab) => tab.key === activeMergedPlanKey);
+  const activeMergedPlan = activeMergedTab?.plan;
   useEffect(() => {
     if (selectedMergedPlanKey !== activeMergedPlanKey) setSelectedMergedPlanKey(activeMergedPlanKey);
   }, [activeMergedPlanKey, selectedMergedPlanKey]);
@@ -119,15 +126,53 @@ export default function PlanningScreen() {
   ], [currentPlan.mergedPlans, currentPlan.subgroupNamesBySourceId, independentPlans]);
   const allPlacementListsCollapsed = areAllPlacementListsCollapsed(placementListKeys, collapsedPlacementLists);
 
+  const exportPreviewPdf = useCallback(async () => {
+    setExportingPdf(true); setError(null); setNotice(null);
+    try {
+      const sections: PlanningPreviewSection[] = [];
+      if (activeMergedPlan) {
+        sections.push({
+          title: `${activeMergedTab?.label ?? '대그룹'} 병합 롤`,
+          detail: `원단 폭 1,220mm · 길이 ${Math.round(activeMergedPlan.result.usedLengthMm).toLocaleString()}mm · ${activeMergedPlan.result.placements.length}개 조각`,
+          layoutSvg: createLayoutSvgMarkup({ result: activeMergedPlan.result, rollWidthMm: 1_220, displayLengthMm: activeMergedPlan.result.usedLengthMm, showDimensions: true, gridIntervalMm: 100, ariaLabel: `${activeMergedTab?.label ?? '대그룹'} 병합 롤 배치 도면` }),
+        });
+      }
+      independentPlans.forEach((entry) => {
+        const result = entry.plan.newRollResult;
+        if (!result) return;
+        const sourceKey = `${entry.groupId}-${entry.pieceId}`;
+        const displayName = currentPlan.pieceNamesBySourceId[sourceKey] ?? entry.pieceName;
+        sections.push({
+          title: `${entry.groupName} · ${displayName}`,
+          detail: `원단 폭 ${entry.request.rollWidthMm.toLocaleString()}mm · 길이 ${Math.round(result.usedLengthMm).toLocaleString()}mm · ${result.placements.length}개 조각`,
+          layoutSvg: createLayoutSvgMarkup({ result, rollWidthMm: entry.request.rollWidthMm, displayLengthMm: result.usedLengthMm, sideMarginMm: entry.request.sideMarginMm, startEndMarginMm: entry.request.startEndMarginMm, showDimensions: true, gridIntervalMm: 100, ariaLabel: `${displayName} 배치 도면` }),
+        });
+      });
+      if (sections.length === 0) throw new Error('PDF로 내보낼 새 롤 배치 도면이 없습니다.');
+      const html = createPlanningPreviewHtml({ title: '필름 배치 미리보기', generatedAt: new Date().toLocaleString('ko-KR'), pieceCount, producedQuantity, newRollLengthMm: newRollLength, sections });
+      if (Platform.OS === 'web') {
+        await Print.printAsync({ html });
+      } else {
+        const file = await Print.printToFileAsync({ html });
+        if (!await Sharing.isAvailableAsync()) throw new Error('이 기기에서는 PDF 파일 공유를 사용할 수 없습니다.');
+        await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: '배치 미리보기 PDF 공유' });
+      }
+      setNotice('배치 미리보기 PDF를 준비했습니다.');
+    } catch (caught) {
+      setError(caught instanceof Error ? `PDF를 내보내지 못했습니다. ${caught.message}` : 'PDF를 내보내지 못했습니다.');
+    } finally { setExportingPdf(false); }
+  }, [activeMergedPlan, activeMergedTab?.label, currentPlan.pieceNamesBySourceId, independentPlans, newRollLength, pieceCount, producedQuantity]);
+
   return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
     <View style={styles.header}>
       <View style={styles.headerCopy}><Text style={styles.eyebrow}>BATCH PLANNING</Text><Text style={styles.title}>배치 계획</Text><Text style={styles.subtitle}>재단계산에서 입력·계산한 조각을 기준으로 배치 미리보기와 원단 사용 계획을 확인합니다.</Text></View>
       <View style={styles.headerActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 계획 새로고침" onPress={() => void refresh()} disabled={loading} style={[styles.refreshButton, loading && styles.disabled]}><RefreshCw color="#2563eb" size={15} /><Text style={styles.refreshText}>새로고침</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 계산으로 이동" onPress={() => router.push('/input')} style={styles.inputButton}><Scissors color="#fff" size={15} /><Text style={styles.inputButtonText}>재단 계산</Text></TouchableOpacity></View>
     </View>
     {error && <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
+    {notice && <View style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View>}
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>CUTTING RESULT</Text><Text style={styles.sectionTitle}>재단 결과 · 원단 사용 계획</Text></View><Text style={styles.summaryStatus}>재단계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>재단계산에서 저장된 결과를 기준으로 배치 도면과 배치목록을 확인합니다. 재단 완료·재고 확정은 재단계산 탭의 workflow에서 이어서 처리할 수 있습니다.</Text></View>
-      <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}><Text style={styles.sectionHint}>대그룹 탭을 선택해 병합 롤을 전환합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity></View></View>
+      <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}><Text style={styles.sectionHint}>대그룹 탭을 선택해 병합 롤을 전환합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 PDF 내보내기" disabled={exportingPdf} onPress={() => void exportPreviewPdf()} style={[styles.pdfButton, exportingPdf && styles.disabled]}><FileDown color="#fff" size={14} /><Text style={styles.pdfButtonText}>{exportingPdf ? '준비 중' : 'PDF 내보내기'}</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity></View></View>
         {mergedPlanTabs.length > 0 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mergedRollTabs} accessibilityLabel="대그룹 병합 롤 선택">
           {mergedPlanTabs.map((tab) => {
             const active = tab.key === activeMergedPlanKey;
@@ -191,10 +236,10 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
+  sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, pdfButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#2563eb' }, pdfButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
   mergedRollTabs: { gap: 7, paddingTop: 14, paddingBottom: 2 }, mergedRollTab: { minWidth: 104, minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#f8fafc' }, mergedRollTabActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, mergedRollTabLabel: { fontSize: 11, fontWeight: '900', color: '#475569' }, mergedRollTabLabelActive: { color: '#1d4ed8' }, mergedRollTabMeta: { marginTop: 3, fontSize: 9, color: '#94a3b8' }, mergedRollTabMetaActive: { color: '#3b82f6' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 24, paddingBottom: 88 },
-  header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }, headerCopy: { flex: 1, minWidth: 240 }, eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' }, title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' }, subtitle: { marginTop: 7, maxWidth: 700, fontSize: 14, lineHeight: 21, color: '#64748b' }, headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, refreshButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, backgroundColor: '#fff' }, refreshText: { fontSize: 11, fontWeight: '800', color: '#2563eb' }, inputButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#2563eb' }, inputButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, disabled: { opacity: 0.5 }, error: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2' }, errorText: { fontSize: 12, color: '#991b1b' }, empty: { marginTop: 22, minHeight: 320, alignItems: 'center', justifyContent: 'center', padding: 24, borderRadius: 18, backgroundColor: '#fff' }, emptyIcon: { fontSize: 40, color: '#93c5fd' }, emptyTitle: { marginTop: 10, fontSize: 18, fontWeight: '800', color: '#1e293b' }, emptyBody: { maxWidth: 480, marginTop: 7, fontSize: 12, lineHeight: 18, textAlign: 'center', color: '#64748b' }, emptyButton: { minHeight: 40, marginTop: 16, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#2563eb' }, emptyButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' },
+  header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }, headerCopy: { flex: 1, minWidth: 240 }, eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' }, title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' }, subtitle: { marginTop: 7, maxWidth: 700, fontSize: 14, lineHeight: 21, color: '#64748b' }, headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, refreshButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, backgroundColor: '#fff' }, refreshText: { fontSize: 11, fontWeight: '800', color: '#2563eb' }, inputButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#2563eb' }, inputButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, disabled: { opacity: 0.5 }, error: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2' }, errorText: { fontSize: 12, color: '#991b1b' }, notice: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }, noticeText: { fontSize: 12, color: '#166534' }, empty: { marginTop: 22, minHeight: 320, alignItems: 'center', justifyContent: 'center', padding: 24, borderRadius: 18, backgroundColor: '#fff' }, emptyIcon: { fontSize: 40, color: '#93c5fd' }, emptyTitle: { marginTop: 10, fontSize: 18, fontWeight: '800', color: '#1e293b' }, emptyBody: { maxWidth: 480, marginTop: 7, fontSize: 12, lineHeight: 18, textAlign: 'center', color: '#64748b' }, emptyButton: { minHeight: 40, marginTop: 16, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#2563eb' }, emptyButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   summaryCard: { marginTop: 22, padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#fff' }, summaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sectionEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#2563eb' }, sectionTitle: { marginTop: 4, fontSize: 21, fontWeight: '800', color: '#0f172a' }, summaryStatus: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#1d4ed8', backgroundColor: '#eff6ff' }, metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 15 }, metric: { flex: 1, minWidth: 150, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricLabel: { fontSize: 10, color: '#64748b' }, metricValue: { marginTop: 5, fontSize: 18, fontWeight: '800', color: '#0f172a' }, summaryHint: { marginTop: 12, fontSize: 11, lineHeight: 17, color: '#64748b' },
   section: { marginTop: 20, padding: 18, borderRadius: 16, backgroundColor: '#fff' }, sectionHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10 }, sectionHint: { fontSize: 11, color: '#64748b' }, pieceCard: { marginTop: 14, padding: 13, borderRadius: 12, borderWidth: 1, borderColor: '#dbeafe', backgroundColor: '#f8fbff' }, pieceHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 8 }, pieceTitle: { fontSize: 13, fontWeight: '800', color: '#1e3a8a' }, pieceMeta: { marginTop: 3, fontSize: 10, color: '#64748b' }, pieceStatus: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' }, remnantOnly: { marginTop: 11, padding: 16, alignItems: 'center', borderRadius: 10, backgroundColor: '#ecfdf5' }, remnantOnlyTitle: { fontSize: 12, fontWeight: '800', color: '#047857' }, remnantOnlyText: { marginTop: 4, fontSize: 10, color: '#0f766e' }, remnantLine: { marginTop: 8, fontSize: 10, color: '#0f766e' }, placementList: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#dbeafe' }, placementListHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#eff6ff' }, placementListTitle: { fontSize: 11, fontWeight: '900', color: '#1d4ed8' }, placementListMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, placementListToggle: { fontSize: 12, fontWeight: '900', color: '#1d4ed8' }, placementRow: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 5, paddingHorizontal: 8, borderRadius: 7, backgroundColor: '#fff' }, placementRowDone: { backgroundColor: '#f0fdf4' }, placementIndex: { width: 23, height: 23, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#dbeafe' }, placementIndexText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' }, placementCopy: { flex: 1 }, placementName: { fontSize: 10, fontWeight: '800', color: '#334155' }, placementMeta: { marginTop: 2, fontSize: 9, color: '#64748b' }, placementCheckButton: { width: 29, height: 29, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, placementCheckButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, placementCheckText: { fontSize: 17, fontWeight: '900', color: '#94a3b8' }, placementCheckTextDone: { color: '#15803d' }, placementDone: { fontSize: 16, fontWeight: '900', color: '#16a34a' },
 });
