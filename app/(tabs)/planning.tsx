@@ -12,6 +12,7 @@ import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview'
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createPlanningPreviewHtml, type PlanningPreviewSection } from '../../src/features/export/createPlanningPreviewHtml';
+import { printHtmlOnWeb } from '../../src/features/export/printHtmlOnWeb';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
 import type { GroupedPiecePlan } from '../../src/features/remnants/planGroupedPieces';
@@ -151,7 +152,7 @@ export default function PlanningScreen() {
       if (sections.length === 0) throw new Error('PDF로 내보낼 새 롤 배치 도면이 없습니다.');
       const html = createPlanningPreviewHtml({ title: '필름 배치 미리보기', generatedAt: new Date().toLocaleString('ko-KR'), pieceCount, producedQuantity, newRollLengthMm: newRollLength, sections });
       if (Platform.OS === 'web') {
-        await Print.printAsync({ html });
+        await printHtmlOnWeb(html);
       } else {
         const file = await Print.printToFileAsync({ html });
         if (!await Sharing.isAvailableAsync()) throw new Error('이 기기에서는 PDF 파일 공유를 사용할 수 없습니다.');
