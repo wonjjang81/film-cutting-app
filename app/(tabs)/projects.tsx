@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
@@ -10,6 +10,7 @@ import type { LibraryDocument, SavedCuttingJob, SavedProject } from '../../src/f
 import { createEmptyProject, createProjectFromCurrentEstimate } from '../../src/features/library/projectCreation';
 import { CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot } from '../../src/features/estimate/currentGroupEstimate';
 import { parseProjectExport } from '../../src/features/library/projectTransfer';
+import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, parseCurrentProjectContext, serializeCurrentProjectContext } from '../../src/features/library/currentProjectContext';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -29,7 +30,15 @@ export default function ProjectsScreen() {
     catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트를 불러오지 못했습니다.'); }
     finally { setBusy(false); }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useFocusEffect(useCallback(() => {
+    void refresh();
+    void AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY)
+      .then((raw) => {
+        const currentProject = parseCurrentProjectContext(raw);
+        if (currentProject) setNewProjectName(currentProject.name);
+      })
+      .catch(() => undefined);
+  }, [refresh]));
   const projects = library.projects ?? [];
   const visibleProjects = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase('ko-KR');
@@ -41,7 +50,7 @@ export default function ProjectsScreen() {
     return library.jobs.filter((job) => !projectJobIds.has(job.id) && (normalized.length === 0 || [job.name, job.brand, job.productNumber].some((value) => value.toLocaleLowerCase('ko-KR').includes(normalized))));
   }, [library.jobs, projects, query]);
   const remove = async (job: SavedCuttingJob) => { setBusy(true); try { await repository.deleteJob(job.id); await refresh(); } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트를 삭제하지 못했습니다.'); } finally { setBusy(false); } };
-  const removeProject = async (project: SavedProject) => { setBusy(true); try { await repository.deleteProject(project.id); await refresh(); } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트를 삭제하지 못했습니다.'); } finally { setBusy(false); } };
+  const removeProject = async (project: SavedProject) => { setBusy(true); try { await repository.deleteProject(project.id); const current = parseCurrentProjectContext(await AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY)); if (current?.id === project.id) { await AsyncStorage.removeItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY); setNewProjectName(''); } await refresh(); } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트를 삭제하지 못했습니다.'); } finally { setBusy(false); } };
   const createProject = async () => {
     const name = newProjectName.trim();
     if (!name) { setError('프로젝트 이름을 입력해 주세요.'); return; }
@@ -56,7 +65,8 @@ export default function ProjectsScreen() {
       const now = new Date().toISOString();
       const project = createEmptyProject(name, now, projects.map((item) => item.id));
       await repository.saveProjectBundle(project, [], []);
-      setNewProjectName('');
+      await AsyncStorage.setItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext({ id: project.id, name: project.name }));
+      setNewProjectName(project.name);
       await refresh();
       router.push({ pathname: '/input', params: { projectId: project.id } });
     } catch (caught) {
@@ -78,7 +88,8 @@ export default function ProjectsScreen() {
       const bundle = createProjectFromCurrentEstimate(name, snapshot, now, projects.map((project) => project.id));
       const project = existing ? { ...bundle.project, id: existing.id, createdAt: existing.createdAt, updatedAt: now } : bundle.project;
       await repository.saveProjectBundle(project, bundle.jobs, bundle.mergedJobs);
-      setNewProjectName('');
+      await AsyncStorage.setItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext({ id: project.id, name: project.name }));
+      setNewProjectName(project.name);
       await refresh();
       setNotice(existing ? `"${name}" 프로젝트를 새 재단 결과로 덮어썼습니다.` : `현재 재단 결과를 "${name}" 프로젝트로 저장했습니다.`);
       router.push({ pathname: '/input', params: { projectId: project.id } });
@@ -138,7 +149,7 @@ export default function ProjectsScreen() {
     } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트 백업을 불러오지 못했습니다.'); }
     finally { setBusy(false); }
   };
-  const rename = async () => { if (!editingId || editingName.trim().length === 0) return; setBusy(true); try { const project = projects.find((item) => item.id === editingId); if (project) await repository.renameProject(editingId, editingName.trim(), new Date().toISOString()); else await repository.renameJob(editingId, editingName.trim(), new Date().toISOString()); setEditingId(null); await refresh(); } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트 이름을 변경하지 못했습니다.'); } finally { setBusy(false); } };
+  const rename = async () => { if (!editingId || editingName.trim().length === 0) return; setBusy(true); try { const project = projects.find((item) => item.id === editingId); if (project) { const name = editingName.trim(); await repository.renameProject(editingId, name, new Date().toISOString()); const current = parseCurrentProjectContext(await AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY)); if (current?.id === editingId) { await AsyncStorage.setItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext({ id: editingId, name })); setNewProjectName(name); } } else await repository.renameJob(editingId, editingName.trim(), new Date().toISOString()); setEditingId(null); await refresh(); } catch (caught) { setError(caught instanceof Error ? caught.message : '프로젝트 이름을 변경하지 못했습니다.'); } finally { setBusy(false); } };
   return <ScrollView style={styles.page} contentContainerStyle={styles.content}>
     <View style={styles.header}><View style={styles.headerCopy}><Text style={styles.eyebrow}>PROJECTS</Text><Text style={styles.title}>프로젝트</Text><Text style={styles.subtitle}>프로젝트명을 입력하면 즉시 생성되고 재단 계산으로 이어집니다.</Text></View><View style={styles.createRow}><TextInput accessibilityLabel="새 프로젝트 이름" value={newProjectName} onChangeText={setNewProjectName} onSubmitEditing={() => void createProject()} returnKeyType="done" placeholder="프로젝트 이름 입력" placeholderTextColor="#94a3b8" style={styles.createInput} /><TouchableOpacity accessibilityRole="button" onPress={() => void createProject()} disabled={busy} style={[styles.primary, busy && styles.disabled]}><Text style={styles.primaryText}>＋ 프로젝트 생성</Text></TouchableOpacity></View></View>
     <View style={styles.stats}><Stat label="저장 프로젝트" value={String(projects.length + jobs.length)} /><Stat label="규격 프리셋" value={String(library.presets.length)} /><Stat label="자투리 재고" value={String(library.remnants.length)} /></View>

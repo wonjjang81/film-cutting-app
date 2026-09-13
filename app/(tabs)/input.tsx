@@ -29,6 +29,7 @@ import { DEFAULT_DIFFICULTY, normalizeDifficulty, type ConstructionDifficulty } 
 import { calculateSubgroupRoughEstimate, normalizeSubgroupOverallDimensions, type SubgroupOverallDimensions } from '../../src/features/estimate/subgroupRoughEstimate';
 import { applyPatternFixed } from '../../src/features/library/groupSettings';
 import { DEFAULT_CUT_ALLOWANCE_MM, inheritCutAllowance, normalizeCutAllowance, restoreCutAllowanceDimensions, summarizeCutAllowances } from '../../src/features/cutting/cutAllowance';
+import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext } from '../../src/features/library/currentProjectContext';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -580,6 +581,13 @@ export default function FilmCutInputScreen() {
   useEffect(() => {
     void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups)));
   }, [groups]);
+  useEffect(() => {
+    if (!projectId || !projectName.trim()) return;
+    void AsyncStorage.setItem(
+      CURRENT_PROJECT_CONTEXT_STORAGE_KEY,
+      serializeCurrentProjectContext({ id: projectId, name: projectName }),
+    );
+  }, [projectId, projectName]);
   useEffect(() => {
     void AsyncStorage.getItem(AUTO_SAVE_HISTORY_STORAGE_KEY).then((stored) => setAutoSaveHistory(parseAutoSaveHistory(stored))).catch(() => setAutoSaveHistory(false));
   }, []);
