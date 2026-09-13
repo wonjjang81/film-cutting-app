@@ -6,7 +6,7 @@ import { jsonResponse } from '../../_types';
 type UserRow = { id: string; google_sub: string | null; email_norm: string; status: string };
 type MembershipRow = { id: string; user_id: string | null; role: 'owner' | 'member'; status: string };
 
-async function resolveUser(db: D1Database, profile: GoogleIdentity, ownerEmail: string): Promise<{ userId: string; role: 'owner' | 'member' }> {
+export async function resolveUser(db: D1Database, profile: GoogleIdentity, ownerEmail: string): Promise<{ userId: string; role: 'owner' | 'member' }> {
   const bySub = await db.prepare('SELECT id, google_sub, email_norm, status FROM users WHERE google_sub = ?1').bind(profile.subject).first<UserRow>();
   if (bySub) {
     if (bySub.status !== 'active') throw new AuthError(403, '사용이 중지된 계정입니다.');
@@ -23,10 +23,20 @@ async function resolveUser(db: D1Database, profile: GoogleIdentity, ownerEmail: 
   if (existingEmail?.status === 'disabled') throw new AuthError(403, '사용이 중지된 계정입니다.');
   if (existingEmail?.google_sub && existingEmail.google_sub !== profile.subject) throw new AuthError(409, '이 이메일은 이미 다른 Google 계정에 연결되어 있습니다.');
   if (existingEmail) {
-    const result = await db.prepare('UPDATE users SET google_sub = ?1, display_name = ?2, picture_url = ?3, updated_at = ?4 WHERE id = ?5 AND google_sub IS NULL')
-      .bind(profile.subject, profile.name ?? null, profile.picture ?? null, new Date().toISOString(), existingEmail.id).run();
-    if ((result.meta?.changes ?? 0) !== 1) throw new AuthError(409, '계정 연결이 동시에 변경되었습니다. 다시 로그인해 주세요.');
-    const membership = await activeMembership(db, existingEmail.id);
+    const membership = await db.prepare('SELECT role, status FROM memberships WHERE tenant_id = ?1 AND user_id = ?2')
+      .bind(DEFAULT_TENANT_ID, existingEmail.id).first<{ role: 'owner' | 'member'; status: string }>();
+    if (!membership || (membership.status !== 'active' && membership.status !== 'invited')) throw new AuthError(403, '사용이 중지되었거나 승인되지 않은 계정입니다.');
+    if (membership.status === 'invited' && membership.role !== 'member') throw new AuthError(403, '승인되지 않은 계정입니다.');
+    const now = new Date().toISOString();
+    const statements = [db.prepare('UPDATE users SET google_sub = ?1, display_name = ?2, picture_url = ?3, updated_at = ?4 WHERE id = ?5 AND google_sub IS NULL')
+      .bind(profile.subject, profile.name ?? null, profile.picture ?? null, now, existingEmail.id)];
+    if (membership.status === 'invited') {
+      statements.push(db.prepare(`UPDATE memberships SET status = 'active', updated_at = ?1
+        WHERE tenant_id = ?2 AND user_id = ?3 AND role = 'member' AND status = 'invited'`)
+        .bind(now, DEFAULT_TENANT_ID, existingEmail.id));
+    }
+    const results = await db.batch(statements);
+    if (results.some((result) => (result.meta?.changes ?? 0) !== 1)) throw new AuthError(409, '계정 연결이 동시에 변경되었습니다. 다시 로그인해 주세요.');
     return { userId: existingEmail.id, role: membership.role };
   }
 

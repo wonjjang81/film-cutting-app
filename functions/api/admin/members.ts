@@ -26,15 +26,16 @@ export async function onRequestPost(context: PagesContext<CloudflareEnv, AuthDat
     if (!email || !email.includes('@')) throw new AuthError(400, '올바른 이메일을 입력하세요.');
     if ('role' in body || 'tenantId' in body) throw new AuthError(400, '권한과 작업공간은 요청에서 지정할 수 없습니다.');
     const now = new Date().toISOString();
-    const existing = await db.prepare('SELECT id FROM users WHERE email = ?1').bind(email).first<{ id: string }>();
+    const existing = await db.prepare('SELECT id FROM users WHERE email_norm = ?1').bind(email).first<{ id: string }>();
     const userId = existing?.id ?? crypto.randomUUID();
     await db.batch([
-      db.prepare(`INSERT INTO users (id, email, status, system_role, created_at, updated_at)
-        VALUES (?1, ?2, 'active', 'user', ?3, ?3) ON CONFLICT(email) DO UPDATE SET updated_at = excluded.updated_at`).bind(userId, email, now),
-      db.prepare(`INSERT INTO memberships (tenant_id, user_id, role, status, created_at, updated_at)
-        VALUES (?1, ?2, 'member', 'invited', ?3, ?3)
+      db.prepare(`INSERT INTO users (id, email, email_norm, status, system_role, created_at, updated_at)
+        VALUES (?1, ?2, ?2, 'active', 'user', ?3, ?3)
+        ON CONFLICT(email_norm) DO UPDATE SET email = excluded.email, updated_at = excluded.updated_at`).bind(userId, email, now),
+      db.prepare(`INSERT INTO memberships (id, tenant_id, user_id, invited_email_norm, role, status, created_at, updated_at)
+        VALUES (?1, ?2, ?3, ?4, 'member', 'invited', ?5, ?5)
         ON CONFLICT(tenant_id, user_id) DO UPDATE SET status = CASE WHEN memberships.role = 'owner' THEN memberships.status ELSE 'invited' END, updated_at = excluded.updated_at`)
-        .bind(identity.tenantId, userId, now),
+        .bind(crypto.randomUUID(), identity.tenantId, userId, email, now),
       db.prepare(`INSERT INTO audit_events (id, tenant_id, actor_user_id, event_type, target_id, metadata_json, created_at)
         VALUES (?1, ?2, ?3, 'member.invited', ?4, ?5, ?6)`).bind(crypto.randomUUID(), identity.tenantId, identity.userId, userId, JSON.stringify({ email }), now),
     ]);
