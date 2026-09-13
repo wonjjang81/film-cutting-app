@@ -16,6 +16,18 @@ export type PlacementCompletionControl = {
   label: '재단 완료' | '완료 해제';
 };
 
+/** Keeps the current merged-roll tab when possible and otherwise selects the first available tab. */
+export function resolveActiveMergedPlanKey(keys: readonly string[], currentKey: string | null): string | null {
+  return currentKey && keys.includes(currentKey) ? currentKey : (keys[0] ?? null);
+}
+
+/** Formats the calculation group name for the major-group roll tab. */
+export function majorGroupTabLabel(groupNames: readonly string[], index: number): string {
+  const name = groupNames[0]?.trim();
+  if (!name) return `대그룹 ${index + 1}`;
+  return name.replace(/^그룹\s*/, '대그룹 ');
+}
+
 /** Builds the completion action shared by placement lists and detail popups. */
 export function placementCompletionControl(completed: boolean, busy: boolean, available: boolean): PlacementCompletionControl {
   return {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, nextPlacementCompletion, placementCompletionControl, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
+import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, majorGroupTabLabel, nextPlacementCompletion, placementCompletionControl, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
@@ -66,5 +66,19 @@ describe('planning placement model', () => {
     expect(areAllPlacementListsCollapsed(['a', 'b'], { a: true, b: true })).toBe(true);
     expect(toggleAllPlacementLists(['a', 'b'], { a: true, b: true })).toEqual({ a: false, b: false });
     expect(toggleAllPlacementLists([], { stale: true })).toEqual({});
+  });
+
+  it('keeps the selected major-group roll tab when it still exists', () => {
+    expect(resolveActiveMergedPlanKey(['group-1', 'group-2'], 'group-2')).toBe('group-2');
+  });
+
+  it('falls back to the first major-group roll tab when the selection disappears', () => {
+    expect(resolveActiveMergedPlanKey(['group-1', 'group-2'], 'missing')).toBe('group-1');
+    expect(resolveActiveMergedPlanKey([], 'group-1')).toBeNull();
+  });
+
+  it('labels merged roll tabs by major group', () => {
+    expect(majorGroupTabLabel(['그룹 2'], 1)).toBe('대그룹 2');
+    expect(majorGroupTabLabel([], 2)).toBe('대그룹 3');
   });
 });

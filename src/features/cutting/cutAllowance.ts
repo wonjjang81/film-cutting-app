@@ -20,6 +20,11 @@ export function normalizeCutAllowance(value: unknown): number {
   return parsed;
 }
 
+/** Returns a new form whose allowance inherits the current overall setting. */
+export function inheritCutAllowance<T extends { cutAllowance?: string }>(form: T, overallAllowance: unknown): T {
+  return { ...form, cutAllowance: String(normalizeCutAllowance(overallAllowance)) };
+}
+
 export function cutAllowanceDimensions(width: unknown, length: unknown, allowance: unknown): CutAllowanceDimensions {
   const sourcePieceWidthMm = finiteNumber(width);
   const sourcePieceLengthMm = finiteNumber(length);

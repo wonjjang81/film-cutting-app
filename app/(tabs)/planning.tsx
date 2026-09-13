@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router, useFocusEffect } from 'expo-router';
 import { RefreshCw, Scissors } from 'lucide-react-native';
@@ -6,7 +6,7 @@ import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
-import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, nextPlacementCompletion, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
+import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
@@ -24,6 +24,7 @@ export default function PlanningScreen() {
   const [pieceCompletionOverrides, setPieceCompletionOverrides] = useState<Record<string, number[]>>({});
   const [mergedCompletionOverrides, setMergedCompletionOverrides] = useState<Record<string, number[]>>({});
   const [collapsedPlacementLists, setCollapsedPlacementLists] = useState<Record<string, boolean>>({});
+  const [selectedMergedPlanKey, setSelectedMergedPlanKey] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -102,6 +103,16 @@ export default function PlanningScreen() {
   const producedQuantity = independentPlans.reduce((sum, entry) => sum + producedForPiecePlan(entry), 0)
     + currentPlan.mergedPlans.reduce((sum, plan) => sum + plan.producedQuantity, 0);
   const hasPlan = pieceCount > 0;
+  const mergedPlanTabs = useMemo(() => currentPlan.mergedPlans.map((plan, index) => ({
+    key: mergedPlanKey(plan.mergeGroupId, plan.sourceIds),
+    label: majorGroupTabLabel(plan.groupNames, index),
+    plan,
+  })), [currentPlan.mergedPlans]);
+  const activeMergedPlanKey = resolveActiveMergedPlanKey(mergedPlanTabs.map((tab) => tab.key), selectedMergedPlanKey);
+  const activeMergedPlan = mergedPlanTabs.find((tab) => tab.key === activeMergedPlanKey)?.plan;
+  useEffect(() => {
+    if (selectedMergedPlanKey !== activeMergedPlanKey) setSelectedMergedPlanKey(activeMergedPlanKey);
+  }, [activeMergedPlanKey, selectedMergedPlanKey]);
   const placementListKeys = useMemo(() => [
     ...currentPlan.mergedPlans.flatMap((plan) => groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => JSON.stringify([mergedPlanKey(plan.mergeGroupId, plan.sourceIds), group.id]))),
     ...independentPlans.map((entry) => `piece:${entry.groupId}-${entry.pieceId}`),
@@ -116,8 +127,18 @@ export default function PlanningScreen() {
     {error && <View style={styles.error}><Text style={styles.errorText}>{error}</Text></View>}
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>CUTTING RESULT</Text><Text style={styles.sectionTitle}>재단 결과 · 원단 사용 계획</Text></View><Text style={styles.summaryStatus}>재단계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>재단계산에서 저장된 결과를 기준으로 배치 도면과 배치목록을 확인합니다. 재단 완료·재고 확정은 재단계산 탭의 workflow에서 이어서 처리할 수 있습니다.</Text></View>
-      <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}><Text style={styles.sectionHint}>병합 롤은 한 번만 표시합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity></View></View>
-        {currentPlan.mergedPlans.map((plan) => {
+      <View style={styles.section}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}><Text style={styles.sectionHint}>대그룹 탭을 선택해 병합 롤을 전환합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity></View></View>
+        {mergedPlanTabs.length > 0 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mergedRollTabs} accessibilityLabel="대그룹 병합 롤 선택">
+          {mergedPlanTabs.map((tab) => {
+            const active = tab.key === activeMergedPlanKey;
+            return <TouchableOpacity key={tab.key} accessibilityRole="tab" accessibilityLabel={`${tab.label} 병합 롤 보기`} accessibilityState={{ selected: active }} onPress={() => setSelectedMergedPlanKey(tab.key)} style={[styles.mergedRollTab, active && styles.mergedRollTabActive]}>
+              <Text style={[styles.mergedRollTabLabel, active && styles.mergedRollTabLabelActive]}>{tab.label}</Text>
+              <Text style={[styles.mergedRollTabMeta, active && styles.mergedRollTabMetaActive]}>{tab.plan.producedQuantity}개 · {Math.round(tab.plan.result.usedLengthMm).toLocaleString()}mm</Text>
+            </TouchableOpacity>;
+          })}
+        </ScrollView>}
+        {activeMergedPlan && (() => {
+          const plan = activeMergedPlan;
           const job = findLatestMergedJob(plan, library.mergedJobs);
           const placementIds = plan.result.placements.map((placement) => placement.id);
           const planKey = mergedPlanKey(plan.mergeGroupId, plan.sourceIds);
@@ -125,7 +146,7 @@ export default function PlanningScreen() {
           const subgroupIds = groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => group.id);
           const subgroupKey = (id: string) => JSON.stringify([planKey, id]);
           return <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={(placementId) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds)} collapsedSubgroups={Object.fromEntries(subgroupIds.map((id) => [id, collapsedPlacementLists[subgroupKey(id)] === true]))} onChangeCollapsedSubgroups={(next) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }))} hideLegend />;
-        })}
+        })()}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
           const displayName = currentPlan.pieceNamesBySourceId[sourceKey] ?? entry.pieceName;
@@ -171,6 +192,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
+  mergedRollTabs: { gap: 7, paddingTop: 14, paddingBottom: 2 }, mergedRollTab: { minWidth: 104, minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#f8fafc' }, mergedRollTabActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, mergedRollTabLabel: { fontSize: 11, fontWeight: '900', color: '#475569' }, mergedRollTabLabelActive: { color: '#1d4ed8' }, mergedRollTabMeta: { marginTop: 3, fontSize: 9, color: '#94a3b8' }, mergedRollTabMetaActive: { color: '#3b82f6' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 24, paddingBottom: 88 },
   header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }, headerCopy: { flex: 1, minWidth: 240 }, eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' }, title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' }, subtitle: { marginTop: 7, maxWidth: 700, fontSize: 14, lineHeight: 21, color: '#64748b' }, headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, refreshButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, backgroundColor: '#fff' }, refreshText: { fontSize: 11, fontWeight: '800', color: '#2563eb' }, inputButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#2563eb' }, inputButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, disabled: { opacity: 0.5 }, error: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2' }, errorText: { fontSize: 12, color: '#991b1b' }, empty: { marginTop: 22, minHeight: 320, alignItems: 'center', justifyContent: 'center', padding: 24, borderRadius: 18, backgroundColor: '#fff' }, emptyIcon: { fontSize: 40, color: '#93c5fd' }, emptyTitle: { marginTop: 10, fontSize: 18, fontWeight: '800', color: '#1e293b' }, emptyBody: { maxWidth: 480, marginTop: 7, fontSize: 12, lineHeight: 18, textAlign: 'center', color: '#64748b' }, emptyButton: { minHeight: 40, marginTop: 16, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#2563eb' }, emptyButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   summaryCard: { marginTop: 22, padding: 18, borderRadius: 16, borderWidth: 1, borderColor: '#bfdbfe', backgroundColor: '#fff' }, summaryHeader: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, sectionEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#2563eb' }, sectionTitle: { marginTop: 4, fontSize: 21, fontWeight: '800', color: '#0f172a' }, summaryStatus: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#1d4ed8', backgroundColor: '#eff6ff' }, metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: 9, marginTop: 15 }, metric: { flex: 1, minWidth: 150, padding: 12, borderRadius: 10, borderWidth: 1, borderColor: '#e2e8f0', backgroundColor: '#f8fafc' }, metricLabel: { fontSize: 10, color: '#64748b' }, metricValue: { marginTop: 5, fontSize: 18, fontWeight: '800', color: '#0f172a' }, summaryHint: { marginTop: 12, fontSize: 11, lineHeight: 17, color: '#64748b' },

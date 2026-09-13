@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_CUT_ALLOWANCE_MM,
   cutAllowanceDimensions,
+  inheritCutAllowance,
   restoreCutAllowanceDimensions,
   summarizeCutAllowances,
 } from './cutAllowance';
@@ -52,5 +53,18 @@ describe('cut allowance', () => {
   it('summarizes equal and mixed piece allowances', () => {
     expect(summarizeCutAllowances(['50', '50'])).toEqual({ kind: 'uniform', valueMm: 50 });
     expect(summarizeCutAllowances(['0', '50'])).toEqual({ kind: 'mixed' });
+  });
+
+  it.each([
+    ['0', '0'],
+    ['50', '50'],
+  ])('inherits the current overall allowance %s when a new piece is created', (overallAllowance, expected) => {
+    const form = { pieceWidth: '100', cutAllowance: '25' };
+
+    expect(inheritCutAllowance(form, overallAllowance)).toEqual({
+      pieceWidth: '100',
+      cutAllowance: expected,
+    });
+    expect(form.cutAllowance).toBe('25');
   });
 });
