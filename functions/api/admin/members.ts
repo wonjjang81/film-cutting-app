@@ -65,6 +65,31 @@ export async function onRequestPatch(context: PagesContext<CloudflareEnv, AuthDa
   } catch (error) { return failure(error); }
 }
 
+export async function onRequestDelete(context: PagesContext<CloudflareEnv, AuthData>): Promise<Response> {
+  try {
+    const identity = owner(context);
+    const db = database(context);
+    const body = await context.request.json() as Record<string, unknown>;
+    if ('role' in body || 'tenantId' in body) throw new AuthError(400, '권한과 작업공간은 요청에서 지정할 수 없습니다.');
+    const userId = typeof body.userId === 'string' ? body.userId : '';
+    if (!userId) throw new AuthError(400, '삭제할 회원을 확인하세요.');
+    if (userId === identity.userId) throw new AuthError(403, '관리자 계정은 삭제할 수 없습니다.');
+    const membership = await db.prepare('SELECT role FROM memberships WHERE tenant_id = ?1 AND user_id = ?2')
+      .bind(identity.tenantId, userId).first<{ role: 'owner' | 'member' }>();
+    if (!membership) throw new AuthError(404, '삭제할 회원을 찾지 못했습니다.');
+    if (membership.role !== 'member') throw new AuthError(403, '관리자 계정은 삭제할 수 없습니다.');
+    const now = new Date().toISOString();
+    const results = await db.batch([
+      db.prepare("DELETE FROM memberships WHERE tenant_id = ?1 AND user_id = ?2 AND role = 'member'").bind(identity.tenantId, userId),
+      db.prepare('DELETE FROM sessions WHERE tenant_id = ?1 AND user_id = ?2').bind(identity.tenantId, userId),
+      db.prepare(`INSERT INTO audit_events (id, tenant_id, actor_user_id, event_type, target_id, metadata_json, created_at)
+        VALUES (?1, ?2, ?3, 'member.removed', ?4, '{}', ?5)`).bind(crypto.randomUUID(), identity.tenantId, identity.userId, userId, now),
+    ]);
+    if (!(results[0]?.meta?.changes)) throw new AuthError(404, '삭제할 회원을 찾지 못했습니다.');
+    return jsonResponse({ ok: true }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) { return failure(error); }
+}
+
 function owner(context: PagesContext<CloudflareEnv, AuthData>): AuthIdentity {
   const identity = context.data.auth;
   if (!identity) throw new AuthError(401, '로그인이 필요합니다.');
