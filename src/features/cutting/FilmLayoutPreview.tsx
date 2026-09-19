@@ -18,12 +18,13 @@ type Props = {
   completedPlacementIds?: readonly number[];
   pieceLabel?: string;
   completionBusy?: boolean;
+  continuousPageView?: boolean;
   onTogglePlacementComplete?(placementId: number): void;
 };
 
-export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel, completionBusy = false, onTogglePlacementComplete }: Props) {
+export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm, sideMarginMm, startEndMarginMm, completedPlacementIds = [], pieceLabel, completionBusy = false, continuousPageView = false, onTogglePlacementComplete }: Props) {
   const [viewportWidth, setViewportWidth] = React.useState(640);
-  const [zoom, setZoom] = React.useState(1);
+  const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   if (!result) {
     return (
@@ -36,6 +37,8 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
   }
 
   const continuous = Boolean(result && 'overproduction' in result);
+  const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
+  const zoom = manualZoom ?? fitZoom;
   const displayLengthMm = continuous ? (result as ContinuousRollResult).usedLengthMm : rollLengthMm ?? 0;
   const horizontalMarginMm = sideMarginMm ?? marginMm ?? 0;
   const verticalMarginMm = startEndMarginMm ?? marginMm ?? 0;
@@ -67,16 +70,16 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
       </View>
       <View style={styles.zoomRow} accessibilityLabel="자동배치 도면 확대 축소">
         <Text style={styles.zoomLabel}>확대/축소</Text>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 축소" onPress={() => setZoom((value) => Math.max(0.75, Math.round((value - 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 축소" onPress={() => setManualZoom(Math.max(0.75, Math.round((zoom - 0.1) * 100) / 100))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
         <Text style={styles.zoomValue}>{Math.round(zoom * 100)}%</Text>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 확대" onPress={() => setZoom((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 화면 폭 맞춤" onPress={() => setZoom(1)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 확대" onPress={() => setManualZoom(Math.min(1.5, Math.round((zoom + 0.1) * 100) / 100))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="자동배치 도면 화면 폭 맞춤" onPress={() => setManualZoom(null)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
       </View>
       <View style={styles.canvasFrame} onLayout={(event) => {
         const nextWidth = event.nativeEvent.layout.width;
         if (nextWidth > 0 && Math.abs(nextWidth - viewportWidth) > 1) setViewportWidth(nextWidth);
       }}>
-        <ScrollView style={styles.canvasScroll} contentContainerStyle={styles.canvasScrollContent} nestedScrollEnabled showsVerticalScrollIndicator>
+        <CanvasContainer continuous={continuousPageView}>
         <View style={[styles.canvas, { height: drawingHeight, width: viewportWidth }]}>
         <Svg width={viewportWidth} height={drawingHeight} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${displayLengthMm}`} accessibilityLabel="필름 자동배치 도면">
           <Rect x={0} y={0} width={rollWidthMm} height={displayLengthMm} fill="#f8fafc" stroke="#334155" strokeWidth={Math.max(1, rollWidthMm / 350)} rx={4} />
@@ -124,7 +127,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           ))}
         </Svg>
         </View>
-        </ScrollView>
+        </CanvasContainer>
       </View>
       <Modal visible={selectedId !== null} transparent animationType="fade" onRequestClose={() => setSelectedId(null)}>
         <View style={styles.modalBackdrop}>
@@ -148,6 +151,12 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
       <Text style={styles.caption}>{continuous ? '연속 롤 기준 · 구분선은 행 패턴 경계입니다.' : '첫 번째 원단 기준 · 숫자는 재단 순번입니다.'}</Text>
     </View>
   );
+}
+
+function CanvasContainer({ continuous, children }: { continuous: boolean; children: React.ReactNode }) {
+  return continuous
+    ? <View style={styles.canvasScrollContent}>{children}</View>
+    : <ScrollView style={styles.canvasScroll} contentContainerStyle={styles.canvasScrollContent} nestedScrollEnabled showsVerticalScrollIndicator>{children}</ScrollView>;
 }
 
 const styles = StyleSheet.create({

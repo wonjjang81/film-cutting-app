@@ -17,6 +17,7 @@ type Props = {
   compact?: boolean;
   hidePlacementList?: boolean;
   hideLegend?: boolean;
+  continuousPageView?: boolean;
   completedPlacementIds?: readonly number[];
   sourceLabels?: Record<string, string>;
   sourceSubgroups?: Record<string, string>;
@@ -29,14 +30,16 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
   const { result } = plan;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [viewportWidth, setViewportWidth] = React.useState(640);
-  const [zoom, setZoom] = React.useState(1);
+  const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
   const safeLength = Math.max(result.usedLengthMm, 1);
+  const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
+  const zoom = manualZoom ?? fitZoom;
   const baseHeight = Math.max(240, (viewportWidth / 1220) * safeLength);
   const height = baseHeight * zoom;
   const viewBoxWidth = 1220 / zoom;
@@ -96,18 +99,18 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       {result.placements.length > 0 ? <>
         <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
           <Text style={styles.zoomLabel}>확대/축소</Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 축소" onPress={() => setZoom((value) => Math.max(0.75, Math.round((value - 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 축소" onPress={() => setManualZoom(Math.max(0.75, Math.round((zoom - 0.1) * 100) / 100))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>−</Text></TouchableOpacity>
           <Text style={styles.zoomValue}>{Math.round(zoom * 100)}%</Text>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 확대" onPress={() => setZoom((value) => Math.min(1.5, Math.round((value + 0.1) * 10) / 10))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 화면 폭 맞춤" onPress={() => setZoom(1)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 확대" onPress={() => setManualZoom(Math.min(1.5, Math.round((zoom + 0.1) * 100) / 100))} style={styles.zoomButton}><Text style={styles.zoomButtonText}>＋</Text></TouchableOpacity>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 도면 화면 폭 맞춤" onPress={() => setManualZoom(null)} style={styles.zoomFitButton}><Text style={styles.zoomFitText}>폭 맞춤</Text></TouchableOpacity>
         </View>
         <View style={styles.canvasFrame} onLayout={(event) => {
           const nextWidth = event.nativeEvent.layout.width;
           if (nextWidth > 0 && Math.abs(nextWidth - viewportWidth) > 1) setViewportWidth(nextWidth);
         }}>
-          <ScrollView nestedScrollEnabled style={styles.canvasVerticalScroll} contentContainerStyle={styles.canvasVerticalContent} showsVerticalScrollIndicator>
+          {continuousPageView ? renderCanvas() : <ScrollView nestedScrollEnabled style={styles.canvasVerticalScroll} contentContainerStyle={styles.canvasVerticalContent} showsVerticalScrollIndicator>
             {renderCanvas()}
-          </ScrollView>
+          </ScrollView>}
         </View>
       </> : <View style={styles.noNewRoll}><Text style={styles.noNewRollText}>새 원본 롤 사용 없음 · 자투리 롤에서 전량 생산</Text></View>}
       {!compact && plan.remnantUses.length > 0 && <View style={styles.remnantSection}>
