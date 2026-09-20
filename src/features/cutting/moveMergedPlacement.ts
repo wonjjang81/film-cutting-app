@@ -11,6 +11,8 @@ export type MovedMergedPlacement = {
   savedLengthMm: number;
 };
 
+export type ManualMergedPlacementResult = { plan?: MergedGroupPlan; error?: string };
+
 function sourceId(entry: GroupedPieceRequest): string { return `${entry.groupId}-${entry.pieceId}`; }
 function snap(value: number): number { return Math.ceil(value / GRID_MM) * GRID_MM; }
 
@@ -37,6 +39,38 @@ function rebuildPlan(plan: MergedGroupPlan, rolls: readonly MergedRollResult[], 
   });
   const combined = metrics(placements, rollWidthMm, 0);
   return { ...plan, rollResults: rolls.map((roll) => ({ ...roll, placements: roll.placements.map((item) => ({ ...item })) })), result: { ...combined, usedLengthMm: rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0) }, newRollQuantity: placements.length };
+}
+
+/** Repositions a piece inside its current roll, without changing orientation or piece count. */
+export function movePlacementWithinRoll(
+  plan: MergedGroupPlan,
+  placementId: number,
+  xMm: number,
+  yMm: number,
+  requests: readonly GroupedPieceRequest[],
+): ManualMergedPlacementResult {
+  const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
+  const rollIndex = rolls.findIndex((roll) => roll.placements.some((item) => item.id === placementId));
+  if (rollIndex < 0) return { error: '이동할 조각을 찾지 못했습니다.' };
+  const roll = rolls[rollIndex]!;
+  const selected = roll.placements.find((item) => item.id === placementId)!;
+  const specification = requests.find((entry) => sourceId(entry) === selected.sourceId);
+  if (!specification) return { error: '조각의 재단 조건을 찾지 못했습니다.' };
+  if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) return { error: '이동 위치가 올바르지 않습니다.' };
+  const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
+  const candidate = { ...selected, x: Math.round(xMm / GRID_MM) * GRID_MM, y: Math.round(yMm / GRID_MM) * GRID_MM };
+  const maxLengthMm = Math.min(roll.usedLengthMm, boundedNewRollLength(specification.request.maxLengthMm));
+  if (candidate.x < sideMarginMm || candidate.y < startEndMarginMm
+    || candidate.x + candidate.width > rollWidthMm - sideMarginMm
+    || candidate.y + candidate.height > maxLengthMm - startEndMarginMm) {
+    return { error: '조각이 롤의 여백 또는 현재 도면 길이를 벗어납니다.' };
+  }
+  if (roll.placements.some((item) => item.id !== placementId && collides(candidate, item, gapMm))) {
+    return { error: '다른 조각과 겹치거나 필요한 간격이 부족합니다.' };
+  }
+  const updated = metrics(roll.placements.map((item) => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
+  const nextRolls = rolls.map((item, index) => index === rollIndex ? updated : item);
+  return { plan: rebuildPlan(plan, nextRolls, rollWidthMm) };
 }
 
 /** Moves one selected placement into another physical roll, within that roll's length limit. */

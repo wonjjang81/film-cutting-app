@@ -15,6 +15,7 @@ type Props = {
   onToggleComplete?(): void;
   onTogglePlacementComplete?(placementId: number): void;
   onMovePlacementToAnotherRoll?(placementId: number, targetRollIndex: number): number | null;
+  onMovePlacementWithinRoll?(placementId: number, xMm: number, yMm: number): string | null;
   compact?: boolean;
   hidePlacementList?: boolean;
   hideLegend?: boolean;
@@ -32,16 +33,20 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementWithinRoll, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
   const [selectedRollIndex, setSelectedRollIndex] = React.useState(0);
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [moveError, setMoveError] = React.useState<string | null>(null);
+  const [draggingId, setDraggingId] = React.useState<number | null>(null);
+  const [dragDelta, setDragDelta] = React.useState({ x: 0, y: 0 });
+  const dragStart = React.useRef({ x: 0, y: 0 });
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
+  const dragging = result.placements.find((placement) => placement.id === draggingId) ?? null;
   const safeLength = Math.max(result.usedLengthMm, 1);
   const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
   const zoom = manualZoom ?? fitZoom;
@@ -89,6 +94,23 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         </G>;
       })}
     </Svg>
+    {dragging && (() => {
+      const scaleX = viewportWidth / viewBoxWidth;
+      const scaleY = height / safeLength;
+      const pieceWidth = dragging.width * scaleX;
+      const pieceHeight = dragging.height * scaleY;
+      const handleWidth = Math.max(pieceWidth, 32);
+      const handleHeight = Math.max(pieceHeight, 32);
+      return <View accessibilityRole="button" accessibilityLabel={`조각 ${dragging.id} 수동 이동 손잡이`} onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => false} onResponderGrant={(event) => { dragStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }; setDragDelta({ x: 0, y: 0 }); setMoveError(null); }} onResponderMove={(event) => setDragDelta({ x: event.nativeEvent.pageX - dragStart.current.x, y: event.nativeEvent.pageY - dragStart.current.y })} onResponderRelease={(event) => {
+        const deltaX = event.nativeEvent.pageX - dragStart.current.x;
+        const deltaY = event.nativeEvent.pageY - dragStart.current.y;
+        setDragDelta({ x: 0, y: 0 });
+        if (Math.abs(deltaX) + Math.abs(deltaY) < 2) return;
+        const error = onMovePlacementWithinRoll?.(dragging.id, dragging.x + deltaX / scaleX, dragging.y + deltaY / scaleY);
+        if (error) setMoveError(error);
+        else { setDraggingId(null); setMoveError(null); }
+      }} onResponderTerminate={() => setDragDelta({ x: 0, y: 0 })} style={[styles.dragHandle, { left: (dragging.x - viewBoxX) * scaleX + (pieceWidth - handleWidth) / 2, top: dragging.y * scaleY + (pieceHeight - handleHeight) / 2, width: handleWidth, height: handleHeight, transform: [{ translateX: dragDelta.x }, { translateY: dragDelta.y }] }]}><Text style={styles.dragHandleText}>✥ #{dragging.id}</Text></View>;
+    })()}
   </View>;
 
   return (
@@ -103,7 +125,9 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       {!hideLegend && <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>}
-      {rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { setSelectedRollIndex(index); setSelectedId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
+      {rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { setSelectedRollIndex(index); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
+      {dragging && <View style={styles.dragHintRow}><Text style={styles.dragHintText}>#{dragging.id}을 빈 공간으로 끌어 놓으세요.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 이동 취소" onPress={() => { setDraggingId(null); setMoveError(null); }}><Text style={styles.dragCancelText}>취소</Text></TouchableOpacity></View>}
+      {moveError && dragging && <Text style={styles.dragErrorText}>{moveError}</Text>}
       {result.placements.length > 0 ? <>
         <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
           <Text style={styles.zoomLabel}>확대/축소</Text>
@@ -157,6 +181,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              {onMovePlacementWithinRoll && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 현재 롤에서 수동 이동`} disabled={busy} onPress={() => { setDraggingId(selected.id); setSelectedId(null); setMoveError(null); }} style={[styles.modalMove, busy && styles.disabled]}><Text style={styles.modalMoveText}>현재 롤에서 끌어서 이동</Text></TouchableOpacity>}
               {rolls.length > 1 && <ScrollView style={styles.modalRollChoices} nestedScrollEnabled>{rolls.map((roll, index) => index === selectedRollIndex ? null : <TouchableOpacity key={index} accessibilityRole="button" accessibilityLabel={`${info.label} ${index + 1}롤 빈공간으로 자동배치`} disabled={busy || !onMovePlacementToAnotherRoll} onPress={() => { const targetRollIndex = onMovePlacementToAnotherRoll?.(selected.id, index); if (targetRollIndex !== null && targetRollIndex !== undefined) { setSelectedRollIndex(targetRollIndex); setSelectedId(null); setMoveError(null); } else { setMoveError(`${index + 1}롤에 배치 가능한 공간이 없습니다.`); } }} style={[styles.modalMove, (busy || !onMovePlacementToAnotherRoll) && styles.disabled]}><Text style={styles.modalMoveText}>{index + 1}롤로 이동 · 현재 {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
               {moveError && <Text style={styles.modalMoveError}>{moveError}</Text>}
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => onTogglePlacementComplete?.(selected.id)} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.disabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
@@ -219,6 +244,7 @@ const styles = StyleSheet.create({
   copy: { flex: 1 }, title: { fontSize: 12, fontWeight: '800', color: '#115e59' }, meta: { marginTop: 3, fontSize: 10, color: '#64748b' }, badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
+  dragHandle: { position: 'absolute', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: '#2563eb', borderRadius: 4, backgroundColor: 'rgba(37, 99, 235, 0.24)' }, dragHandleText: { fontSize: 11, fontWeight: '900', color: '#1e3a8a', backgroundColor: '#eff6ff' }, dragHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9, gap: 8 }, dragHintText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#1d4ed8' }, dragCancelText: { paddingHorizontal: 8, paddingVertical: 4, fontSize: 11, fontWeight: '900', color: '#b91c1c' }, dragErrorText: { marginTop: 5, fontSize: 11, fontWeight: '700', color: '#b91c1c' },
   rollTabs: { flexDirection: 'row', gap: 6, marginTop: 10 }, rollTab: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, rollTabActive: { backgroundColor: '#0f766e' }, rollTabText: { fontSize: 10, fontWeight: '800', color: '#475569' }, rollTabTextActive: { color: '#fff' },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalRollChoices: { maxHeight: 220 }, modalMove: { minHeight: 42, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, modalMoveText: { fontSize: 12, fontWeight: '900', color: '#fff' }, modalMoveError: { marginTop: 8, color: '#b91c1c', fontSize: 12, fontWeight: '700' }, modalComplete: { minHeight: 42, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 9, backgroundColor: '#f0fdfa' }, modalCompleteDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, modalCompleteText: { fontSize: 13, fontWeight: '900', color: '#0f766e' }, modalCompleteTextDone: { color: '#15803d' }, modalClose: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },

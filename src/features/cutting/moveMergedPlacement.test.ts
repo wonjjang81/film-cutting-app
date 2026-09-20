@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { movePlacementToBestOtherRoll } from './moveMergedPlacement';
+import { movePlacementToBestOtherRoll, movePlacementWithinRoll } from './moveMergedPlacement';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 
 const request = (pieceId: string, width: number, length: number): GroupedPieceRequest => ({
@@ -85,5 +85,18 @@ describe('movePlacementToBestOtherRoll', () => {
     expect(moved?.plan.rollResults?.[1]?.placements.map((item) => item.id)).toEqual([3]);
     expect(moved?.plan.rollResults?.[2]?.placements.map((item) => item.id)).toEqual([4, 2]);
     expect(movePlacementToBestOtherRoll(plan, 2, requests, 0)).toBeNull();
+  });
+
+  it('allows a manual drop into a free spot on the same roll and rejects overlap or outside drops', () => {
+    const requests = [request('large', 1000, 10000), request('small', 200, 4000)];
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-large', instanceIndex: 0, x: 5, y: 5, width: 1000, height: 10000, rotated: false },
+      { id: 2, sourceId: 'g1-small', instanceIndex: 0, x: 1005, y: 5, width: 200, height: 4000, rotated: false },
+    ], usedLengthMm: 10010, producedQuantity: 2, utilizationPercent: 88.5, wastePercent: 11.5 };
+    const plan = { mergeGroupId: 'auto', sourceIds: requests.map((entry) => `${entry.groupId}-${entry.pieceId}`), groupNames: ['그룹 1'], pieceCount: 2, result: roll, rollResults: [roll], newRollQuantity: 2, producedQuantity: 2, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+    expect(movePlacementWithinRoll(plan, 2, 1006, 5001, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
+    expect(movePlacementWithinRoll(plan, 2, 900, 5000, requests).error).toContain('겹치');
+    expect(movePlacementWithinRoll(plan, 2, 1005, 9000, requests).error).toContain('벗어');
+    expect(plan.rollResults[0]?.placements[1]?.y).toBe(5);
   });
 });
