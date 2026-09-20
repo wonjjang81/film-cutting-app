@@ -43,4 +43,24 @@ describe('optimizeMergedRollLayout', () => {
       'wide-short', 'narrow-tall', 'square', 'square',
     ]);
   });
+
+  it('anchors a wide long piece on the left and fills its right-side strip with smaller pieces', () => {
+    const result = optimizeMergedRollLayout({ rollWidthMm: 1_220, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, pieces: [
+      { sourceId: 'wide-long', widthMm: 900, lengthMm: 1_200, quantity: 1, allowRotation: false },
+      { sourceId: 'wide-short', widthMm: 900, lengthMm: 800, quantity: 1, allowRotation: false },
+      { sourceId: 'small', widthMm: 300, lengthMm: 600, quantity: 2, allowRotation: false },
+    ] });
+
+    expect(result.usedLengthMm).toBe(2_010);
+    expect(result.placements.find((piece) => piece.sourceId === 'wide-long')).toMatchObject({ x: 5, y: 5 });
+    expect(result.placements.filter((piece) => piece.sourceId === 'small').map((piece) => [piece.x, piece.y])).toEqual([[905, 5], [905, 605]]);
+  });
+
+  it('calculates bounded-roll utilization from pieces actually placed, not requested pieces', () => {
+    const result = optimizeMergedRollLayout({ rollWidthMm: 100, maxLengthMm: 100, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, pieces: [
+      { sourceId: 'small', widthMm: 40, lengthMm: 40, quantity: 10, allowRotation: false },
+    ] });
+    expect(result.producedQuantity).toBe(4);
+    expect(result.utilizationPercent).toBe(80);
+  });
 });
