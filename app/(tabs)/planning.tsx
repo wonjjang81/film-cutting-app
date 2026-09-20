@@ -108,18 +108,24 @@ export default function PlanningScreen() {
     }
   }, [pieceCompletionOverrides, refresh]);
 
-  const moveMergedPlacement = useCallback((planKey: string, placementId: number) => {
+  const moveMergedPlacement = useCallback((planKey: string, placementId: number, targetRollIndex: number) => {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
-    if (!plan) return;
-    const moved = movePlacementToBestOtherRoll(plan, placementId, currentPlan.groupedPlans);
+    if (!plan) return null;
+    const moved = movePlacementToBestOtherRoll(plan, placementId, currentPlan.groupedPlans, targetRollIndex);
     if (!moved) {
-      setNotice('선택한 조각이 들어갈 수 있는 다른 롤의 빈 공간이 없습니다.');
-      return;
+      setNotice(`선택한 조각이 ${targetRollIndex + 1}롤의 빈 공간 또는 남은 길이에 들어가지 않습니다.`);
+      return null;
     }
     const previous = manualMergedPlanOverrides.current[planKey];
     manualMergedPlanOverrides.current[planKey] = { baseSignature: previous?.baseSignature ?? mergedPlanGeometrySignature(plan), plan: moved.plan };
     setCurrentPlan((current) => ({ ...current, mergedPlans: current.mergedPlans.map((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey ? moved.plan : item) }));
-    setNotice(`${moved.fromRollIndex + 1}롤의 조각을 ${moved.toRollIndex + 1}롤 빈 공간으로 이동했습니다. 원단 길이 ${Math.round(moved.savedLengthMm).toLocaleString()}mm를 줄였습니다.`);
+    const lengthMessage = moved.savedLengthMm > 0
+      ? ` 원단 길이 ${Math.round(moved.savedLengthMm).toLocaleString()}mm를 줄였습니다.`
+      : moved.savedLengthMm < 0
+        ? ` 총 원단 길이는 ${Math.round(-moved.savedLengthMm).toLocaleString()}mm 늘었습니다.`
+        : ' 총 원단 길이는 그대로입니다.';
+    setNotice(`${moved.fromRollIndex + 1}롤의 조각을 ${moved.toRollIndex + 1}롤 빈 공간으로 이동했습니다.${lengthMessage}`);
+    return moved.toRollIndex;
   }, [currentPlan]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
@@ -225,7 +231,7 @@ export default function PlanningScreen() {
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId) => moveMergedPlacement(planKey, placementId)} hidePlacementList hideLegend continuousPageView />
+            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => moveMergedPlacement(planKey, placementId, targetRollIndex)} hidePlacementList hideLegend continuousPageView />
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
         })()}
         {independentPlans.map((entry) => {

@@ -1,5 +1,6 @@
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { MergedPlacement, MergedRollResult } from './optimizeMergedRollLayout';
+import { boundedNewRollLength } from './rollLengthLimit';
 
 const GRID_MM = 5;
 
@@ -38,11 +39,12 @@ function rebuildPlan(plan: MergedGroupPlan, rolls: readonly MergedRollResult[], 
   return { ...plan, rollResults: rolls.map((roll) => ({ ...roll, placements: roll.placements.map((item) => ({ ...item })) })), result: { ...combined, usedLengthMm: rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0) }, newRollQuantity: placements.length };
 }
 
-/** Moves one selected placement only when it fits inside another roll's existing used length. */
+/** Moves one selected placement into another physical roll, within that roll's length limit. */
 export function movePlacementToBestOtherRoll(
   plan: MergedGroupPlan,
   placementId: number,
   requests: readonly GroupedPieceRequest[],
+  requestedTargetRollIndex?: number,
 ): MovedMergedPlacement | null {
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   if (rolls.length < 2) return null;
@@ -56,14 +58,12 @@ export function movePlacementToBestOtherRoll(
   if (allowRotation && pieceWidthMm !== pieceLengthMm) orientations.push({ width: pieceLengthMm, height: pieceWidthMm, rotated: true });
   const sourceRemaining = rolls[fromRollIndex]!.placements.filter((item) => item.id !== placementId);
   const shortenedSource = metrics(sourceRemaining, rollWidthMm, startEndMarginMm);
-  const savedLengthMm = rolls[fromRollIndex]!.usedLengthMm - shortenedSource.usedLengthMm;
-  if (savedLengthMm <= 0) return null;
 
   let best: { targetIndex: number; placement: MergedPlacement; target: MergedRollResult } | undefined;
   for (let targetIndex = 0; targetIndex < rolls.length; targetIndex += 1) {
-    if (targetIndex === fromRollIndex) continue;
+    if (targetIndex === fromRollIndex || (requestedTargetRollIndex !== undefined && targetIndex !== requestedTargetRollIndex)) continue;
     const target = rolls[targetIndex]!;
-    const usableEnd = target.usedLengthMm - startEndMarginMm;
+    const usableEnd = boundedNewRollLength(specification.request.maxLengthMm) - startEndMarginMm;
     const points = [{ x: sideMarginMm, y: startEndMarginMm }, ...target.placements.flatMap((item) => [
       { x: item.x + item.width + gapMm, y: item.y },
       { x: item.x, y: item.y + item.height + gapMm },
@@ -73,13 +73,21 @@ export function movePlacementToBestOtherRoll(
         const candidate = { ...selected, ...orientation, x: Math.max(sideMarginMm, snap(point.x)), y: Math.max(startEndMarginMm, snap(point.y)) };
         if (candidate.x + candidate.width > rollWidthMm - sideMarginMm || candidate.y + candidate.height > usableEnd) continue;
         if (target.placements.some((item) => collides(candidate, item, gapMm))) continue;
-        if (!best || candidate.y < best.placement.y || (candidate.y === best.placement.y && candidate.x < best.placement.x)) {
-          best = { targetIndex, placement: candidate, target: metrics([...target.placements, candidate], rollWidthMm, startEndMarginMm) };
+        const targetWithCandidate = metrics([...target.placements, candidate], rollWidthMm, startEndMarginMm);
+        const addedLengthMm = targetWithCandidate.usedLengthMm - target.usedLengthMm;
+        const bestAddedLengthMm = best && best.target.usedLengthMm - rolls[best.targetIndex]!.usedLengthMm;
+        if (!best || addedLengthMm < bestAddedLengthMm!
+          || (addedLengthMm === bestAddedLengthMm
+            && (candidate.y < best.placement.y || (candidate.y === best.placement.y && candidate.x < best.placement.x)))) {
+          best = { targetIndex, placement: candidate, target: targetWithCandidate };
         }
       }
     }
   }
   if (!best) return null;
   const nextRolls = rolls.map((roll, index) => index === fromRollIndex ? shortenedSource : index === best!.targetIndex ? best!.target : roll).filter((roll) => roll.placements.length > 0);
-  return { plan: rebuildPlan(plan, nextRolls, rollWidthMm), fromRollIndex, toRollIndex: best.targetIndex, savedLengthMm };
+  const toRollIndex = best.targetIndex - (shortenedSource.placements.length === 0 && fromRollIndex < best.targetIndex ? 1 : 0);
+  const savedLengthMm = rolls[fromRollIndex]!.usedLengthMm - shortenedSource.usedLengthMm
+    - (best.target.usedLengthMm - rolls[best.targetIndex]!.usedLengthMm);
+  return { plan: rebuildPlan(plan, nextRolls, rollWidthMm), fromRollIndex, toRollIndex, savedLengthMm };
 }
