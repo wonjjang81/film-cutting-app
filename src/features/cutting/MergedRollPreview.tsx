@@ -31,7 +31,9 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
 }
 
 export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
-  const { result } = plan;
+  const [selectedRollIndex, setSelectedRollIndex] = React.useState(0);
+  const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
+  const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [viewportWidth, setViewportWidth] = React.useState(640);
@@ -91,13 +93,14 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       <View style={styles.heading}>
         <View style={styles.copy}>
           <Text style={styles.title}>병합 롤 도면</Text>
-          <Text style={styles.meta}>새 롤 폭 1,220mm · 길이 {Math.round(result.usedLengthMm).toLocaleString()}mm · 총 생산 {plan.producedQuantity}개 (새 롤 {result.producedQuantity}개)</Text>
+          <Text style={styles.meta}>새 롤 {selectedRollIndex + 1}/{rolls.length} · 폭 1,220mm · 길이 {Math.round(result.usedLengthMm).toLocaleString()}mm · 이 롤 {result.producedQuantity}개 · 전체 {plan.producedQuantity}개</Text>
         </View>
         <Text style={styles.badge}>수율 {result.utilizationPercent}%</Text>
       </View>
       {!hideLegend && <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>}
+      {rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { setSelectedRollIndex(index); setSelectedId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
       {result.placements.length > 0 ? <>
         <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
           <Text style={styles.zoomLabel}>확대/축소</Text>
@@ -175,6 +178,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
   const setCollapsedGroups = onChangeCollapsedSubgroups ?? setLocalCollapsedGroups;
   const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
+  const rollNumberByPlacementId = new Map((plan.rollResults?.length ? plan.rollResults : [plan.result]).flatMap((roll, index) => roll.placements.map((placement) => [placement.id, index + 1] as const)));
   const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {});
   const subgroupIds = placementGroups.map((group) => group.id);
   const collapsed = areAllPlacementListsCollapsed(subgroupIds, collapsedGroups);
@@ -194,7 +198,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           {!collapsed && group.items.map((placement) => {
             const completed = completedPlacementIds.has(placement.id);
             return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 조각 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
             </View>;
           })}
@@ -210,6 +214,7 @@ const styles = StyleSheet.create({
   copy: { flex: 1 }, title: { fontSize: 12, fontWeight: '800', color: '#115e59' }, meta: { marginTop: 3, fontSize: 10, color: '#64748b' }, badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 999, fontSize: 10, fontWeight: '800', color: '#0f766e', backgroundColor: '#ccfbf1' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
+  rollTabs: { flexDirection: 'row', gap: 6, marginTop: 10 }, rollTab: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, rollTabActive: { backgroundColor: '#0f766e' }, rollTabText: { fontSize: 10, fontWeight: '800', color: '#475569' }, rollTabTextActive: { color: '#fff' },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalComplete: { minHeight: 42, marginTop: 18, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 9, backgroundColor: '#f0fdfa' }, modalCompleteDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, modalCompleteText: { fontSize: 13, fontWeight: '900', color: '#0f766e' }, modalCompleteTextDone: { color: '#15803d' }, modalClose: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },

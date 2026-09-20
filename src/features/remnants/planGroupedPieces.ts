@@ -1,5 +1,6 @@
 import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
+import { boundedNewRollLength } from '../cutting/rollLengthLimit';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
@@ -35,6 +36,7 @@ export type MergedGroupPlan = {
   pieceCount: number;
   /** New-roll layout. Remnant layouts are kept separately because each is a physical rectangle. */
   result: MergedRollResult;
+  rollResults?: MergedRollResult[];
   newRollQuantity: number;
   producedQuantity: number;
   remnantUses: MergedRemnantUse[];
@@ -219,7 +221,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     .map((source, sourceIndex) => ({ source, sourceIndex }))
     .filter(({ source }) => source.id.trim().length > 0 && source.widthMm > 0 && source.lengthMm > 0 && source.quantity > 0 && entries.some((entry) => matchesRemnant(entry, source)));
   const condition = { gapMm: first.request.gapMm, sideMarginMm: first.request.sideMarginMm, startEndMarginMm: first.request.startEndMarginMm };
-  const maxNewRollLengthMm = first.request.maxLengthMm;
+  const maxNewRollLengthMm = boundedNewRollLength(first.request.maxLengthMm);
   let remainingUnits = candidates.map(({ source }) => source.quantity);
   while ([...remaining.values()].some((quantity) => quantity > 0)) {
     const options = candidates.flatMap(({ source, sourceIndex }, candidateIndex) => {
@@ -245,7 +247,30 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     consumed.set(selected.sourceIndex, next);
     remnantUses.push({ remnantId: selected.source.id, widthMm: selected.source.widthMm, lengthMm: selected.source.lengthMm, placements: selected.result.placements.map((placement) => ({ ...placement })), producedQuantity: selected.result.placements.length, sourceQuantities: selected.sourceQuantities, savedNewRollLengthMm: selected.savedNewRollLengthMm, result: selected.result });
   }
-  const result = optimizeMergedRollLayout({ rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition, pieces: mergedPieces(entries, remaining) });
+  const rollResults: MergedRollResult[] = [];
+  const sourceInstanceCounts = new Map<string, number>();
+  let nextPlacementId = 1;
+  while ([...remaining.values()].some((quantity) => quantity > 0)) {
+    const roll = optimizeMergedRollLayout({ rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition, pieces: mergedPieces(entries, remaining) });
+    if (roll.placements.length === 0) throw new Error('25m 롤에 배치할 수 없는 조각이 있습니다. 조각 치수와 여백을 확인해 주세요.');
+    const placements = roll.placements.map((placement) => {
+      const instanceIndex = sourceInstanceCounts.get(placement.sourceId) ?? 0;
+      sourceInstanceCounts.set(placement.sourceId, instanceIndex + 1);
+      return { ...placement, id: nextPlacementId++, instanceIndex };
+    });
+    for (const [id, count] of Object.entries(countPlacements(placements))) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - count));
+    rollResults.push({ ...roll, placements });
+  }
+  let lengthOffset = 0;
+  const combinedPlacements = rollResults.flatMap((roll) => {
+    const placements = roll.placements.map((placement) => ({ ...placement, y: placement.y + lengthOffset }));
+    lengthOffset += roll.usedLengthMm;
+    return placements;
+  });
+  const totalLength = rollResults.reduce((sum, roll) => sum + roll.usedLengthMm, 0);
+  const totalArea = combinedPlacements.reduce((sum, placement) => sum + placement.width * placement.height, 0);
+  const utilizationPercent = totalLength > 0 ? Math.round(totalArea / (rollWidthMm * totalLength) * 1000) / 10 : 0;
+  const result: MergedRollResult = { placements: combinedPlacements, usedLengthMm: totalLength, producedQuantity: combinedPlacements.length, utilizationPercent, wastePercent: Math.round((100 - utilizationPercent) * 10) / 10 };
   const inventoryDelta = makeMergedInventoryDelta([...consumed.values()].sort((left, right) => left.sourceIndex - right.sourceIndex), inventory.map((item) => item.id));
   return {
     mergeGroupId,
@@ -253,6 +278,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     groupNames: [...new Set(entries.map((entry) => entry.groupName))],
     pieceCount: entries.reduce((sum, entry) => sum + entry.request.quantity, 0),
     result,
+    rollResults,
     newRollQuantity: result.placements.length,
     producedQuantity: remnantUses.reduce((sum, use) => sum + use.producedQuantity, 0) + result.producedQuantity,
     remnantUses,

@@ -95,7 +95,7 @@ describe('planWithRemnants', () => {
     expect(plan.newRollResult).toMatchObject({ producedQuantity: 0, usedLengthMm: 0 });
   });
 
-  it('extends an unrestricted new roll beyond 25m to fit every piece', () => {
+  it('starts a new roll after 25m and keeps every placement ID unique', () => {
     const result = planWithRemnants({
       ...baseRequest,
       pieceWidthMm: 60,
@@ -104,6 +104,9 @@ describe('planWithRemnants', () => {
       allowRotation: false,
     }, []);
 
+    expect(result.newRollResults).toHaveLength(2);
+    expect(result.newRollResults?.map((roll) => roll.usedLengthMm)).toEqual([25_000, 5_000]);
+    expect(new Set(result.newRollResult?.placements.map((placement) => placement.id)).size).toBe(30);
     expect(result.newRollResult?.usedLengthMm).toBe(30_000);
     expect(result.newRollResult?.producedQuantity).toBe(30);
   });

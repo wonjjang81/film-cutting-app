@@ -4,6 +4,7 @@ import {
   type Placement,
   optimizeContinuousRollLayout,
 } from '../cutting/optimizeContinuousRollLayout';
+import { boundedNewRollLength, MAX_NEW_ROLL_LENGTH_MM } from '../cutting/rollLengthLimit';
 
 
 export type FilmRemnant = {
@@ -47,8 +48,53 @@ export type RemnantPlan = {
   remnantUses: RemnantUse[];
   newRollQuantity: number;
   newRollResult: ContinuousRollResult | null;
+  /** Physical new rolls, each at most 25m and with globally unique placement IDs. */
+  newRollResults?: ContinuousRollResult[];
   inventoryDelta: InventoryDelta;
 };
+
+function planNewRolls(request: RemnantPlanRequest, quantity: number): { rolls: ContinuousRollResult[]; combined: ContinuousRollResult | null } {
+  if (quantity <= 0) return { rolls: [], combined: null };
+  const rolls: ContinuousRollResult[] = [];
+  let remaining = quantity;
+  let nextId = 1;
+  const maxLengthMm = boundedNewRollLength(request.maxLengthMm);
+  while (remaining > 0) {
+    const result = optimizeContinuousRollLayout({ ...rollInput(request, remaining), maxLengthMm });
+    if (result.producedQuantity <= 0) {
+      if (request.maxLengthMm !== undefined && request.maxLengthMm < MAX_NEW_ROLL_LENGTH_MM) return { rolls: [result], combined: result };
+      throw new Error('25m 롤에 배치할 수 없는 조각이 있습니다. 조각 치수와 여백을 확인해 주세요.');
+    }
+    rolls.push({ ...result, placements: result.placements.map((placement) => ({ ...placement, id: nextId++ })) });
+    remaining -= result.producedQuantity;
+  }
+  let lengthOffset = 0;
+  const placements = rolls.flatMap((roll) => {
+    const entries = roll.placements.map((placement) => ({ ...placement, y: placement.y + lengthOffset }));
+    lengthOffset += roll.usedLengthMm;
+    return entries;
+  });
+  const first = rolls[0]!;
+  const usedLengthMm = rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0);
+  const producedQuantity = rolls.reduce((sum, roll) => sum + roll.producedQuantity, 0);
+  const utilizationPercent = Math.round((producedQuantity * request.pieceWidthMm * request.pieceLengthMm / (request.rollWidthMm * usedLengthMm)) * 10000) / 100;
+  return { rolls, combined: {
+    ...first, placements, usedLengthMm, producedQuantity,
+    overproduction: Math.max(0, producedQuantity - quantity),
+    utilizationPercent, wastePercent: Math.round((100 - utilizationPercent) * 100) / 100,
+    normalCount: rolls.reduce((sum, roll) => sum + roll.normalCount, 0),
+    rotatedCount: rolls.reduce((sum, roll) => sum + roll.rotatedCount, 0),
+    estimatedCutLines: rolls.reduce((sum, roll) => sum + roll.estimatedCutLines, 0),
+    rowSequence: rolls.flatMap((roll, index) => {
+      const offset = rolls.slice(0, index).reduce((sum, previous) => sum + previous.usedLengthMm, 0);
+      return roll.rowSequence.map((row) => ({ ...row, startY: row.startY + offset, endY: row.endY + offset }));
+    }),
+    rowPatterns: rolls.flatMap((roll) => roll.rowPatterns),
+    optimizationStatus: rolls.some((roll) => roll.optimizationStatus === 'approximate') ? 'approximate' : rolls.some((roll) => roll.optimizationStatus === 'certified') ? 'certified' : 'exact',
+    lowerBoundLengthMm: rolls.reduce((sum, roll) => sum + roll.lowerBoundLengthMm, 0),
+    optimalityGapMm: rolls.reduce((sum, roll) => sum + roll.optimalityGapMm, 0),
+  } };
+}
 
 type Candidate = {
   source: FilmRemnant;
@@ -263,13 +309,12 @@ export function planWithRemnants(request: RemnantPlanRequest, remnantOverride?: 
     consumed.set(selected.sourceIndex, next);
   }
 
-  const newRollResult = remainingQuantity > 0
-    ? optimizeContinuousRollLayout(rollInput(request, remainingQuantity))
-    : null;
+  const { rolls: newRollResults, combined: newRollResult } = planNewRolls(request, remainingQuantity);
   return {
     remnantUses,
     newRollQuantity: remainingQuantity,
     newRollResult,
+    newRollResults,
     inventoryDelta: makeInventoryDelta(
       [...consumed.values()].sort((left, right) => left.sourceIndex - right.sourceIndex),
       remnants.map((remnant) => remnant.id),

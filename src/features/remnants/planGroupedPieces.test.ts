@@ -48,7 +48,7 @@ describe('planGroupedPieces', () => {
     expect(plan?.newRollQuantity).toBe(2);
   });
 
-  it('extends merged new-roll layouts beyond 25m to fit every piece', () => {
+  it('splits merged new-roll layouts into physical rolls of at most 25m', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', mergeGroupId: 'merge', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 1_200, pieceLengthMm: 1_000, quantity: 30, allowRotation: false } },
       { groupId: 'g2', groupName: '그룹 2', pieceId: 'p2', pieceName: '조각 2', mergeGroupId: 'merge', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 1_200, pieceLengthMm: 1_000, quantity: 30, allowRotation: false } },
@@ -56,8 +56,11 @@ describe('planGroupedPieces', () => {
 
     const [plan] = planMergedGroups(requests, 1220, [], false);
 
-    expect(plan?.result.usedLengthMm).toBe(60_010);
+    expect(plan?.rollResults).toHaveLength(3);
+    expect(plan?.rollResults?.every((roll) => roll.usedLengthMm <= 25_000)).toBe(true);
+    expect(plan?.result.usedLengthMm).toBe(60_030);
     expect(plan?.result.placements).toHaveLength(60);
+    expect(new Set(plan?.result.placements.map((placement) => placement.id)).size).toBe(60);
     expect(plan?.producedQuantity).toBe(60);
   });
 
