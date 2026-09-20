@@ -14,6 +14,7 @@ export type CurrentEstimateGroupSource = {
   id: string;
   name: string;
   mergeGroupId?: string;
+  patternFixed?: boolean;
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
@@ -58,7 +59,7 @@ function optionalCost(value: string | undefined): number | undefined {
 export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): GroupedPieceRequest[] {
   return snapshot.pieces.flatMap((group) => group.pieces.map((piece) => {
     const subgroup = group.subgroups?.find((candidate) => candidate.pieceIds.includes(piece.id));
-    const request = toRemnantPlanRequest({ ...piece.form, rollWidth: '1220' }, []);
+    const request = toRemnantPlanRequest({ ...piece.form, rollWidth: '1220', allowRotation: group.patternFixed ? false : piece.form.allowRotation }, []);
     return ({
     groupId: group.id,
     groupName: group.name,
@@ -98,13 +99,9 @@ export function calculateCurrentGroupPlan(snapshot: CurrentEstimateSnapshot): Cu
   const pieceNamesBySourceId = Object.fromEntries(requests.map((request) => [`${request.groupId}-${request.pieceId}`, request.pieceName]));
   const subgroupNamesBySourceId = Object.fromEntries(snapshot.pieces.flatMap((group) => (group.subgroups ?? []).flatMap((subgroup) => subgroup.pieceIds.map((pieceId) => [`${group.id}-${pieceId}`, subgroup.name] as const))));
   if (requests.length === 0) return { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
-  // Keep each major group on its own physical roll. A matching merge number
-  // is still meaningful within a major group, but must not combine pieces
-  // from another major group in the planning screen.
-  const mergedPlans = snapshot.pieces.flatMap((group) => {
-    const groupRequests = requests.filter((entry) => entry.groupId === group.id);
-    return planMergedGroups(groupRequests, 1_220, [], false);
-  });
+  // Compatible major groups share physical rolls; product/brand and cutting
+  // conditions are checked by planMergedGroups before any pieces are mixed.
+  const mergedPlans = planMergedGroups(requests, 1_220, [], false);
   return { groupedPlans: planGroupedPieces(requests, []), mergedPlans, pieceNamesBySourceId, subgroupNamesBySourceId };
 }
 

@@ -87,7 +87,18 @@ export function planGroupedPieces(requests: readonly GroupedPieceRequest[], inve
   });
 }
 
-/** Calculates a mixed-size new-roll layout for each explicitly merged group. */
+/** One physical roll may only contain pieces with the same material and cutting setup. */
+function rollPoolKey(entry: GroupedPieceRequest): string {
+  const request = entry.request;
+  return JSON.stringify([
+    entry.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
+    request.brand.trim(), request.productNumber.trim(), request.rollWidthMm,
+    request.gapMm, request.sideMarginMm, request.startEndMarginMm,
+    boundedNewRollLength(request.maxLengthMm),
+  ]);
+}
+
+/** Calculates mixed-size layouts across compatible major groups and rolls. */
 export function planMergedGroups(
   requests: readonly GroupedPieceRequest[],
   rollWidthMm = 1220,
@@ -99,13 +110,14 @@ export function planMergedGroups(
   for (const request of requests) {
     const mergeGroupId = request.mergeGroupId ?? AUTO_MERGE_GROUP_ID;
     if (mergeGroupId === DISABLED_MERGE_GROUP_ID) continue;
-    const bucket = buckets.get(mergeGroupId) ?? [];
+    const key = rollPoolKey(request);
+    const bucket = buckets.get(key) ?? [];
     bucket.push(request);
-    buckets.set(mergeGroupId, bucket);
+    buckets.set(key, bucket);
   }
   let working = inventory.map((item) => ({ ...item }));
-  return [...buckets.entries()].filter(([, entries]) => entries.length > 1).map(([mergeGroupId, entries]) => {
-    const planned = planMergedGroup(entries, mergeGroupId, rollWidthMm, useRemnants ? working : []);
+  return [...buckets.values()].filter((entries) => entries.length > 1).map((entries) => {
+    const planned = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants ? working : []);
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
   });
@@ -155,6 +167,64 @@ function countPlacements(placements: readonly MergedPlacement[]): Record<string,
     counts[placement.sourceId] = (counts[placement.sourceId] ?? 0) + 1;
     return counts;
   }, {});
+}
+
+/** Try moving a small piece into the neighbouring roll's unused width/length.
+ * Repack both rolls and accept only a strictly shorter, fully placed result. */
+function rebalanceAdjacentRolls(
+  rolls: MergedRollResult[],
+  entries: readonly GroupedPieceRequest[],
+  rollWidthMm: number,
+  maxLengthMm: number,
+  condition: { gapMm: number; sideMarginMm: number; startEndMarginMm: number },
+): MergedRollResult[] {
+  if (rolls.length < 2) return rolls;
+  const specifications = new Map(entries.map((entry) => [sourceId(entry), entry]));
+  const repack = (quantities: Record<string, number>): MergedRollResult => optimizeMergedRollLayout({
+    rollWidthMm, maxLengthMm, ...condition,
+    pieces: Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([id, quantity]) => {
+      const entry = specifications.get(id)!;
+      return { sourceId: id, widthMm: entry.request.pieceWidthMm, lengthMm: entry.request.pieceLengthMm, quantity, allowRotation: entry.request.allowRotation };
+    }),
+  });
+  const current = [...rolls];
+  for (let pair = 0; pair < current.length - 1; pair += 1) {
+    let first = current[pair]!;
+    let second = current[pair + 1]!;
+    // Keep this bounded for large jobs. The pair is revisited after each accepted move.
+    const largePair = first.placements.length + second.placements.length > 120;
+    for (let pass = 0; pass < (largePair ? 1 : 3); pass += 1) {
+      const firstCounts = countPlacements(first.placements);
+      const secondCounts = countPlacements(second.placements);
+      const smallest = (counts: Record<string, number>, fromFirst: boolean) => Object.keys(counts).sort((left, right) => {
+        const a = specifications.get(left)!.request;
+        const b = specifications.get(right)!.request;
+        return a.pieceWidthMm * a.pieceLengthMm - b.pieceWidthMm * b.pieceLengthMm;
+      }).slice(0, largePair ? 2 : 4).map((id) => ({ id, fromFirst }));
+      const candidates = [...smallest(firstCounts, true), ...smallest(secondCounts, false)];
+      let best: { first: MergedRollResult; second: MergedRollResult } | undefined;
+      let bestLength = first.usedLengthMm + second.usedLengthMm;
+      for (const { id, fromFirst } of candidates) {
+        const nextFirst = { ...firstCounts };
+        const nextSecond = { ...secondCounts };
+        if (fromFirst) { nextFirst[id]!--; nextSecond[id] = (nextSecond[id] ?? 0) + 1; }
+        else { nextSecond[id]!--; nextFirst[id] = (nextFirst[id] ?? 0) + 1; }
+        const firstCandidate = repack(nextFirst);
+        const secondCandidate = repack(nextSecond);
+        const expectedFirst = first.placements.length + (fromFirst ? -1 : 1);
+        const expectedSecond = second.placements.length + (fromFirst ? 1 : -1);
+        if (firstCandidate.placements.length !== expectedFirst || secondCandidate.placements.length !== expectedSecond) continue;
+        const length = firstCandidate.usedLengthMm + secondCandidate.usedLengthMm;
+        if (length < bestLength) { bestLength = length; best = { first: firstCandidate, second: secondCandidate }; }
+      }
+      if (!best) break;
+      first = best.first;
+      second = best.second;
+    }
+    current[pair] = first;
+    current[pair + 1] = second;
+  }
+  return current.filter((roll) => roll.placements.length > 0);
 }
 
 function residualsForMerged(
@@ -247,20 +317,21 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     consumed.set(selected.sourceIndex, next);
     remnantUses.push({ remnantId: selected.source.id, widthMm: selected.source.widthMm, lengthMm: selected.source.lengthMm, placements: selected.result.placements.map((placement) => ({ ...placement })), producedQuantity: selected.result.placements.length, sourceQuantities: selected.sourceQuantities, savedNewRollLengthMm: selected.savedNewRollLengthMm, result: selected.result });
   }
-  const rollResults: MergedRollResult[] = [];
-  const sourceInstanceCounts = new Map<string, number>();
-  let nextPlacementId = 1;
+  let rollResults: MergedRollResult[] = [];
   while ([...remaining.values()].some((quantity) => quantity > 0)) {
     const roll = optimizeMergedRollLayout({ rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition, pieces: mergedPieces(entries, remaining) });
     if (roll.placements.length === 0) throw new Error('25m 롤에 배치할 수 없는 조각이 있습니다. 조각 치수와 여백을 확인해 주세요.');
-    const placements = roll.placements.map((placement) => {
-      const instanceIndex = sourceInstanceCounts.get(placement.sourceId) ?? 0;
-      sourceInstanceCounts.set(placement.sourceId, instanceIndex + 1);
-      return { ...placement, id: nextPlacementId++, instanceIndex };
-    });
-    for (const [id, count] of Object.entries(countPlacements(placements))) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - count));
-    rollResults.push({ ...roll, placements });
+    for (const [id, count] of Object.entries(countPlacements(roll.placements))) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - count));
+    rollResults.push(roll);
   }
+  rollResults = rebalanceAdjacentRolls(rollResults, entries, rollWidthMm, maxNewRollLengthMm, condition);
+  const sourceInstanceCounts = new Map<string, number>();
+  let nextPlacementId = 1;
+  rollResults = rollResults.map((roll) => ({ ...roll, placements: roll.placements.map((placement) => {
+    const instanceIndex = sourceInstanceCounts.get(placement.sourceId) ?? 0;
+    sourceInstanceCounts.set(placement.sourceId, instanceIndex + 1);
+    return { ...placement, id: nextPlacementId++, instanceIndex };
+  }) }));
   let lengthOffset = 0;
   const combinedPlacements = rollResults.flatMap((roll) => {
     const placements = roll.placements.map((placement) => ({ ...placement, y: placement.y + lengthOffset }));

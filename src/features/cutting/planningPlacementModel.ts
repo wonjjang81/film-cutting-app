@@ -23,9 +23,8 @@ export function resolveActiveMergedPlanKey(keys: readonly string[], currentKey: 
 
 /** Formats the calculation group name for the major-group roll tab. */
 export function majorGroupTabLabel(groupNames: readonly string[], index: number): string {
-  const name = groupNames[0]?.trim();
-  if (!name) return `대그룹 ${index + 1}`;
-  return name.replace(/^그룹\s*/, '대그룹 ');
+  const names = groupNames.map((name) => name.trim().replace(/^그룹\s*/, '대그룹 ')).filter(Boolean);
+  return names.length > 0 ? names.join(' + ') : `대그룹 ${index + 1}`;
 }
 
 /** Builds the completion action shared by placement lists and detail popups. */
@@ -53,10 +52,13 @@ export function groupPlacementsBySubgroup<T extends PlacementSource>(
   placements: readonly T[],
   subgroupNamesBySourceId: Readonly<Record<string, string>>,
   fallback = '미분류',
+  majorGroupNamesBySourceId?: Readonly<Record<string, string>>,
 ): PlacementSubgroup<T>[] {
   const grouped = new Map<string, PlacementSubgroup<T>>();
   placements.forEach((placement) => {
-    const title = subgroupNamesBySourceId[placement.sourceId]?.trim() || fallback;
+    const subgroup = subgroupNamesBySourceId[placement.sourceId]?.trim() || fallback;
+    const majorGroup = majorGroupNamesBySourceId?.[placement.sourceId]?.trim();
+    const title = majorGroup ? `${majorGroup} · ${subgroup}` : subgroup;
     const current = grouped.get(title);
     if (current) current.items.push(placement);
     else grouped.set(title, { id: title, title, items: [placement] });

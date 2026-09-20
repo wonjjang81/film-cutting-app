@@ -21,6 +21,7 @@ type Props = {
   completedPlacementIds?: readonly number[];
   sourceLabels?: Record<string, string>;
   sourceSubgroups?: Record<string, string>;
+  sourceMajorGroups?: Record<string, string>;
   collapsedSubgroups?: Record<string, boolean>;
   onChangeCollapsedSubgroups?(collapsed: Record<string, boolean>): void;
 };
@@ -30,7 +31,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
   const [selectedRollIndex, setSelectedRollIndex] = React.useState(0);
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
@@ -161,7 +162,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         </View>
       </Modal>}
       {!compact && onToggleComplete && <TouchableOpacity accessibilityRole="button" accessibilityLabel="병합 롤 재단 완료 상태 변경" disabled={busy} onPress={onToggleComplete} style={[styles.completeButton, job?.isCuttingComplete && styles.completeButtonDone, busy && styles.disabled]}><Text style={[styles.completeButtonText, job?.isCuttingComplete && styles.completeButtonTextDone]}>{job?.isCuttingComplete ? '병합 롤 재단 완료 해제' : '병합 롤 재단 완료'}</Text></TouchableOpacity>}
-      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} onTogglePlacementComplete={onTogglePlacementComplete} collapsedSubgroups={collapsedSubgroups} onChangeCollapsedSubgroups={onChangeCollapsedSubgroups} />}
+      {!compact && !hidePlacementList && <MergedRollPlacementList plan={plan} job={job} busy={busy} completedPlacementIds={completedPlacementIdsOverride} sourceLabels={sourceLabels} sourceSubgroups={sourceSubgroups} sourceMajorGroups={sourceMajorGroups} onTogglePlacementComplete={onTogglePlacementComplete} collapsedSubgroups={collapsedSubgroups} onChangeCollapsedSubgroups={onChangeCollapsedSubgroups} />}
     </View>
   );
 }
@@ -170,7 +171,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
  * The merged-roll piece list lives in the material-plan section so it has the
  * same placement-list position as a single-piece calculation.
  */
-export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, onTogglePlacementComplete, collapsedSubgroups, onChangeCollapsedSubgroups }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'onTogglePlacementComplete' | 'collapsedSubgroups' | 'onChangeCollapsedSubgroups'>) {
+export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, onTogglePlacementComplete, collapsedSubgroups, onChangeCollapsedSubgroups }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'sourceMajorGroups' | 'onTogglePlacementComplete' | 'collapsedSubgroups' | 'onChangeCollapsedSubgroups'>) {
   const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [localCollapsedGroups, setLocalCollapsedGroups] = React.useState<Record<string, boolean>>({});
@@ -179,7 +180,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
   const completedPlacementIds = new Set(completedPlacementIdsOverride ?? job?.completedPlacementIds ?? []);
   const labelBySource = new Map(sourceIds.map((id, index) => [id, sourceLabels?.[id] ?? `${plan.groupNames[index] ?? `그룹 ${index + 1}`} · ${id}`]));
   const rollNumberByPlacementId = new Map((plan.rollResults?.length ? plan.rollResults : [plan.result]).flatMap((roll, index) => roll.placements.map((placement) => [placement.id, index + 1] as const)));
-  const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {});
+  const placementGroups = groupPlacementsBySubgroup(plan.result.placements, sourceSubgroups ?? {}, '미분류', sourceMajorGroups);
   const subgroupIds = placementGroups.map((group) => group.id);
   const collapsed = areAllPlacementListsCollapsed(subgroupIds, collapsedGroups);
   const toggleCollapsed = () => setCollapsedGroups(toggleAllPlacementLists(subgroupIds, collapsedGroups));

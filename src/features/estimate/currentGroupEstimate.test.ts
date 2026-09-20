@@ -36,7 +36,7 @@ describe('current group estimate', () => {
     expect(estimate.mergedJobs).toHaveLength(1);
   });
 
-  it('splits merged placement by major group even when merge numbers match', () => {
+  it('shares physical rolls across major groups with the same material', () => {
     const snapshot = createCurrentEstimateSnapshot([
       { id: 'g1', name: '그룹 1', mergeGroupId: 'auto', pieces: [
         { id: 'g1-p1', name: '조각 1', form: form('500', '1000') },
@@ -50,11 +50,20 @@ describe('current group estimate', () => {
 
     const result = calculateCurrentGroupPlan(snapshot);
 
-    expect(result.mergedPlans).toHaveLength(2);
-    expect(result.mergedPlans.map((plan) => plan.sourceIds)).toEqual([
-      ['g1-g1-p1', 'g1-g1-p2'],
-      ['g2-g2-p1', 'g2-g2-p2'],
-    ]);
+    expect(result.mergedPlans).toHaveLength(1);
+    expect(result.mergedPlans[0]?.sourceIds).toEqual(['g1-g1-p1', 'g1-g1-p2', 'g2-g2-p1', 'g2-g2-p2']);
+    const estimateInput = calculateCurrentGroupEstimate(snapshot);
+    expect(estimateInput.mergedJobs[0]?.sourceJobIds).toHaveLength(4);
+    expect(calculateProjectEstimate(estimateInput.jobs, 10_000, 15_000, 0, estimateInput.mergedJobs).materialLengthM)
+      .toBeCloseTo(result.mergedPlans[0]!.result.usedLengthMm / 1000);
+  });
+
+  it('preserves a major group pattern lock in the shared-roll calculation', () => {
+    const snapshot = createCurrentEstimateSnapshot([{ id: 'g1', name: '그룹 1', patternFixed: true, pieces: [
+      { id: 'p1', name: 'p1', form: form('400', '800') },
+      { id: 'p2', name: 'p2', form: form('300', '600') },
+    ] }]);
+    expect(calculateCurrentGroupPlan(snapshot).groupedPlans.every((entry) => !entry.request.allowRotation)).toBe(true);
   });
 
   it('uses the subgroup piece name in the material plan', () => {

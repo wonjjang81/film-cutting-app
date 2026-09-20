@@ -647,11 +647,12 @@ export default function FilmCutInputScreen() {
     } finally { setBusy(false); }
   }, [autoSaveHistory, computeAgainst, form, refreshLibrary, useRemnants]);
 
-  const calculateGroup = async (groupId = activeGroupId) => {
+  const calculateGroup = async () => {
     setBusy(true); setError(null); setNotice(null);
     try {
       const latest = await refreshLibrary();
-      const targetGroups = groups.filter((group) => group.id === groupId);
+      // Compatible major groups share physical rolls during this calculation.
+      const targetGroups = groups;
       const requests: GroupedPieceRequest[] = targetGroups.flatMap((group) => group.pieces.map((piece) => {
         const normalized = withProductionDefaults({ ...piece.form, allowRotation: group.patternFixed ? false : piece.form.allowRotation });
         const subgroup = group.subgroups.find((item) => item.pieceIds.includes(piece.id));
@@ -701,9 +702,8 @@ export default function FilmCutInputScreen() {
           name: `병합 ${entry.mergeGroupId} · ${entry.groupNames.join(' + ')}`,
           mergeGroupId: entry.mergeGroupId,
           groupNames: [...entry.groupNames],
-          sourceJobIds: planned
-            .filter((piece) => piece.mergeGroupId === entry.mergeGroupId)
-            .map((piece) => sourceJobIds.get(`${piece.groupId}-${piece.pieceId}`))
+          sourceJobIds: entry.sourceIds
+            .map((sourceId) => sourceJobIds.get(sourceId))
             .filter((id): id is string => id !== undefined),
           sourceIds: [...entry.sourceIds],
           createdAt: new Date(timestamp + 1000 + index).toISOString(),
@@ -729,12 +729,11 @@ export default function FilmCutInputScreen() {
       const nextBatchPlans = confirmablePlans.map((entry) => ({ ...entry, savedJobId: savedJobIds[planned.indexOf(entry)] }));
       setBatchPlans(nextBatchPlans);
       setMergedGroupPlans(merged);
-      // Save every calculated piece, not only the piece that remains active,
-      // so moving through a group restores each piece's own preview.
+      // Restore the same shared-roll calculation from any participating group.
       setSavedGroupPlanViews((current) => ({
         ...current,
-        [groupId]: {
-          pieces: Object.fromEntries(plannedWithIds.map((entry, index) => [entry.pieceId, {
+        ...Object.fromEntries(targetGroups.map((group) => [group.id, {
+          pieces: Object.fromEntries(plannedWithIds.flatMap((entry, index) => entry.groupId === group.id ? [[entry.pieceId, {
             plan: entry.plan,
             planRequest: entry.request,
             draftJob: jobsToSave[index] ?? null,
@@ -743,17 +742,17 @@ export default function FilmCutInputScreen() {
             candidateComparison: entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : [],
             confirmed: false,
             cuttingComplete: false,
-          }])),
+          }]] : [])),
           batchPlans: nextBatchPlans,
           mergedGroupPlans: merged,
           pendingBatchSave: autoSaveHistory ? null : { jobs: jobsToSave, mergedJobs: mergedJobsToSave },
-        },
+        }])),
       }));
       const active = plannedWithIds.find((entry) => entry.groupId === activeGroupId && entry.pieceId === activePieceId) ?? plannedWithIds[0];
       if (active) activateBatchPlan(active);
       if (autoSaveHistory) await refreshLibrary();
-      setNotice(`${planned.length}개 조각의 현재 그룹 배치 계산이 완료되었습니다.${autoSaveHistory ? ' 작업 이력에 자동 저장했습니다.' : ' 작업 이력에는 저장하지 않았습니다. 프로젝트 저장을 눌러 보관할 수 있습니다.'}${merged.some((entry) => entry.remnantUses.length > 0) ? ' 병합 롤 자투리 사용 계획도 반영했습니다.' : ''}`);
-    } catch (caught) { setError(`현재 그룹의 전체 조각을 배치하지 못했습니다. ${messageOf(caught)}`); }
+      setNotice(`${planned.length}개 조각의 전체 배치 계산이 완료되었습니다.${autoSaveHistory ? ' 작업 이력에 자동 저장했습니다.' : ' 작업 이력에는 저장하지 않았습니다. 프로젝트 저장을 눌러 보관할 수 있습니다.'}${merged.some((entry) => entry.remnantUses.length > 0) ? ' 병합 롤 자투리 사용 계획도 반영했습니다.' : ''}`);
+    } catch (caught) { setError(`전체 조각을 배치하지 못했습니다. ${messageOf(caught)}`); }
     finally { setBusy(false); }
   };
 
@@ -1010,7 +1009,7 @@ export default function FilmCutInputScreen() {
     try {
       const source = pendingBatchSave ? await ensurePendingBatchSaved() : library;
       const current = source.mergedJobs.find((job) => job.id === id);
-      const planned = mergedGroupPlans.find((item) => item.mergeGroupId === current?.mergeGroupId);
+      const planned = mergedGroupPlans.find((item) => item.mergeGroupId === current?.mergeGroupId && sameMergedSources(item.sourceIds, current.sourceIds));
       if (!current || !planned || current.isInventoryConfirmed) return;
       await repository.confirmMergedJob(current, planned.inventoryDelta);
       await refreshLibrary();
@@ -1300,7 +1299,10 @@ function BatchPlanSummary({ plans, mergedPlans, mergedJobs, busy, onConfirmBatch
   const produced = plans.reduce((sum, item) => sum + item.plan.remnantUses.reduce((inner, use) => inner + use.producedQuantity, 0) + (item.plan.newRollResult?.producedQuantity ?? 0), 0) + mergedPlans.reduce((sum, item) => sum + item.producedQuantity, 0);
   const newRollLength = plans.reduce((sum, item) => sum + (item.plan.newRollResult?.usedLengthMm ?? 0), 0) + mergedPlans.reduce((sum, item) => sum + item.result.usedLengthMm, 0);
   const pieceCount = plans.length + mergedPlans.reduce((sum, item) => sum + item.pieceCount, 0);
-  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{pieceCount}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy || plans.length === 0} onPress={onConfirmBatch} style={[styles.batchConfirmButton, (busy || plans.length === 0) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{plans.length === 0 ? '개별 자투리 없음' : '순차 배치 일괄 확정'}</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>자동·번호 병합 롤은 상단 배치 미리보기에 한 번만 표시합니다. 도면에서 조각별 재단 완료를 체크하고, 아래에서 자투리 재고를 확정하세요.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId); const mergeLabel = item.mergeGroupId === AUTO_MERGE_GROUP_ID ? '자동 병합' : `병합 ${item.mergeGroupId}`; return <View key={`merged-${item.mergeGroupId}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>{mergeLabel}: {item.groupNames.join(' + ')} · 자투리 {item.remnantUses.length}개 · 새 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · 총 생산 {item.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text>{item.remnantUses.map((use) => <Text key={`${item.mergeGroupId}-${use.remnantId}`} style={styles.batchSummaryLine}>• 자투리 {use.remnantId} · {use.producedQuantity}개 · 새 롤 {Math.round(use.savedNewRollLengthMm).toLocaleString()}mm 절감</Text>)}<TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 ${item.mergeGroupId} 자투리 재고 확정`} disabled={busy || !job || job.isInventoryConfirmed} onPress={() => job && onConfirmMergedInventory(job.id)} style={[styles.batchConfirmButton, (busy || !job || job.isInventoryConfirmed) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{job?.isInventoryConfirmed ? '병합 재고 확정 완료' : '병합 롤 재고 확정'}</Text></TouchableOpacity></View>; })}</View>;
+  return <View style={styles.batchSummary}><View style={styles.batchSummaryHeader}><View><Text style={styles.batchSummaryTitle}>그룹 통합 배치 결과</Text><Text style={styles.batchSummaryMeta}>{pieceCount}개 조각 · 생산 {produced}개 · 새 롤 {Math.round(newRollLength).toLocaleString()}mm</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="순차 그룹 재고 일괄 확정" disabled={busy || plans.length === 0} onPress={onConfirmBatch} style={[styles.batchConfirmButton, (busy || plans.length === 0) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{plans.length === 0 ? '개별 자투리 없음' : '순차 배치 일괄 확정'}</Text></TouchableOpacity></View>{plans.map((item) => <Text key={`${item.groupId}-${item.pieceId}`} style={styles.batchSummaryLine}>• {item.groupName} · {item.pieceName} · 자투리 {item.plan.remnantUses.length}개 · 새 롤 {item.plan.newRollQuantity}개</Text>)}{mergedPlans.length > 0 && <Text style={styles.batchWarning}>자동·번호 병합 롤은 상단 배치 미리보기에 한 번만 표시합니다. 도면에서 조각별 재단 완료를 체크하고, 아래에서 자투리 재고를 확정하세요.</Text>}{mergedPlans.map((item) => { const job = mergedJobs.find((candidate) => candidate.mergeGroupId === item.mergeGroupId && sameMergedSources(candidate.sourceIds, item.sourceIds)); const mergeLabel = item.mergeGroupId === AUTO_MERGE_GROUP_ID ? '자동 병합' : `병합 ${item.mergeGroupId}`; return <View key={`merged-${item.sourceIds.join('|')}`}><Text style={{ marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#99f6e4', fontSize: 10, lineHeight: 15, fontWeight: '800', color: '#0f766e' }}>{mergeLabel}: {item.groupNames.join(' + ')} · 자투리 {item.remnantUses.length}개 · 새 롤 {Math.round(item.result.usedLengthMm).toLocaleString()}mm · 총 생산 {item.producedQuantity}개 · 수율 {item.result.utilizationPercent}%</Text>{item.remnantUses.map((use) => <Text key={`${item.mergeGroupId}-${use.remnantId}`} style={styles.batchSummaryLine}>• 자투리 {use.remnantId} · {use.producedQuantity}개 · 새 롤 {Math.round(use.savedNewRollLengthMm).toLocaleString()}mm 절감</Text>)}<TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 ${item.mergeGroupId} 자투리 재고 확정`} disabled={busy || !job || job.isInventoryConfirmed} onPress={() => job && onConfirmMergedInventory(job.id)} style={[styles.batchConfirmButton, (busy || !job || job.isInventoryConfirmed) && styles.disabled]}><Text style={styles.batchConfirmButtonText}>{job?.isInventoryConfirmed ? '병합 재고 확정 완료' : '병합 롤 재고 확정'}</Text></TouchableOpacity></View>; })}</View>;
+}
+function sameMergedSources(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
+  return left !== undefined && right !== undefined && left.length === right.length && left.every((id) => right.includes(id));
 }
 function messageOf(value: unknown): string { return value instanceof Error ? value.message : '요청을 처리하지 못했습니다.'; }
 function safeFilename(value: string): string { return value.replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_').trim() || 'film-cutting-work-order'; }

@@ -48,6 +48,21 @@ describe('planGroupedPieces', () => {
     expect(plan?.newRollQuantity).toBe(2);
   });
 
+  it('never mixes different products or brands on one physical roll', () => {
+    const request = (groupId: string, brand: string, productNumber: string): GroupedPieceRequest => ({
+      groupId, groupName: groupId, pieceId: 'p1', pieceName: 'p1',
+      request: { brand, productNumber, remnants: [], ...base },
+    });
+    const plans = planMergedGroups([
+      request('g1', '영림', 'P1'), request('g2', '영림', 'P1'),
+      request('g3', '영림', 'P2'), request('g4', '영림', 'P2'),
+      request('g5', '현대', 'P1'), request('g6', '현대', 'P1'),
+    ], 1220);
+    expect(plans.map((plan) => plan.sourceIds)).toEqual([
+      ['g1-p1', 'g2-p1'], ['g3-p1', 'g4-p1'], ['g5-p1', 'g6-p1'],
+    ]);
+  });
+
   it('splits merged new-roll layouts into physical rolls of at most 25m', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', mergeGroupId: 'merge', request: { brand: '영림', productNumber: '', remnants: [], ...base, pieceWidthMm: 1_200, pieceLengthMm: 1_000, quantity: 30, allowRotation: false } },
@@ -62,6 +77,18 @@ describe('planGroupedPieces', () => {
     expect(plan?.result.placements).toHaveLength(60);
     expect(new Set(plan?.result.placements.map((placement) => placement.id)).size).toBe(60);
     expect(plan?.producedQuantity).toBe(60);
+  });
+
+  it('moves a small piece from the first roll into the second roll gap when it shortens total material', () => {
+    const requests: GroupedPieceRequest[] = [
+      { groupId: 'g1', groupName: '그룹 1', pieceId: 'large', pieceName: '큰 조각', request: { brand: '영림', productNumber: 'P1', remnants: [], ...base, pieceWidthMm: 1000, pieceLengthMm: 20_000, quantity: 2, allowRotation: false } },
+      { groupId: 'g2', groupName: '그룹 2', pieceId: 'small', pieceName: '작은 조각', request: { brand: '영림', productNumber: 'P1', remnants: [], ...base, pieceWidthMm: 200, pieceLengthMm: 6_000, quantity: 4, allowRotation: false } },
+    ];
+    const [plan] = planMergedGroups(requests);
+    expect(plan?.rollResults).toHaveLength(2);
+    expect(plan?.rollResults?.map((roll) => roll.usedLengthMm)).toEqual([20_010, 20_010]);
+    expect(plan?.rollResults?.map((roll) => roll.placements.filter((piece) => piece.sourceId === 'g2-small').length)).toEqual([3, 1]);
+    expect(plan?.result.placements).toHaveLength(6);
   });
 
   it('does not use a remnant from another brand or product in a merged group', () => {

@@ -16,6 +16,15 @@ describe('planning placement model', () => {
     ]);
   });
 
+  it('keeps identical subgroup names in separate major groups distinct on a shared roll', () => {
+    expect(groupPlacementsBySubgroup(
+      [placement(1, 'g1-p1'), placement(2, 'g2-p1')],
+      { 'g1-p1': 'A', 'g2-p1': 'A' }, '미분류',
+      { 'g1-p1': '대그룹 1', 'g2-p1': '대그룹 2' },
+    ).map((group) => group.title)).toEqual(['대그룹 1 · A', '대그룹 2 · A']);
+    expect(majorGroupTabLabel(['그룹 1', '그룹 2'], 0)).toBe('대그룹 1 + 대그룹 2');
+  });
+
   it('toggles a completion mark and reports all-placement completion', () => {
     expect(nextPlacementCompletion([1], 2, [1, 2, 3])).toEqual({ completedIds: [1, 2], complete: false });
     expect(nextPlacementCompletion([1, 2], 3, [1, 2, 3])).toEqual({ completedIds: [1, 2, 3], complete: true });

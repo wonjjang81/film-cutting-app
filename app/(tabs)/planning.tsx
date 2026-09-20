@@ -105,6 +105,7 @@ export default function PlanningScreen() {
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
   const mergedSourceIds = useMemo(() => new Set(currentPlan.mergedPlans.flatMap((plan) => plan.sourceIds)), [currentPlan.mergedPlans]);
+  const majorGroupNamesBySourceId = useMemo(() => Object.fromEntries(currentPlan.groupedPlans.map((entry) => [`${entry.groupId}-${entry.pieceId}`, entry.groupName])), [currentPlan.groupedPlans]);
   const independentPlans = useMemo(() => currentPlan.groupedPlans.filter((entry) => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`)), [currentPlan.groupedPlans, mergedSourceIds]);
   const pieceCount = currentPlan.groupedPlans.length;
   const newRollLength = independentPlans.reduce((sum, entry) => sum + (entry.plan.newRollResult?.usedLengthMm ?? 0), 0)
@@ -126,9 +127,9 @@ export default function PlanningScreen() {
     if (selectedMergedPlanKey !== activeMergedPlanKey) setSelectedMergedPlanKey(activeMergedPlanKey);
   }, [activeMergedPlanKey, selectedMergedPlanKey]);
   const placementListKeys = useMemo(() => [
-    ...currentPlan.mergedPlans.flatMap((plan) => groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => JSON.stringify([mergedPlanKey(plan.mergeGroupId, plan.sourceIds), group.id]))),
+    ...currentPlan.mergedPlans.flatMap((plan) => groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId, '미분류', majorGroupNamesBySourceId).map((group) => JSON.stringify([mergedPlanKey(plan.mergeGroupId, plan.sourceIds), group.id]))),
     ...independentPlans.map((entry) => `piece:${entry.groupId}-${entry.pieceId}`),
-  ], [currentPlan.mergedPlans, currentPlan.subgroupNamesBySourceId, independentPlans]);
+  ], [currentPlan.mergedPlans, currentPlan.subgroupNamesBySourceId, independentPlans, majorGroupNamesBySourceId]);
   const allPlacementListsCollapsed = areAllPlacementListsCollapsed(placementListKeys, collapsedPlacementLists);
 
   const exportPreviewPdf = useCallback(async () => {
@@ -198,14 +199,14 @@ export default function PlanningScreen() {
           const placementIds = plan.result.placements.map((placement) => placement.id);
           const planKey = mergedPlanKey(plan.mergeGroupId, plan.sourceIds);
           const completedPlacementIds = resolvePlacementCompletionIds(job?.completedPlacementIds, mergedCompletionOverrides[planKey]);
-          const subgroupIds = groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId).map((group) => group.id);
+          const subgroupIds = groupPlacementsBySubgroup(plan.result.placements, currentPlan.subgroupNamesBySourceId, '미분류', majorGroupNamesBySourceId).map((group) => group.id);
           const subgroupKey = (id: string) => JSON.stringify([planKey, id]);
           const listState = Object.fromEntries(subgroupIds.map((id) => [id, collapsedPlacementLists[subgroupKey(id)] === true]));
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} hidePlacementList hideLegend continuousPageView />
-            : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
+            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} hidePlacementList hideLegend continuousPageView />
+            : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
         })()}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
