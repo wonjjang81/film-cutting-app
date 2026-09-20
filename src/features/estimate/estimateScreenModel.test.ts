@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { getEstimatePanelVisibility } from './estimateScreenModel';
-import { selectEstimateSource } from './estimateScreenModel';
+import { selectEstimateSource, selectSavedProjectEstimateSource } from './estimateScreenModel';
 
 const job = (id: string) => ({
   id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-23T00:00:00.000Z', updatedAt: '2026-08-23T00:00:00.000Z',
@@ -26,6 +26,21 @@ describe('getEstimatePanelVisibility', () => {
     const selected = selectEstimateSource('project', [], [], [job('current-1')], []);
     expect(selected.source).toBe('current');
     expect(selected.jobs.map((item) => item.id)).toEqual(['current-1']);
+  });
+
+  it('selects only the active project jobs instead of duplicating data from other saved projects', () => {
+    const jobs = [job('project-a-old'), job('project-a-current'), job('project-b')];
+    const mergedJobs = [
+      { id: 'merged-a', name: 'A', mergeGroupId: 'auto', groupNames: [], sourceJobIds: ['project-a-current'], createdAt: '', updatedAt: '', rollWidthMm: 1220, usedLengthMm: 500, producedQuantity: 1, utilizationPercent: 50, wastePercent: 50, placements: [] },
+      { id: 'merged-b', name: 'B', mergeGroupId: 'auto', groupNames: [], sourceJobIds: ['project-b'], createdAt: '', updatedAt: '', rollWidthMm: 1220, usedLengthMm: 500, producedQuantity: 1, utilizationPercent: 50, wastePercent: 50, placements: [] },
+    ];
+    const selected = selectSavedProjectEstimateSource(
+      { id: 'project-a', name: '현장 A', jobIds: ['project-a-current'], mergedJobIds: ['merged-a'], materialCostPerM: 0, constructionCostPerM2: 0, createdAt: '', updatedAt: '' },
+      jobs,
+      mergedJobs,
+    );
+    expect(selected.jobs.map((item) => item.id)).toEqual(['project-a-current']);
+    expect(selected.mergedJobs.map((item) => item.id)).toEqual(['merged-a']);
   });
 
 });
