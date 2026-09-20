@@ -17,6 +17,6 @@ describe('compactBrandSelectWidth', () => {
     expect(compactBrandSelectWidth('Lx')).toBe(58);
     expect(compactBrandSelectWidth('영림')).toBe(58);
     expect(compactBrandSelectWidth('긴사용자브랜드')).toBeGreaterThan(58);
-    expect(compactBrandSelectWidth('아주아주아주아주긴브랜드')).toBe(116);
+    expect(compactBrandSelectWidth('아주아주아주아주긴브랜드')).toBe(174);
   });
 });

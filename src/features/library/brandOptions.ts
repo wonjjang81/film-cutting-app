@@ -22,5 +22,5 @@ export function isDefaultBrand(brand: string): boolean {
 export function compactBrandSelectWidth(value: string): number {
   const label = value.trim() || '브랜드';
   const textWidth = [...label].reduce((sum, character) => sum + (/^[\x00-\x7F]$/.test(character) ? 7 : 12), 0);
-  return Math.max(58, Math.min(116, textWidth + 30));
+  return Math.max(58, Math.min(200, textWidth + 30));
 }

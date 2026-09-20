@@ -63,13 +63,15 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         const color = colorFor(placement.sourceId, sourceIds);
         const active = selectedId === placement.id;
         const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
-        const { labelFontSize, dimensionFontSize } = placementTextMetrics(placement.width, placement.height);
+        const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
         const centerX = placement.x + placement.width / 2;
         const centerY = placement.y + placement.height / 2;
         return <G key={placement.id} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
           <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
-          <SvgText x={centerX} y={centerY - dimensionFontSize * 0.15} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={color}>{annotation.label}</SvgText>
-          <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
+          <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
+            <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={color}>{annotation.label}</SvgText>
+            <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
+          </G>
           {completedPlacementIds.has(placement.id) && <G accessibilityLabel={`제품 ${placement.id} 재단 완료 표시`}>
             {(() => {
               const cross = completionCrossMetrics(placement.width, placement.height);
@@ -125,11 +127,13 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
                 const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
                 const centerX = placement.x + placement.width / 2;
                 const centerY = placement.y + placement.height / 2;
-                const { labelFontSize, dimensionFontSize } = placementTextMetrics(placement.width, placement.height);
+                const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
                 return <G key={placement.id}>
                 <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds)}22`} stroke={colorFor(placement.sourceId, sourceIds)} strokeWidth={2} />
-                <SvgText x={centerX} y={centerY} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds)}>{annotation.label}</SvgText>
-                <SvgText x={centerX} y={centerY + labelFontSize * 0.9} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
+                <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
+                  <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds)}>{annotation.label}</SvgText>
+                  <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
+                </G>
               </G>;
               })}
             </Svg>
@@ -143,7 +147,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
             const completion = placementCompletionControl(completedPlacementIds.has(selected.id), busy, Boolean(onTogglePlacementComplete));
             return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="병합 조각 정보 팝업">
               <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
-              <Text style={styles.modalTitle}>조각 정보</Text>
+              <Text style={styles.modalTitle}>조각 정보 · #{selected.id}</Text>
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>

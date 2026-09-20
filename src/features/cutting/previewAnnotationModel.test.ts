@@ -30,9 +30,14 @@ describe('preview annotation model', () => {
     });
   });
 
-  it('uses a larger but bounded dimension label', () => {
-    expect(placementTextMetrics(100, 450)).toEqual({ labelFontSize: 20, dimensionFontSize: 16 });
-    expect(placementTextMetrics(500, 1000)).toEqual({ labelFontSize: 30, dimensionFontSize: 23 });
+  it('enlarges the id to fit the piece and rotates text when the narrow side cannot hold it', () => {
+    const narrow = placementTextMetrics(100, 450, formatPlacementPreview(12, 100, 450, false));
+    const broad = placementTextMetrics(500, 1000, formatPlacementPreview(12, 500, 1000, false));
+    expect(narrow.rotateText).toBe(true);
+    expect(broad.rotateText).toBe(false);
+    expect(broad.labelFontSize).toBeGreaterThan(30);
+    expect(broad.dimensionFontSize).toBeGreaterThan(23);
+    expect(placementTextMetrics(20, 20, formatPlacementPreview(123, 20, 20, false)).labelFontSize).toBeLessThan(11);
   });
 
   it('insets completion crosses by 10% on every edge', () => {

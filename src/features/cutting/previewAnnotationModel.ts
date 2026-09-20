@@ -13,14 +13,20 @@ export function formatPlacementPreview(id: number, width: number, height: number
   return formatPlacementAnnotation(`#${id}`, width, height, rotated);
 }
 
-/** Returns readable, bounded text sizes for labels drawn inside a placement. */
-export function placementTextMetrics(width: number, height: number): { labelFontSize: number; dimensionFontSize: number } {
-  const minDimension = Math.max(1, Math.min(Math.abs(width), Math.abs(height)));
-  const labelFontSize = Math.max(11, Math.min(30, minDimension * 0.2));
-  return {
-    labelFontSize,
-    dimensionFontSize: Math.max(11, Math.min(26, Math.round(labelFontSize * 0.78))),
-  };
+/** Fits both lines inside a piece; rotate only the annotation when the long axis is more legible. */
+export function placementTextMetrics(width: number, height: number, annotation?: PlacementAnnotation): { labelFontSize: number; dimensionFontSize: number; rotateText: boolean } {
+  const safeWidth = Math.max(1, Math.abs(width));
+  const safeHeight = Math.max(1, Math.abs(height));
+  const labelLength = Math.max(2, annotation?.label.length ?? 3);
+  const dimensionLength = Math.max(6, annotation?.dimensions.length ?? 11);
+  const fit = (along: number, across: number) => ({
+    labelFontSize: Math.max(1, Math.floor(Math.min(72, along * 0.84 / (labelLength * 0.64), across * 0.42))),
+    dimensionFontSize: Math.max(1, Math.floor(Math.min(36, along * 0.84 / (dimensionLength * 0.56), across * 0.24))),
+  });
+  const horizontal = fit(safeWidth, safeHeight);
+  const vertical = fit(safeHeight, safeWidth);
+  const rotateText = safeHeight > safeWidth * 1.35 && vertical.dimensionFontSize > horizontal.dimensionFontSize * 1.15;
+  return { ...(rotateText ? vertical : horizontal), rotateText };
 }
 
 export type PlacementInfo = PlacementAnnotation & { rotation: string; position: string };
