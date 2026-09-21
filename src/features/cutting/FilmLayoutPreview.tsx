@@ -5,6 +5,7 @@ import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
 import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
 import { placementCompletionControl } from './planningPlacementModel';
+import { runPlacementPopupAction } from './placementPopupAction';
 
 export { createLayoutSvgMarkup } from './createLayoutSvgMarkup';
 
@@ -144,7 +145,7 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
-              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => onTogglePlacementComplete?.(selected.id)} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.modalCompleteDisabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => runPlacementPopupAction(() => onTogglePlacementComplete?.(selected.id), () => setSelectedId(null))} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.modalCompleteDisabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="button" accessibilityLabel="조각 정보 팝업 닫기" onPress={() => setSelectedId(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
             </View>;
           })()}
