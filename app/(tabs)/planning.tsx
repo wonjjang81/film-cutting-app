@@ -9,6 +9,7 @@ import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from '
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { recordManualLayoutChange, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
 import { movePlacementToBestOtherRoll, movePlacementWithinRoll } from '../../src/features/cutting/moveMergedPlacement';
+import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptimizeManualMergedLayout';
 import { captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
@@ -39,6 +40,9 @@ export default function PlanningScreen() {
   const [collapsedPlacementLists, setCollapsedPlacementLists] = useState<Record<string, boolean>>({});
   const [selectedMergedPlanKey, setSelectedMergedPlanKey] = useState<string | null>(null);
   const [planningView, setPlanningView] = useState<PlanningView>('drawing');
+  const [previewHeaderCollapsed, setPreviewHeaderCollapsed] = useState(false);
+  const [selectedRollByPlan, setSelectedRollByPlan] = useState<Record<string, number>>({});
+  const [lastMovedRollByPlan, setLastMovedRollByPlan] = useState<Record<string, number>>({});
   const [showBackToPreview, setShowBackToPreview] = useState(false);
   const [manualLayoutHistories, setManualLayoutHistories] = useState<Record<string, ManualLayoutHistory<MergedGroupPlan>>>({});
   const pageScrollRef = useRef<ScrollView>(null);
@@ -198,6 +202,20 @@ export default function PlanningScreen() {
     setNotice(action === 'undo' ? '이전 배치로 되돌렸습니다.' : action === 'redo' ? '다음 배치를 다시 적용했습니다.' : '자동 계산 배치로 초기화했습니다.');
   }, [currentPlan, installManualPlan, manualLayoutHistories]);
 
+  const reoptimizeMergedLayout = useCallback((planKey: string) => {
+    const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
+    if (!plan) return;
+    const optimized = reoptimizeManualMergedLayout(plan, currentPlan.groupedPlans);
+    if (optimized.movedCount === 0) {
+      setNotice('현재 배치에서 추가로 채울 수 있는 빈 공간이 없습니다.');
+      return;
+    }
+    installManualPlan(planKey, plan, optimized.plan);
+    setNotice(optimized.savedLengthMm > 0
+      ? `빈 공간에 ${optimized.movedCount}개 조각을 재배치해 원단 길이 ${Math.round(optimized.savedLengthMm).toLocaleString()}mm를 줄였습니다.`
+      : `빈 공간을 우선해 ${optimized.movedCount}개 조각을 더 촘촘하게 재배치했습니다.`);
+  }, [currentPlan, installManualPlan]);
+
   const scrollPreviewDuringDrag = useCallback((deltaY: number) => {
     const nextY = Math.max(0, pageScrollY.current + deltaY);
     pageScrollY.current = nextY;
@@ -249,6 +267,9 @@ export default function PlanningScreen() {
   const activeMergedPlanKey = resolveActiveMergedPlanKey(mergedPlanTabs.map((tab) => tab.key), selectedMergedPlanKey);
   const activeMergedTab = mergedPlanTabs.find((tab) => tab.key === activeMergedPlanKey);
   const activeMergedPlan = activeMergedTab?.plan;
+  const activeMergedRolls = activeMergedPlan ? (activeMergedPlan.rollResults?.length ? activeMergedPlan.rollResults : [activeMergedPlan.result]) : [];
+  const activeMergedRollIndex = activeMergedPlanKey ? Math.min(selectedRollByPlan[activeMergedPlanKey] ?? 0, Math.max(0, activeMergedRolls.length - 1)) : 0;
+  const activeManualHistory = activeMergedPlanKey ? manualLayoutHistories[activeMergedPlanKey] : undefined;
   useEffect(() => {
     if (selectedMergedPlanKey !== activeMergedPlanKey) setSelectedMergedPlanKey(activeMergedPlanKey);
   }, [activeMergedPlanKey, selectedMergedPlanKey]);
@@ -304,24 +325,42 @@ export default function PlanningScreen() {
     {notice && <View style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View>}
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>CUTTING RESULT</Text><Text style={styles.sectionTitle}>재단 결과 · 원단 사용 계획</Text></View><Text style={styles.summaryStatus}>재단계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 수" value={`${newRollCount}롤`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>새 롤은 1롤당 최대 25m로 분할됩니다. 재단계산에서 저장된 결과를 기준으로 배치 도면과 배치목록을 확인합니다.</Text></View>
-      <View style={styles.section} onLayout={(event) => { previewSectionY.current = event.nativeEvent.layout.y; }}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}>{planningView === 'drawing' ? <>
+      <View style={styles.section} onLayout={(event) => { previewSectionY.current = event.nativeEvent.layout.y; }}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}>{planningView === 'drawing' && <>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 배치 저장" disabled={savingManualLayout || loading || currentPlan.mergedPlans.length === 0} onPress={() => void saveManualLayouts()} style={[styles.saveLayoutButton, (savingManualLayout || loading || currentPlan.mergedPlans.length === 0) && styles.disabled]}><Text style={styles.saveLayoutButtonText}>{savingManualLayout ? '저장 중' : '수동 배치 저장'}</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 PDF 내보내기" disabled={exportingPdf} onPress={() => void exportPreviewPdf()} style={[styles.pdfButton, exportingPdf && styles.disabled]}><FileDown color="#fff" size={14} /><Text style={styles.pdfButtonText}>{exportingPdf ? '준비 중' : 'PDF 내보내기'}</Text></TouchableOpacity>
-      </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity>}</View></View>
-        <View style={styles.viewTabs} accessibilityRole="tablist">
-          <TouchableOpacity accessibilityRole="tab" accessibilityLabel="병합롤 도면 탭" accessibilityState={{ selected: planningView === 'drawing' }} onPress={() => setPlanningView('drawing')} style={[styles.viewTab, planningView === 'drawing' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'drawing' && styles.viewTabTextActive]}>병합롤 도면</Text></TouchableOpacity>
-          <TouchableOpacity accessibilityRole="tab" accessibilityLabel="배치목록 탭" accessibilityState={{ selected: planningView === 'list' }} onPress={() => setPlanningView('list')} style={[styles.viewTab, planningView === 'list' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'list' && styles.viewTabTextActive]}>배치목록</Text></TouchableOpacity>
+      </>}</View></View>
+        <View style={styles.previewStickyHeader}>
+          <View style={styles.stickyTopRow}>
+            <View style={styles.viewTabs} accessibilityRole="tablist">
+              <TouchableOpacity accessibilityRole="tab" accessibilityLabel="병합롤 도면 탭" accessibilityState={{ selected: planningView === 'drawing' }} onPress={() => setPlanningView('drawing')} style={[styles.viewTab, planningView === 'drawing' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'drawing' && styles.viewTabTextActive]}>병합롤 도면</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="tab" accessibilityLabel="배치목록 탭" accessibilityState={{ selected: planningView === 'list' }} onPress={() => setPlanningView('list')} style={[styles.viewTab, planningView === 'list' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'list' && styles.viewTabTextActive]}>배치목록</Text></TouchableOpacity>
+            </View>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 미리보기 헤더 ${previewHeaderCollapsed ? '펼치기' : '최소화'}`} onPress={() => setPreviewHeaderCollapsed((collapsed) => !collapsed)} style={styles.headerCollapseButton}><Text style={styles.headerCollapseText}>{previewHeaderCollapsed ? '펼치기 ▼' : '최소화 ▲'}</Text></TouchableOpacity>
+          </View>
+          {!previewHeaderCollapsed && <>
+            {mergedPlanTabs.length > 0 && <View style={styles.hierarchyRow}><Text style={styles.hierarchyLabel}>대그룹</Text><ScrollView horizontal style={styles.hierarchyScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mergedRollTabs} accessibilityLabel="대그룹 병합 롤 선택">
+              {mergedPlanTabs.map((tab) => {
+                const active = tab.key === activeMergedPlanKey;
+                return <TouchableOpacity key={tab.key} accessibilityRole="tab" accessibilityLabel={`${tab.label} 병합 롤 보기`} accessibilityState={{ selected: active }} onPress={() => setSelectedMergedPlanKey(tab.key)} style={[styles.mergedRollTab, active && styles.mergedRollTabActive]}>
+                  <Text style={[styles.mergedRollTabLabel, active && styles.mergedRollTabLabelActive]}>{tab.label}</Text>
+                  <Text style={[styles.mergedRollTabMeta, active && styles.mergedRollTabMetaActive]}>{tab.plan.producedQuantity}개 · {Math.round(tab.plan.result.usedLengthMm).toLocaleString()}mm</Text>
+                </TouchableOpacity>;
+              })}
+            </ScrollView></View>}
+            {planningView === 'drawing' && activeMergedPlanKey && activeMergedRolls.length > 0 && <View style={styles.hierarchyRow}><Text style={styles.hierarchyLabel}>롤</Text><ScrollView horizontal style={styles.hierarchyScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.headerRollTabs} accessibilityLabel="선택 대그룹 롤 선택">
+              {activeMergedRolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`${index + 1}롤 도면 보기`} accessibilityState={{ selected: activeMergedRollIndex === index }} onPress={() => setSelectedRollByPlan((current) => ({ ...current, [activeMergedPlanKey]: index }))} style={[styles.headerRollTab, activeMergedRollIndex === index && styles.headerRollTabActive]}><Text style={[styles.headerRollTabText, activeMergedRollIndex === index && styles.headerRollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}
+            </ScrollView></View>}
+            <View style={styles.headerControlRow} accessibilityLabel="배치 컨트롤">
+              {planningView === 'drawing' && activeMergedPlanKey && activeMergedPlan ? <>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="빈공간 우선 재배치" disabled={loading} onPress={() => reoptimizeMergedLayout(activeMergedPlanKey)} style={[styles.headerControlPrimary, loading && styles.disabled]}><Text style={styles.headerControlPrimaryText}>빈공간 재배치</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="이전 배치로 되돌리기" disabled={!activeManualHistory?.past.length || loading} onPress={() => transitionManualLayout(activeMergedPlanKey, 'undo')} style={[styles.headerControlButton, (!activeManualHistory?.past.length || loading) && styles.disabled]}><Text style={styles.headerControlText}>↶ 이전</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="이후 배치 다시 적용" disabled={!activeManualHistory?.future.length || loading} onPress={() => transitionManualLayout(activeMergedPlanKey, 'redo')} style={[styles.headerControlButton, (!activeManualHistory?.future.length || loading) && styles.disabled]}><Text style={styles.headerControlText}>↷ 이후</Text></TouchableOpacity>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 리셋" disabled={!activeManualHistory || mergedPlanPlacementSignature(activeManualHistory.baseline) === mergedPlanPlacementSignature(activeMergedPlan) || loading} onPress={() => transitionManualLayout(activeMergedPlanKey, 'reset')} style={[styles.headerControlDanger, (!activeManualHistory || mergedPlanPlacementSignature(activeManualHistory.baseline) === mergedPlanPlacementSignature(activeMergedPlan) || loading) && styles.disabled]}><Text style={styles.headerControlDangerText}>리셋</Text></TouchableOpacity>
+                {lastMovedRollByPlan[activeMergedPlanKey] !== undefined && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`마지막 이동 위치 ${lastMovedRollByPlan[activeMergedPlanKey]! + 1}롤로 바로가기`} onPress={() => setSelectedRollByPlan((current) => ({ ...current, [activeMergedPlanKey]: lastMovedRollByPlan[activeMergedPlanKey]! }))} style={styles.headerControlButton}><Text style={styles.headerControlText}>이동 위치 · {lastMovedRollByPlan[activeMergedPlanKey]! + 1}롤</Text></TouchableOpacity>}
+              </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.headerControlButton, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.headerControlText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity>}
+            </View>
+          </>}
         </View>
-        <Text style={styles.viewHint}>{planningView === 'drawing' ? '도면은 별도 스크롤 없이 아래로 이어집니다.' : '소그룹별 조각을 확인하고 재단 완료를 체크합니다.'}</Text>
-        {mergedPlanTabs.length > 0 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mergedRollTabs} accessibilityLabel="대그룹 병합 롤 선택">
-          {mergedPlanTabs.map((tab) => {
-            const active = tab.key === activeMergedPlanKey;
-            return <TouchableOpacity key={tab.key} accessibilityRole="tab" accessibilityLabel={`${tab.label} 병합 롤 보기`} accessibilityState={{ selected: active }} onPress={() => setSelectedMergedPlanKey(tab.key)} style={[styles.mergedRollTab, active && styles.mergedRollTabActive]}>
-              <Text style={[styles.mergedRollTabLabel, active && styles.mergedRollTabLabelActive]}>{tab.label}</Text>
-              <Text style={[styles.mergedRollTabMeta, active && styles.mergedRollTabMetaActive]}>{tab.plan.producedQuantity}개 · {Math.round(tab.plan.result.usedLengthMm).toLocaleString()}mm</Text>
-            </TouchableOpacity>;
-          })}
-        </ScrollView>}
         {activeMergedPlan && (() => {
           const plan = activeMergedPlan;
           const job = findLatestMergedJob(plan, library.mergedJobs);
@@ -334,7 +373,7 @@ export default function PlanningScreen() {
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => moveMergedPlacement(planKey, placementId, targetRollIndex)} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onDragAutoScroll={scrollPreviewDuringDrag} canUndo={(manualLayoutHistories[planKey]?.past.length ?? 0) > 0} canRedo={(manualLayoutHistories[planKey]?.future.length ?? 0) > 0} canReset={Boolean(manualLayoutHistories[planKey] && mergedPlanPlacementSignature(manualLayoutHistories[planKey]!.baseline) !== mergedPlanPlacementSignature(plan))} onUndo={() => transitionManualLayout(planKey, 'undo')} onRedo={() => transitionManualLayout(planKey, 'redo')} onReset={() => transitionManualLayout(planKey, 'reset')} hidePlacementList hideLegend continuousPageView />
+            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onDragAutoScroll={scrollPreviewDuringDrag} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView />
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
         })()}
         {independentPlans.map((entry) => {
@@ -399,9 +438,15 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
-  viewTabs: { flexDirection: 'row', gap: 6, marginTop: 16, padding: 4, borderRadius: 10, backgroundColor: '#eff6ff' }, viewTab: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }, viewTabActive: { backgroundColor: '#2563eb' }, viewTabText: { fontSize: 12, fontWeight: '800', color: '#1d4ed8' }, viewTabTextActive: { color: '#fff' }, viewHint: { marginTop: 9, fontSize: 11, color: '#64748b' },
+  previewStickyHeader: { position: Platform.OS === 'web' ? 'sticky' as never : 'relative', top: 0, zIndex: 30, marginTop: 14, padding: 7, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, backgroundColor: '#fff', elevation: 8, shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
+  stickyTopRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  viewTabs: { flex: 1, flexDirection: 'row', gap: 5, padding: 3, borderRadius: 9, backgroundColor: '#eff6ff' }, viewTab: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, viewTabActive: { backgroundColor: '#2563eb' }, viewTabText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, viewTabTextActive: { color: '#fff' }, viewHint: { marginTop: 9, fontSize: 11, color: '#64748b' },
+  headerCollapseButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#f8fafc' }, headerCollapseText: { fontSize: 9, fontWeight: '900', color: '#475569' },
+  hierarchyRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 7 }, hierarchyLabel: { width: 37, fontSize: 9, fontWeight: '900', color: '#64748b' }, hierarchyScroller: { flex: 1 },
   sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, saveLayoutButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#0f766e' }, saveLayoutButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, pdfButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#2563eb' }, pdfButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
-  mergedRollTabs: { gap: 7, paddingTop: 14, paddingBottom: 2 }, mergedRollTab: { minWidth: 104, minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#f8fafc' }, mergedRollTabActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, mergedRollTabLabel: { fontSize: 11, fontWeight: '900', color: '#475569' }, mergedRollTabLabelActive: { color: '#1d4ed8' }, mergedRollTabMeta: { marginTop: 3, fontSize: 9, color: '#94a3b8' }, mergedRollTabMetaActive: { color: '#3b82f6' },
+  mergedRollTabs: { gap: 6, paddingRight: 4 }, mergedRollTab: { minWidth: 88, minHeight: 38, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 8, backgroundColor: '#f8fafc' }, mergedRollTabActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, mergedRollTabLabel: { fontSize: 10, fontWeight: '900', color: '#475569' }, mergedRollTabLabelActive: { color: '#1d4ed8' }, mergedRollTabMeta: { marginTop: 2, fontSize: 8, color: '#94a3b8' }, mergedRollTabMetaActive: { color: '#3b82f6' },
+  headerRollTabs: { gap: 5, paddingRight: 4 }, headerRollTab: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#e2e8f0' }, headerRollTabActive: { backgroundColor: '#0f766e' }, headerRollTabText: { fontSize: 9, fontWeight: '800', color: '#475569' }, headerRollTabTextActive: { color: '#fff' },
+  headerControlRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 5, marginTop: 7, paddingTop: 7, borderTopWidth: 1, borderTopColor: '#dbeafe' }, headerControlButton: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 7, backgroundColor: '#fff' }, headerControlText: { fontSize: 9, fontWeight: '900', color: '#1e3a8a' }, headerControlPrimary: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#0f766e' }, headerControlPrimaryText: { fontSize: 9, fontWeight: '900', color: '#fff' }, headerControlDanger: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: '#fecaca', borderRadius: 7, backgroundColor: '#fff7f7' }, headerControlDangerText: { fontSize: 9, fontWeight: '900', color: '#b91c1c' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 24, paddingBottom: 88 },
   backToPreview: { position: 'absolute', right: 14, bottom: 16, width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#2563eb', elevation: 5, shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, backToPreviewText: { color: '#fff', fontSize: 23, fontWeight: '900', lineHeight: 27 },
   header: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between', gap: 16 }, headerCopy: { flex: 1, minWidth: 240 }, eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' }, title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' }, subtitle: { marginTop: 7, maxWidth: 700, fontSize: 14, lineHeight: 21, color: '#64748b' }, headerActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, refreshButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 9, backgroundColor: '#fff' }, refreshText: { fontSize: 11, fontWeight: '800', color: '#2563eb' }, inputButton: { minHeight: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 9, backgroundColor: '#2563eb' }, inputButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' }, disabled: { opacity: 0.5 }, error: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#fecaca', backgroundColor: '#fff1f2' }, errorText: { fontSize: 12, color: '#991b1b' }, notice: { marginTop: 18, padding: 12, borderRadius: 9, borderWidth: 1, borderColor: '#bbf7d0', backgroundColor: '#f0fdf4' }, noticeText: { fontSize: 12, color: '#166534' }, empty: { marginTop: 22, minHeight: 320, alignItems: 'center', justifyContent: 'center', padding: 24, borderRadius: 18, backgroundColor: '#fff' }, emptyIcon: { fontSize: 40, color: '#93c5fd' }, emptyTitle: { marginTop: 10, fontSize: 18, fontWeight: '800', color: '#1e293b' }, emptyBody: { maxWidth: 480, marginTop: 7, fontSize: 12, lineHeight: 18, textAlign: 'center', color: '#64748b' }, emptyButton: { minHeight: 40, marginTop: 16, justifyContent: 'center', paddingHorizontal: 14, borderRadius: 8, backgroundColor: '#2563eb' }, emptyButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' },

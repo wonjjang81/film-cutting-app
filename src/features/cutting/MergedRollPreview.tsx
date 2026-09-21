@@ -16,6 +16,7 @@ type Props = {
   onTogglePlacementComplete?(placementId: number): void;
   onMovePlacementToAnotherRoll?(placementId: number, targetRollIndex: number): number | null;
   onMovePlacementWithinRoll?(placementId: number, xMm: number, yMm: number): string | null;
+  onReoptimize?(): void;
   onDragAutoScroll?(deltaY: number): void;
   canUndo?: boolean;
   canRedo?: boolean;
@@ -23,6 +24,11 @@ type Props = {
   onUndo?(): void;
   onRedo?(): void;
   onReset?(): void;
+  selectedRollIndex?: number;
+  onSelectRoll?(rollIndex: number): void;
+  hideHeading?: boolean;
+  hideRollTabs?: boolean;
+  hideControls?: boolean;
   compact?: boolean;
   hidePlacementList?: boolean;
   hideLegend?: boolean;
@@ -40,8 +46,10 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementWithinRoll, onDragAutoScroll, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
-  const [selectedRollIndex, setSelectedRollIndex] = React.useState(0);
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementWithinRoll, onReoptimize, onDragAutoScroll, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+  const [localRollIndex, setLocalRollIndex] = React.useState(0);
+  const selectedRollIndex = controlledRollIndex ?? localRollIndex;
+  const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
@@ -71,9 +79,9 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const gridYPositions = gridLinePositions(safeLength);
   const majorLengthGridPositions = gridLinePositions(safeLength, 1_000);
   React.useEffect(() => {
-    setSelectedRollIndex((current) => Math.max(0, Math.min(current, rolls.length - 1)));
+    if (controlledRollIndex === undefined) setLocalRollIndex((current) => Math.max(0, Math.min(current, rolls.length - 1)));
     setLastMovedToRollIndex((current) => current === null || current >= rolls.length ? null : current);
-  }, [rolls.length]);
+  }, [controlledRollIndex, rolls.length]);
   const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
     <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
       <Rect x={0} y={0} width={1220} height={safeLength} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
@@ -140,26 +148,27 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
 
   return (
     <View style={styles.wrap} accessibilityLabel={`병합 ${plan.mergeGroupId} 롤 미리보기`}>
-      <View style={styles.heading}>
+      {!hideHeading && <View style={styles.heading}>
         <View style={styles.copy}>
           <Text style={styles.title}>병합 롤 도면</Text>
           <Text style={styles.meta}>새 롤 {selectedRollIndex + 1}/{rolls.length} · 폭 1,220mm · 길이 {Math.round(result.usedLengthMm).toLocaleString()}mm · 이 롤 {result.producedQuantity}개 · 전체 {plan.producedQuantity}개</Text>
         </View>
         <Text style={styles.badge}>수율 {result.utilizationPercent}%</Text>
-      </View>
-      {!compact && <View style={styles.controlPanel} accessibilityLabel="배치 미리보기 컨트롤 패널">
+      </View>}
+      {!compact && !hideControls && <View style={styles.controlPanel} accessibilityLabel="배치 미리보기 컨트롤 패널">
         <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 컨트롤 ${controlsVisible ? '숨기기' : '보이기'}`} onPress={() => setControlsVisible((visible) => !visible)} style={styles.controlPanelHeader}><Text style={styles.controlPanelTitle}>배치 컨트롤</Text><Text style={styles.controlPanelToggle}>{controlsVisible ? '숨기기 ▲' : '보이기 ▼'}</Text></TouchableOpacity>
         {controlsVisible && <View style={styles.controlPanelActions}>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="빈공간 우선 재배치" disabled={!onReoptimize || busy} onPress={() => { setDraggingId(null); onReoptimize?.(); }} style={[styles.controlButton, styles.controlButtonOptimize, (!onReoptimize || busy) && styles.disabled]}><Text style={[styles.controlButtonText, styles.controlButtonOptimizeText]}>빈공간 재배치</Text></TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 변경 이전으로 되돌리기" disabled={!canUndo || busy} onPress={() => { setDraggingId(null); onUndo?.(); }} style={[styles.controlButton, (!canUndo || busy) && styles.disabled]}><Text style={styles.controlButtonText}>↶ 이전</Text></TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 변경 이후 다시 적용" disabled={!canRedo || busy} onPress={() => { setDraggingId(null); onRedo?.(); }} style={[styles.controlButton, (!canRedo || busy) && styles.disabled]}><Text style={styles.controlButtonText}>↷ 이후</Text></TouchableOpacity>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 자동 계산 상태로 리셋" disabled={!canReset || busy} onPress={() => { setDraggingId(null); onReset?.(); }} style={[styles.controlButton, styles.controlButtonDanger, (!canReset || busy) && styles.disabled]}><Text style={[styles.controlButtonText, styles.controlButtonDangerText]}>배치 리셋</Text></TouchableOpacity>
-          {lastMovedToRollIndex !== null && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`마지막 이동 위치 ${lastMovedToRollIndex + 1}롤로 바로가기`} onPress={() => { setSelectedRollIndex(lastMovedToRollIndex); setSelectedId(null); setDraggingId(null); }} style={[styles.controlButton, styles.controlButtonPrimary]}><Text style={[styles.controlButtonText, styles.controlButtonPrimaryText]}>이동 위치 · {lastMovedToRollIndex + 1}롤</Text></TouchableOpacity>}
+          {lastMovedToRollIndex !== null && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`마지막 이동 위치 ${lastMovedToRollIndex + 1}롤로 바로가기`} onPress={() => { selectRoll(lastMovedToRollIndex); setSelectedId(null); setDraggingId(null); }} style={[styles.controlButton, styles.controlButtonPrimary]}><Text style={[styles.controlButtonText, styles.controlButtonPrimaryText]}>이동 위치 · {lastMovedToRollIndex + 1}롤</Text></TouchableOpacity>}
         </View>}
       </View>}
       {!hideLegend && <View style={styles.legend}>
         {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
       </View>}
-      {rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { setSelectedRollIndex(index); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
+      {!hideRollTabs && rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { selectRoll(index); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
       {dragging && <View style={styles.dragHintRow}><Text style={styles.dragHintText}>#{dragging.id}을 끌어 놓고, 현재 위치를 누르면 이동을 종료합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 이동 취소" onPress={() => { setDraggingId(null); setMoveError(null); }}><Text style={styles.dragCancelText}>취소</Text></TouchableOpacity></View>}
       {moveError && dragging && <Text style={styles.dragErrorText}>{moveError}</Text>}
       {result.placements.length > 0 ? <>
@@ -290,7 +299,7 @@ const styles = StyleSheet.create({
   controlPanelTitle: { fontSize: 11, fontWeight: '900', color: '#1e3a8a' }, controlPanelToggle: { fontSize: 10, fontWeight: '800', color: '#2563eb' },
   controlPanelActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 8, paddingBottom: 8 },
   controlButton: { minHeight: 32, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 7, backgroundColor: '#fff' },
-  controlButtonText: { fontSize: 10, fontWeight: '900', color: '#1e3a8a' }, controlButtonDanger: { borderColor: '#fecaca', backgroundColor: '#fff7f7' }, controlButtonDangerText: { color: '#b91c1c' }, controlButtonPrimary: { borderColor: '#2563eb', backgroundColor: '#2563eb' }, controlButtonPrimaryText: { color: '#fff' },
+  controlButtonText: { fontSize: 10, fontWeight: '900', color: '#1e3a8a' }, controlButtonOptimize: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, controlButtonOptimizeText: { color: '#fff' }, controlButtonDanger: { borderColor: '#fecaca', backgroundColor: '#fff7f7' }, controlButtonDangerText: { color: '#b91c1c' }, controlButtonPrimary: { borderColor: '#2563eb', backgroundColor: '#2563eb' }, controlButtonPrimaryText: { color: '#fff' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
   dragHandle: { position: 'absolute', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: '#2563eb', borderRadius: 4, backgroundColor: 'rgba(37, 99, 235, 0.24)' }, dragHandleText: { fontSize: 11, fontWeight: '900', color: '#1e3a8a', backgroundColor: '#eff6ff' }, dragHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9, gap: 8 }, dragHintText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#1d4ed8' }, dragCancelText: { paddingHorizontal: 8, paddingVertical: 4, fontSize: 11, fontWeight: '900', color: '#b91c1c' }, dragErrorText: { marginTop: 5, fontSize: 11, fontWeight: '700', color: '#b91c1c' },
