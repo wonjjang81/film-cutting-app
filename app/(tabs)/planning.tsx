@@ -43,6 +43,7 @@ export default function PlanningScreen() {
   const [previewHeaderCollapsed, setPreviewHeaderCollapsed] = useState(false);
   const [selectedRollByPlan, setSelectedRollByPlan] = useState<Record<string, number>>({});
   const [lastMovedRollByPlan, setLastMovedRollByPlan] = useState<Record<string, number>>({});
+  const [lockedPlacementIdsByPlan, setLockedPlacementIdsByPlan] = useState<Record<string, number[]>>({});
   const [showBackToPreview, setShowBackToPreview] = useState(false);
   const [manualLayoutHistories, setManualLayoutHistories] = useState<Record<string, ManualLayoutHistory<MergedGroupPlan>>>({});
   const pageScrollRef = useRef<ScrollView>(null);
@@ -81,6 +82,10 @@ export default function PlanningScreen() {
         const existing = current[key];
         return [key, existing && mergedPlanGeometrySignature(existing.baseline) === mergedPlanGeometrySignature(baseline)
           ? existing : startManualLayoutHistory(baseline)];
+      })));
+      setLockedPlacementIdsByPlan(Object.fromEntries(calculated.mergedPlans.map((baseline, index) => {
+        const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
+        return [key, placementsMovedAcrossRolls(baseline, resolvedPlans[index] ?? baseline)];
       })));
       setCurrentPlan({ ...calculated, mergedPlans: resolvedPlans });
     } catch (caught) {
@@ -198,6 +203,7 @@ export default function PlanningScreen() {
         : resetManualLayout(history, current);
     if (!transition) return;
     setManualLayoutHistories((histories) => ({ ...histories, [planKey]: transition.history }));
+    setLockedPlacementIdsByPlan((locked) => ({ ...locked, [planKey]: placementsMovedAcrossRolls(history.baseline, transition.value) }));
     installManualPlan(planKey, current, transition.value, false);
     setNotice(action === 'undo' ? '이전 배치로 되돌렸습니다.' : action === 'redo' ? '다음 배치를 다시 적용했습니다.' : '자동 계산 배치로 초기화했습니다.');
   }, [currentPlan, installManualPlan, manualLayoutHistories]);
@@ -205,7 +211,7 @@ export default function PlanningScreen() {
   const reoptimizeMergedLayout = useCallback((planKey: string) => {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
     if (!plan) return;
-    const optimized = reoptimizeManualMergedLayout(plan, currentPlan.groupedPlans);
+    const optimized = reoptimizeManualMergedLayout(plan, currentPlan.groupedPlans, { lockedPlacementIds: lockedPlacementIdsByPlan[planKey] ?? [] });
     if (optimized.movedCount === 0) {
       setNotice('현재 배치에서 추가로 채울 수 있는 빈 공간이 없습니다.');
       return;
@@ -214,7 +220,7 @@ export default function PlanningScreen() {
     setNotice(optimized.savedLengthMm > 0
       ? `빈 공간에 ${optimized.movedCount}개 조각을 재배치해 원단 길이 ${Math.round(optimized.savedLengthMm).toLocaleString()}mm를 줄였습니다.`
       : `빈 공간을 우선해 ${optimized.movedCount}개 조각을 더 촘촘하게 재배치했습니다.`);
-  }, [currentPlan, installManualPlan]);
+  }, [currentPlan, installManualPlan, lockedPlacementIdsByPlan]);
 
   const scrollPreviewDuringDrag = useCallback((deltaY: number) => {
     const nextY = Math.max(0, pageScrollY.current + deltaY);
@@ -373,7 +379,7 @@ export default function PlanningScreen() {
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onDragAutoScroll={scrollPreviewDuringDrag} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView />
+            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onDragAutoScroll={scrollPreviewDuringDrag} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView />
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
         })()}
         {independentPlans.map((entry) => {
@@ -398,6 +404,14 @@ function mergedPlanGeometrySignature(plan: MergedGroupPlan): string {
 
 function mergedPlanPlacementSignature(plan: MergedGroupPlan): string {
   return JSON.stringify((plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => roll.placements.map((item) => [item.id, item.x, item.y]).sort((a, b) => Number(a[0]) - Number(b[0]))));
+}
+
+function placementsMovedAcrossRolls(baseline: MergedGroupPlan, current: MergedGroupPlan): number[] {
+  const rollIndexById = (plan: MergedGroupPlan) => new Map((plan.rollResults?.length ? plan.rollResults : [plan.result])
+    .flatMap((roll, rollIndex) => roll.placements.map((placement) => [placement.id, rollIndex] as const)));
+  const baselineRolls = rollIndexById(baseline);
+  const currentRolls = rollIndexById(current);
+  return [...currentRolls.entries()].filter(([id, rollIndex]) => baselineRolls.has(id) && baselineRolls.get(id) !== rollIndex).map(([id]) => id);
 }
 
 function PiecePlanCard({ entry, displayName, view, busy = false, completedPlacementIds, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: { entry: GroupedPiecePlan; displayName?: string; view: PlanningView; busy?: boolean; completedPlacementIds?: readonly number[]; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void; placementListCollapsed?: boolean; onTogglePlacementList?(): void }) {

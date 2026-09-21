@@ -3,6 +3,8 @@ import type { MergedPlacement, MergedRollResult } from './optimizeMergedRollLayo
 import { boundedNewRollLength } from './rollLengthLimit';
 
 const GRID_MM = 5;
+const MAGNET_SNAP_TOLERANCE_MM = 20;
+const BACKING_GRID_MM = 100;
 
 export type MovedMergedPlacement = {
   plan: MergedGroupPlan;
@@ -15,6 +17,16 @@ export type ManualMergedPlacementResult = { plan?: MergedGroupPlan; error?: stri
 
 function sourceId(entry: GroupedPieceRequest): string { return `${entry.groupId}-${entry.pieceId}`; }
 function snap(value: number): number { return Math.ceil(value / GRID_MM) * GRID_MM; }
+
+function magneticSnap(value: number, anchors: readonly number[]): number {
+  const gridAnchor = Math.round(value / BACKING_GRID_MM) * BACKING_GRID_MM;
+  const nearby = anchors
+    .filter((anchor) => Math.abs(anchor - value) <= MAGNET_SNAP_TOLERANCE_MM)
+    .sort((left, right) => Math.abs(left - value) - Math.abs(right - value) || left - right)[0];
+  if (nearby !== undefined) return nearby;
+  if (Math.abs(gridAnchor - value) <= MAGNET_SNAP_TOLERANCE_MM) return gridAnchor;
+  return Math.round(value / GRID_MM) * GRID_MM;
+}
 
 function collides(candidate: Pick<MergedPlacement, 'x' | 'y' | 'width' | 'height'>, placed: MergedPlacement, gapMm: number): boolean {
   return candidate.x < placed.x + placed.width + gapMm
@@ -58,7 +70,20 @@ export function movePlacementWithinRoll(
   if (!specification) return { error: '조각의 재단 조건을 찾지 못했습니다.' };
   if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) return { error: '이동 위치가 올바르지 않습니다.' };
   const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
-  const candidate = { ...selected, x: Math.round(xMm / GRID_MM) * GRID_MM, y: Math.round(yMm / GRID_MM) * GRID_MM };
+  const others = roll.placements.filter((item) => item.id !== placementId);
+  const xAnchors = [sideMarginMm, rollWidthMm - sideMarginMm - selected.width, ...others.flatMap((item) => [
+    item.x,
+    item.x + item.width + gapMm,
+    item.x - selected.width - gapMm,
+    item.x + item.width - selected.width,
+  ])];
+  const yAnchors = [startEndMarginMm, roll.usedLengthMm - startEndMarginMm - selected.height, ...others.flatMap((item) => [
+    item.y,
+    item.y + item.height + gapMm,
+    item.y - selected.height - gapMm,
+    item.y + item.height - selected.height,
+  ])];
+  const candidate = { ...selected, x: magneticSnap(xMm, xAnchors), y: magneticSnap(yMm, yAnchors) };
   const maxLengthMm = Math.min(roll.usedLengthMm, boundedNewRollLength(specification.request.maxLengthMm));
   if (candidate.x < sideMarginMm || candidate.y < startEndMarginMm
     || candidate.x + candidate.width > rollWidthMm - sideMarginMm

@@ -10,6 +10,11 @@ export type ReoptimizedManualMergedLayout = {
   savedLengthMm: number;
 };
 
+export type ReoptimizeManualMergedLayoutOptions = {
+  /** Placements explicitly moved between rolls by the user stay anchored. */
+  lockedPlacementIds?: readonly number[];
+};
+
 function sourceId(entry: GroupedPieceRequest): string { return `${entry.groupId}-${entry.pieceId}`; }
 function snap(value: number): number { return Math.ceil(value / GRID_MM) * GRID_MM; }
 
@@ -85,6 +90,7 @@ function uniquePoints(placements: readonly MergedPlacement[], gapMm: number, sid
 export function reoptimizeManualMergedLayout(
   plan: MergedGroupPlan,
   requests: readonly GroupedPieceRequest[],
+  options: ReoptimizeManualMergedLayoutOptions = {},
 ): ReoptimizedManualMergedLayout {
   const specifications = new Map(requests.map((entry) => [sourceId(entry), entry]));
   const first = requests[0];
@@ -94,12 +100,17 @@ export function reoptimizeManualMergedLayout(
   let rolls = (plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => rollMetrics(roll.placements, rollWidthMm, startEndMarginMm));
   const startingLength = rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0);
   const movedIds = new Set<number>();
+  const lockedPlacementIds = new Set(options.lockedPlacementIds ?? []);
+  const lockedRollIndexById = new Map(rolls.flatMap((roll, rollIndex) => roll.placements
+    .filter((placement) => lockedPlacementIds.has(placement.id))
+    .map((placement) => [placement.id, rollIndex] as const)));
   const totalPieces = rolls.reduce((sum, roll) => sum + roll.placements.length, 0);
   const passes = totalPieces <= 120 ? 4 : 2;
 
   for (let pass = 0; pass < passes; pass += 1) {
     let changed = false;
     const candidates = rolls.flatMap((roll, rollIndex) => roll.placements.map((placement) => ({ placement, rollIndex })))
+      .filter(({ placement }) => !lockedPlacementIds.has(placement.id))
       .sort((left, right) => right.rollIndex - left.rollIndex
         || left.placement.width * left.placement.height - right.placement.width * right.placement.height
         || left.placement.id - right.placement.id)
@@ -132,6 +143,8 @@ export function reoptimizeManualMergedLayout(
             const next = without.map((roll, index) => index === targetRollIndex
               ? rollMetrics([...roll.placements, candidate], rollWidthMm, startEndMarginMm) : roll)
               .filter((roll) => roll.placements.length > 0);
+            const locksStayOnTheirRoll = [...lockedRollIndexById.entries()].every(([id, rollIndex]) => next[rollIndex]?.placements.some((item) => item.id === id));
+            if (!locksStayOnTheirRoll) continue;
             const nextScore = score(next, maxLengthMm);
             if (isBetter(nextScore, bestScore)) { bestScore = nextScore; bestRolls = next; }
           }

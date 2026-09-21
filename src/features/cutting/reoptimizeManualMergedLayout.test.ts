@@ -31,6 +31,13 @@ describe('reoptimizeManualMergedLayout', () => {
     expect(optimized.savedLengthMm).toBe(5010);
   });
 
+  it('does not move a piece that the user manually moved to another roll', () => {
+    const current = plan(true);
+    const optimized = reoptimizeManualMergedLayout(current, requests, { lockedPlacementIds: [2] });
+    expect(optimized.plan.rollResults).toHaveLength(2);
+    expect(optimized.plan.rollResults?.[1]?.placements).toContainEqual(expect.objectContaining({ id: 2 }));
+  });
+
   it('can fill a later-roll gap with a small piece from an earlier roll', () => {
     const base = plan(false);
     const large = base.rollResults![0]!.placements[0]!;

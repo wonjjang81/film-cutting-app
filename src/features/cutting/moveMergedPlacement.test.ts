@@ -95,6 +95,7 @@ describe('movePlacementToBestOtherRoll', () => {
     ], usedLengthMm: 10010, producedQuantity: 2, utilizationPercent: 88.5, wastePercent: 11.5 };
     const plan = { mergeGroupId: 'auto', sourceIds: requests.map((entry) => `${entry.groupId}-${entry.pieceId}`), groupNames: ['그룹 1'], pieceCount: 2, result: roll, rollResults: [roll], newRollQuantity: 2, producedQuantity: 2, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
     expect(movePlacementWithinRoll(plan, 2, 1006, 5001, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
+    expect(movePlacementWithinRoll(plan, 2, 989, 5017, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
     expect(movePlacementWithinRoll(plan, 2, 900, 5000, requests).error).toContain('겹치');
     expect(movePlacementWithinRoll(plan, 2, 1005, 9000, requests).error).toContain('벗어');
     expect(plan.rollResults[0]?.placements[1]?.y).toBe(5);
