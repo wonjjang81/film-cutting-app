@@ -3,6 +3,7 @@ import Svg, { G, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { Dimensions, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
+import { horizontalFreeSpaceAtPoint, type HorizontalFreeSpace } from './horizontalFreeSpace';
 import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacementsBySubgroup, placementCompletionControl } from './planningPlacementModel';
 import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
 
@@ -54,6 +55,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
+  const [selectedGap, setSelectedGap] = React.useState<HorizontalFreeSpace | null>(null);
   const [moveError, setMoveError] = React.useState<string | null>(null);
   const [draggingId, setDraggingId] = React.useState<number | null>(null);
   const [dragDelta, setDragDelta] = React.useState({ x: 0, y: 0 });
@@ -82,8 +84,16 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
     if (controlledRollIndex === undefined) setLocalRollIndex((current) => Math.max(0, Math.min(current, rolls.length - 1)));
     setLastMovedToRollIndex((current) => current === null || current >= rolls.length ? null : current);
   }, [controlledRollIndex, rolls.length]);
+  React.useEffect(() => setSelectedGap(null), [selectedRollIndex]);
+  const measureClickedGap = (event: { nativeEvent: { locationX?: number; locationY?: number } }) => {
+    const { locationX, locationY } = event.nativeEvent;
+    if (typeof locationX !== 'number' || typeof locationY !== 'number') return;
+    const xMm = viewBoxX + (locationX / viewportWidth) * viewBoxWidth;
+    const yMm = (locationY / height) * safeLength;
+    setSelectedGap(horizontalFreeSpaceAtPoint(result.placements, 1220, xMm, yMm, 30));
+  };
   const renderCanvas = () => <View style={[styles.canvas, { height, width: viewportWidth }]}>
-    <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면">
+    <Svg width={viewportWidth} height={height} viewBox={`${viewBoxX} 0 ${viewBoxWidth} ${safeLength}`} accessibilityLabel="병합 롤 배치 도면" onPress={measureClickedGap}>
       <Rect x={0} y={0} width={1220} height={safeLength} fill="#f8fafc" stroke="#334155" strokeWidth={2} rx={4} />
       <G accessibilityLabel="100mm 모눈">
         {gridXPositions.map((x) => <Line key={`grid-x-${x}`} x1={x} y1={0} x2={x} y2={safeLength} stroke="#94a3b8" strokeWidth={1.35} strokeDasharray="10 10" opacity={0.35} />)}
@@ -233,6 +243,17 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           })()}
         </View>
       </Modal>}
+      {!compact && <Modal visible={selectedGap !== null} transparent animationType="fade" onRequestClose={() => setSelectedGap(null)}>
+        <View style={styles.modalBackdrop}>
+          {selectedGap && <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="빈 공간 가로폭 치수 팝업">
+            <Text style={styles.modalEyebrow}>EMPTY SPACE</Text>
+            <Text style={styles.modalTitle}>빈 공간 가로폭</Text>
+            <Text style={styles.gapMeasurement}>{Math.round(selectedGap.widthMm).toLocaleString()}mm</Text>
+            <Text style={styles.modalMeta}>좌측 {Math.round(selectedGap.leftMm).toLocaleString()}mm · 우측 {Math.round(selectedGap.rightMm).toLocaleString()}mm</Text>
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="빈 공간 치수 팝업 닫기" onPress={() => setSelectedGap(null)} style={styles.modalClose}><Text style={styles.modalCloseText}>닫기</Text></TouchableOpacity>
+          </View>}
+        </View>
+      </Modal>}
       {!compact && <Modal visible={showEndMoveConfirm} transparent animationType="fade" onRequestClose={() => setShowEndMoveConfirm(false)}>
         <View style={styles.modalBackdrop}><View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="수동 이동 종료 확인 팝업">
           <Text style={styles.modalEyebrow}>MANUAL PLACEMENT</Text>
@@ -306,6 +327,7 @@ const styles = StyleSheet.create({
   rollTabs: { flexDirection: 'row', gap: 6, marginTop: 10 }, rollTab: { minHeight: 30, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#e2e8f0' }, rollTabActive: { backgroundColor: '#0f766e' }, rollTabText: { fontSize: 10, fontWeight: '800', color: '#475569' }, rollTabTextActive: { color: '#fff' },
   noNewRoll: { marginTop: 11, minHeight: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#ecfdf5' }, noNewRollText: { fontSize: 11, fontWeight: '800', color: '#047857' },
   modalBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.45)' }, modalCard: { width: '100%', maxWidth: 360, padding: 20, borderRadius: 16, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 8 }, modalEyebrow: { fontSize: 10, letterSpacing: 1.4, fontWeight: '800', color: '#0f766e' }, modalTitle: { marginTop: 5, fontSize: 18, fontWeight: '900', color: '#0f172a' }, modalLabel: { marginTop: 15, fontSize: 16, fontWeight: '900', color: '#115e59' }, modalValue: { marginTop: 6, fontSize: 15, fontWeight: '800', color: '#334155' }, modalMeta: { marginTop: 7, fontSize: 12, lineHeight: 18, color: '#64748b' }, modalRollChoices: { maxHeight: 220 }, modalMove: { minHeight: 42, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, modalMoveText: { fontSize: 12, fontWeight: '900', color: '#fff' }, modalMoveError: { marginTop: 8, color: '#b91c1c', fontSize: 12, fontWeight: '700' }, modalComplete: { minHeight: 42, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 9, backgroundColor: '#f0fdfa' }, modalCompleteDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, modalCompleteText: { fontSize: 13, fontWeight: '900', color: '#0f766e' }, modalCompleteTextDone: { color: '#15803d' }, modalClose: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#0f766e' }, modalCloseText: { fontSize: 12, fontWeight: '800', color: '#fff' },
+  gapMeasurement: { marginTop: 16, fontSize: 32, fontWeight: '900', color: '#0f766e' },
   modalSecondary: { minHeight: 40, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, modalSecondaryText: { fontSize: 12, fontWeight: '800', color: '#475569' },
   remnantSection: { marginTop: 12, gap: 8 }, remnantTitle: { fontSize: 11, fontWeight: '800', color: '#0f766e' }, remnantCard: { padding: 9, borderRadius: 8, borderWidth: 1, borderColor: '#99f6e4', backgroundColor: '#f0fdfa' }, remnantMeta: { marginBottom: 6, fontSize: 10, lineHeight: 15, color: '#0f766e' },
   listSection: { marginTop: 12, paddingTop: 11, borderTopWidth: 1, borderTopColor: '#ccfbf1' }, listHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, listTitle: { fontSize: 12, fontWeight: '800', color: '#115e59' }, listSubtitle: { marginTop: 3, fontSize: 10, color: '#64748b' }, listToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, list: { gap: 7, marginTop: 8 }, subgroupBlock: { gap: 5 }, subgroupHeader: { minHeight: 42, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 9, borderRadius: 7, backgroundColor: '#ecfeff' }, subgroupTitle: { fontSize: 11, fontWeight: '900', color: '#0f766e' }, subgroupMeta: { marginTop: 2, fontSize: 9, color: '#0f766e' }, subgroupToggle: { fontSize: 12, fontWeight: '900', color: '#0f766e' }, item: { minHeight: 38, flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 8, paddingRight: 5, borderRadius: 7, backgroundColor: '#f8fafc' }, itemMain: { minHeight: 36, flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }, itemActive: { backgroundColor: '#e0f2fe' }, itemDone: { backgroundColor: '#f0fdf4' }, itemDot: { width: 7, height: 7, borderRadius: 4 }, itemText: { flex: 1, fontSize: 10, color: '#475569' }, checkButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, checkButtonDone: { borderColor: '#16a34a', backgroundColor: '#dcfce7' }, checkText: { fontSize: 16, fontWeight: '900', color: '#94a3b8' }, checkTextDone: { color: '#15803d' },

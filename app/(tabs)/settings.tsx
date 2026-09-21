@@ -57,7 +57,7 @@ export default function SettingsScreen() {
         <Text style={styles.cardTitle}>앱 정보</Text>
         <Text style={styles.info}>현재 버전 {APP_VERSION}</Text>
         <Text style={styles.info}>필름 재단 계산기 · 연속 롤 원단 절약 버전</Text>
-        <Text style={styles.info}>원본 롤 폭 1,220mm · 기본 조건 여백 5mm</Text>
+        <Text style={styles.info}>원본 롤 폭 1,220mm · 기본 여백 0mm · 생산 설정에서 변경 가능</Text>
         <TouchableOpacity accessibilityRole="button" onPress={() => void Linking.openURL('https://wonjjang81.github.io/film-cutting-app/guide')} style={styles.link}><Text style={styles.linkText}>온라인 사용 안내 열기</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" onPress={() => void checkUpdate()} style={styles.updateButton}><Text style={styles.updateButtonText}>최신 버전 확인</Text></TouchableOpacity>
         <Text style={styles.hint}>{updateMessage}{release ? ` · ${release}` : ''}</Text>
