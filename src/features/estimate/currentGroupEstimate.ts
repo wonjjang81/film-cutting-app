@@ -22,7 +22,7 @@ export type CurrentEstimateGroupSource = {
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
-export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[] };
+export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[]; projectId?: string };
 export type CurrentEstimatePlan = {
   groupedPlans: GroupedPiecePlan[];
   mergedPlans: MergedGroupPlan[];
@@ -30,8 +30,8 @@ export type CurrentEstimatePlan = {
   subgroupNamesBySourceId: Record<string, string>;
 };
 
-export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[]): CurrentEstimateSnapshot {
-  return { pieces: groups.map((group) => ({
+export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[], projectId?: string | null): CurrentEstimateSnapshot {
+  return { ...(projectId ? { projectId } : {}), pieces: groups.map((group) => ({
     ...group,
     subgroups: group.subgroups?.map((subgroup) => ({ ...subgroup, pieceIds: [...subgroup.pieceIds], ...(subgroup.overallDimensions === undefined ? {} : { overallDimensions: { ...subgroup.overallDimensions } }) })),
     pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })),
@@ -44,7 +44,7 @@ export function parseCurrentEstimateSnapshot(raw: string | null): CurrentEstimat
     const parsed = JSON.parse(raw) as Partial<CurrentEstimateSnapshot>;
     if (!Array.isArray(parsed.pieces) || parsed.pieces.length === 0) return null;
     const validGroups = parsed.pieces.filter((group): group is CurrentEstimateGroupSource => Boolean(group && typeof group.id === 'string' && typeof group.name === 'string' && Array.isArray(group.pieces)));
-    return validGroups.length > 0 ? { pieces: validGroups } : null;
+    return validGroups.length > 0 ? { pieces: validGroups, ...(typeof parsed.projectId === 'string' && parsed.projectId.trim() ? { projectId: parsed.projectId.trim() } : {}) } : null;
   } catch {
     return null;
   }

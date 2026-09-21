@@ -8,6 +8,7 @@ import {
   type SavedCuttingResultSummary,
   type SavedMergedCuttingJob,
   type SavedMergedPlacement,
+  type SavedManualMergedLayout,
   type SavedRemnantSummary,
   type SavedProject,
 } from './models';
@@ -46,6 +47,8 @@ export type LibraryRepository = {
   saveBatchJobs(jobs: readonly SavedCuttingJob[], mergedJobs: readonly SavedMergedCuttingJob[]): Promise<void>;
   /** Saves one legacy-style project header and replaces its complete job bundle atomically. */
   saveProjectBundle(project: SavedProject, jobs: readonly SavedCuttingJob[], mergedJobs: readonly SavedMergedCuttingJob[]): Promise<void>;
+  /** Persists adjusted layouts without replacing the project's cutting jobs. */
+  saveProjectManualLayouts(projectId: string, layouts: readonly SavedManualMergedLayout[], updatedAt: string): Promise<void>;
   renameProject(id: string, name: string, updatedAt: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
   renameJob(id: string, name: string, updatedAt: string): Promise<void>;
@@ -372,6 +375,8 @@ function validateProject(value: unknown): SavedProject | undefined {
     || !Array.isArray(value.mergedJobIds) || !value.mergedJobIds.every(validId)
     || !finiteNonnegative(value.materialCostPerM) || !finiteNonnegative(value.constructionCostPerM2)
     || createdAt === undefined || updatedAt === undefined) return undefined;
+  const manualLayouts = value.manualLayouts === undefined ? undefined : validateManualLayouts(value.manualLayouts);
+  if (value.manualLayouts !== undefined && manualLayouts === undefined) return undefined;
   return {
     id: value.id,
     name: value.name.trim(),
@@ -381,7 +386,38 @@ function validateProject(value: unknown): SavedProject | undefined {
     constructionCostPerM2: value.constructionCostPerM2,
     createdAt,
     updatedAt,
+    ...(manualLayouts === undefined ? {} : { manualLayouts }),
   };
+}
+
+function validateManualLayouts(value: unknown): SavedManualMergedLayout[] | undefined {
+  if (!Array.isArray(value) || value.length > 100) return undefined;
+  const layouts: SavedManualMergedLayout[] = [];
+  const indices = new Set<number>();
+  for (const layout of value) {
+    if (!isRecord(layout) || typeof layout.planIndex !== 'number' || !Number.isInteger(layout.planIndex) || layout.planIndex < 0
+      || indices.has(layout.planIndex) || typeof layout.geometrySignature !== 'string'
+      || !Array.isArray(layout.rolls) || layout.rolls.length > 100) return undefined;
+    const rolls: SavedManualMergedLayout['rolls'] = [];
+    for (const roll of layout.rolls) {
+      if (!isRecord(roll) || !Array.isArray(roll.placements) || roll.placements.length > 10_000) return undefined;
+      const placements: SavedManualMergedLayout['rolls'][number]['placements'] = [];
+      for (const position of roll.placements) {
+        if (!isRecord(position) || !positiveInteger(position.id)
+          || typeof position.sourceIndex !== 'number' || !Number.isInteger(position.sourceIndex) || position.sourceIndex < 0
+          || typeof position.instanceIndex !== 'number' || !Number.isInteger(position.instanceIndex) || position.instanceIndex < 0
+          || !finiteNonnegative(position.x)
+          || !finiteNonnegative(position.y) || !finitePositive(position.width)
+          || !finitePositive(position.height) || typeof position.rotated !== 'boolean') return undefined;
+        placements.push({ id: position.id, sourceIndex: position.sourceIndex, instanceIndex: position.instanceIndex,
+          x: position.x, y: position.y, width: position.width, height: position.height, rotated: position.rotated });
+      }
+      rolls.push({ placements });
+    }
+    indices.add(layout.planIndex);
+    layouts.push({ planIndex: layout.planIndex, geometrySignature: layout.geometrySignature, rolls });
+  }
+  return layouts;
 }
 
 function validateCollection<T extends { id: string }>(
@@ -715,6 +751,18 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
           ...validMergedJobs,
         ]);
         document.projects = orderProjects(replaceById(document.projects ?? [], validProject));
+      });
+    },
+
+    async saveProjectManualLayouts(projectId, layouts, updatedAt): Promise<void> {
+      assertId(projectId);
+      const validLayouts = validateManualLayouts(layouts);
+      const validUpdatedAt = normalizeTimestamp(updatedAt);
+      if (!validLayouts || validUpdatedAt === undefined) throw new Error('수동 배치 저장 데이터가 올바르지 않습니다.');
+      await mutate((document) => {
+        const project = (document.projects ?? []).find((item) => item.id === projectId);
+        if (!project) throw new Error('저장할 프로젝트를 찾지 못했습니다.');
+        document.projects = orderProjects(replaceById(document.projects ?? [], { ...project, manualLayouts: validLayouts, updatedAt: validUpdatedAt }));
       });
     },
 

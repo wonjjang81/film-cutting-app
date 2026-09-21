@@ -7,15 +7,18 @@ import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
+import { recordManualLayoutChange, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
 import { movePlacementToBestOtherRoll, movePlacementWithinRoll } from '../../src/features/cutting/moveMergedPlacement';
+import { captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
-import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
+import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, requestsFromSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createPlanningPreviewHtml, type PlanningPreviewSection } from '../../src/features/export/createPlanningPreviewHtml';
 import { printHtmlOnWeb } from '../../src/features/export/printHtmlOnWeb';
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedMergedCuttingJob } from '../../src/features/library/models';
+import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, parseCurrentProjectContext } from '../../src/features/library/currentProjectContext';
 import type { GroupedPiecePlan, MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 
 const repository = createAppLibraryRepository();
@@ -28,6 +31,7 @@ export default function PlanningScreen() {
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
   const [loading, setLoading] = useState(true);
   const [exportingPdf, setExportingPdf] = useState(false);
+  const [savingManualLayout, setSavingManualLayout] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [pieceCompletionOverrides, setPieceCompletionOverrides] = useState<Record<string, number[]>>({});
@@ -36,21 +40,45 @@ export default function PlanningScreen() {
   const [selectedMergedPlanKey, setSelectedMergedPlanKey] = useState<string | null>(null);
   const [planningView, setPlanningView] = useState<PlanningView>('drawing');
   const [showBackToPreview, setShowBackToPreview] = useState(false);
+  const [manualLayoutHistories, setManualLayoutHistories] = useState<Record<string, ManualLayoutHistory<MergedGroupPlan>>>({});
   const pageScrollRef = useRef<ScrollView>(null);
+  const pageScrollY = useRef(0);
   const previewSectionY = useRef(0);
   const manualMergedPlanOverrides = useRef<Record<string, { baseSignature: string; plan: MergedGroupPlan }>>({});
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [raw, loaded] = await Promise.all([AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY), repository.load()]);
+      const [raw, localLayoutsRaw, contextRaw, loaded] = await Promise.all([
+        AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY),
+        AsyncStorage.getItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY),
+        AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY), repository.load(),
+      ]);
       const snapshot = parseCurrentEstimateSnapshot(raw);
       setLibrary(loaded.document);
       const calculated = snapshot ? calculateCurrentGroupPlan(snapshot) : emptyPlan;
-      setCurrentPlan({ ...calculated, mergedPlans: calculated.mergedPlans.map((plan) => {
+      const requests = snapshot ? requestsFromSnapshot(snapshot) : [];
+      const context = parseCurrentProjectContext(contextRaw);
+      const belongsToProject = Boolean(snapshot && context && (snapshot.projectId === context.id
+        || (!snapshot.projectId && snapshot.pieces.every((group) => group.id.startsWith(`${context.id}-group-`)))));
+      const projectLayouts = belongsToProject
+        ? loaded.document.projects?.find((project) => project.id === context?.id)?.manualLayouts ?? [] : [];
+      const localLayouts = snapshot ? parseCurrentManualLayouts(localLayoutsRaw, snapshot) : [];
+      const resolvedPlans = calculated.mergedPlans.map((plan, index) => {
         const override = manualMergedPlanOverrides.current[mergedPlanKey(plan.mergeGroupId, plan.sourceIds)];
-        return override?.baseSignature === mergedPlanGeometrySignature(plan) ? override.plan : plan;
-      }) });
+        if (override?.baseSignature === mergedPlanGeometrySignature(plan)) return override.plan;
+        const fromProject = projectLayouts.find((layout) => layout.planIndex === index);
+        const fromLocal = localLayouts.find((layout) => layout.planIndex === index);
+        return (fromProject && restoreManualMergedLayout(plan, index, requests, fromProject))
+          ?? (fromLocal && restoreManualMergedLayout(plan, index, requests, fromLocal)) ?? plan;
+      });
+      setManualLayoutHistories((current) => Object.fromEntries(calculated.mergedPlans.map((baseline) => {
+        const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
+        const existing = current[key];
+        return [key, existing && mergedPlanGeometrySignature(existing.baseline) === mergedPlanGeometrySignature(baseline)
+          ? existing : startManualLayoutHistory(baseline)];
+      })));
+      setCurrentPlan({ ...calculated, mergedPlans: resolvedPlans });
     } catch (caught) {
       setCurrentPlan(emptyPlan);
       setError(caught instanceof Error ? caught.message : '배치 계획을 불러오지 못했습니다.');
@@ -111,6 +139,24 @@ export default function PlanningScreen() {
     }
   }, [pieceCompletionOverrides, refresh]);
 
+  const installManualPlan = useCallback((planKey: string, current: MergedGroupPlan, next: MergedGroupPlan, recordHistory = true) => {
+    const previous = manualMergedPlanOverrides.current[planKey];
+    manualMergedPlanOverrides.current[planKey] = {
+      baseSignature: previous?.baseSignature ?? mergedPlanGeometrySignature(current),
+      plan: next,
+    };
+    if (recordHistory) {
+      setManualLayoutHistories((histories) => ({
+        ...histories,
+        [planKey]: recordManualLayoutChange(histories[planKey] ?? startManualLayoutHistory(current), current),
+      }));
+    }
+    setCurrentPlan((plan) => ({
+      ...plan,
+      mergedPlans: plan.mergedPlans.map((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey ? next : item),
+    }));
+  }, []);
+
   const moveMergedPlacement = useCallback((planKey: string, placementId: number, targetRollIndex: number) => {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
     if (!plan) return null;
@@ -119,9 +165,7 @@ export default function PlanningScreen() {
       setNotice(`선택한 조각이 ${targetRollIndex + 1}롤의 빈 공간 또는 남은 길이에 들어가지 않습니다.`);
       return null;
     }
-    const previous = manualMergedPlanOverrides.current[planKey];
-    manualMergedPlanOverrides.current[planKey] = { baseSignature: previous?.baseSignature ?? mergedPlanGeometrySignature(plan), plan: moved.plan };
-    setCurrentPlan((current) => ({ ...current, mergedPlans: current.mergedPlans.map((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey ? moved.plan : item) }));
+    installManualPlan(planKey, plan, moved.plan);
     const lengthMessage = moved.savedLengthMm > 0
       ? ` 원단 길이 ${Math.round(moved.savedLengthMm).toLocaleString()}mm를 줄였습니다.`
       : moved.savedLengthMm < 0
@@ -129,19 +173,60 @@ export default function PlanningScreen() {
         : ' 총 원단 길이는 그대로입니다.';
     setNotice(`${moved.fromRollIndex + 1}롤의 조각을 ${moved.toRollIndex + 1}롤 빈 공간으로 이동했습니다.${lengthMessage}`);
     return moved.toRollIndex;
-  }, [currentPlan]);
+  }, [currentPlan, installManualPlan]);
 
   const moveMergedPlacementManually = useCallback((planKey: string, placementId: number, xMm: number, yMm: number): string | null => {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
     if (!plan) return '배치 계획을 찾지 못했습니다.';
     const moved = movePlacementWithinRoll(plan, placementId, xMm, yMm, currentPlan.groupedPlans);
     if (!moved.plan) return moved.error ?? '이 위치로 조각을 옮길 수 없습니다.';
-    const previous = manualMergedPlanOverrides.current[planKey];
-    manualMergedPlanOverrides.current[planKey] = { baseSignature: previous?.baseSignature ?? mergedPlanGeometrySignature(plan), plan: moved.plan };
-    setCurrentPlan((current) => ({ ...current, mergedPlans: current.mergedPlans.map((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey ? moved.plan! : item) }));
+    installManualPlan(planKey, plan, moved.plan);
     setNotice(`조각 #${placementId}을 현재 롤의 빈 공간으로 이동했습니다.`);
     return null;
-  }, [currentPlan]);
+  }, [currentPlan, installManualPlan]);
+
+  const transitionManualLayout = useCallback((planKey: string, action: 'undo' | 'redo' | 'reset') => {
+    const current = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
+    if (!current) return;
+    const history = manualLayoutHistories[planKey] ?? startManualLayoutHistory(current);
+    const transition = action === 'undo' ? undoManualLayout(history, current)
+      : action === 'redo' ? redoManualLayout(history, current)
+        : resetManualLayout(history, current);
+    if (!transition) return;
+    setManualLayoutHistories((histories) => ({ ...histories, [planKey]: transition.history }));
+    installManualPlan(planKey, current, transition.value, false);
+    setNotice(action === 'undo' ? '이전 배치로 되돌렸습니다.' : action === 'redo' ? '다음 배치를 다시 적용했습니다.' : '자동 계산 배치로 초기화했습니다.');
+  }, [currentPlan, installManualPlan, manualLayoutHistories]);
+
+  const scrollPreviewDuringDrag = useCallback((deltaY: number) => {
+    const nextY = Math.max(0, pageScrollY.current + deltaY);
+    pageScrollY.current = nextY;
+    pageScrollRef.current?.scrollTo({ y: nextY, animated: false });
+  }, []);
+
+  const saveManualLayouts = useCallback(async () => {
+    setSavingManualLayout(true); setError(null);
+    try {
+      const [raw, contextRaw] = await Promise.all([
+        AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY),
+        AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY),
+      ]);
+      const snapshot = parseCurrentEstimateSnapshot(raw);
+      if (!snapshot) throw new Error('저장할 재단계산 입력값이 없습니다.');
+      const requests = requestsFromSnapshot(snapshot);
+      const layouts = currentPlan.mergedPlans.map((plan, index) => captureManualMergedLayout(plan, index, requests));
+      if (!layouts.length) throw new Error('저장할 병합 롤 배치가 없습니다.');
+      await AsyncStorage.setItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY, serializeCurrentManualLayouts(snapshot, layouts));
+      const context = parseCurrentProjectContext(contextRaw);
+      const belongsToProject = Boolean(context && (context.id === snapshot.projectId
+        || (!snapshot.projectId && snapshot.pieces.every((group) => group.id.startsWith(`${context.id}-group-`)))));
+      const project = context && belongsToProject
+        ? (await repository.load()).document.projects?.find((item) => item.id === context.id) : undefined;
+      if (project) await repository.saveProjectManualLayouts(project.id, layouts, new Date().toISOString());
+      setNotice(project ? `수동 배치를 "${project.name}" 프로젝트에 저장했습니다.` : '수동 배치를 이 기기에 저장했습니다. 프로젝트 탭에서 프로젝트 저장을 하면 백업에도 포함됩니다.');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : '수동 배치를 저장하지 못했습니다.'); }
+    finally { setSavingManualLayout(false); }
+  }, [currentPlan.mergedPlans]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
@@ -210,7 +295,7 @@ export default function PlanningScreen() {
     } finally { setExportingPdf(false); }
   }, [activeMergedPlan, activeMergedTab?.label, currentPlan.pieceNamesBySourceId, independentPlans, newRollLength, pieceCount, producedQuantity]);
 
-  return <View style={styles.page}><ScrollView ref={pageScrollRef} style={styles.page} contentContainerStyle={styles.content} scrollEventThrottle={64} onScroll={(event) => setShowBackToPreview(event.nativeEvent.contentOffset.y > previewSectionY.current + 280)}>
+  return <View style={styles.page}><ScrollView ref={pageScrollRef} style={styles.page} contentContainerStyle={styles.content} scrollEventThrottle={16} onScroll={(event) => { pageScrollY.current = event.nativeEvent.contentOffset.y; setShowBackToPreview(event.nativeEvent.contentOffset.y > previewSectionY.current + 280); }}>
     <View style={styles.header}>
       <View style={styles.headerCopy}><Text style={styles.eyebrow}>BATCH PLANNING</Text><Text style={styles.title}>배치 계획</Text><Text style={styles.subtitle}>재단계산에서 입력·계산한 조각을 기준으로 배치 미리보기와 원단 사용 계획을 확인합니다.</Text></View>
       <View style={styles.headerActions}><TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 계획 새로고침" onPress={() => void refresh()} disabled={loading} style={[styles.refreshButton, loading && styles.disabled]}><RefreshCw color="#2563eb" size={15} /><Text style={styles.refreshText}>새로고침</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 계산으로 이동" onPress={() => router.push('/input')} style={styles.inputButton}><Scissors color="#fff" size={15} /><Text style={styles.inputButtonText}>재단 계산</Text></TouchableOpacity></View>
@@ -219,7 +304,10 @@ export default function PlanningScreen() {
     {notice && <View style={styles.notice}><Text style={styles.noticeText}>{notice}</Text></View>}
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>CUTTING RESULT</Text><Text style={styles.sectionTitle}>재단 결과 · 원단 사용 계획</Text></View><Text style={styles.summaryStatus}>재단계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 수" value={`${newRollCount}롤`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>새 롤은 1롤당 최대 25m로 분할됩니다. 재단계산에서 저장된 결과를 기준으로 배치 도면과 배치목록을 확인합니다.</Text></View>
-      <View style={styles.section} onLayout={(event) => { previewSectionY.current = event.nativeEvent.layout.y; }}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}>{planningView === 'drawing' ? <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 PDF 내보내기" disabled={exportingPdf} onPress={() => void exportPreviewPdf()} style={[styles.pdfButton, exportingPdf && styles.disabled]}><FileDown color="#fff" size={14} /><Text style={styles.pdfButtonText}>{exportingPdf ? '준비 중' : 'PDF 내보내기'}</Text></TouchableOpacity> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity>}</View></View>
+      <View style={styles.section} onLayout={(event) => { previewSectionY.current = event.nativeEvent.layout.y; }}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}>{planningView === 'drawing' ? <>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 배치 저장" disabled={savingManualLayout || loading || currentPlan.mergedPlans.length === 0} onPress={() => void saveManualLayouts()} style={[styles.saveLayoutButton, (savingManualLayout || loading || currentPlan.mergedPlans.length === 0) && styles.disabled]}><Text style={styles.saveLayoutButtonText}>{savingManualLayout ? '저장 중' : '수동 배치 저장'}</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 PDF 내보내기" disabled={exportingPdf} onPress={() => void exportPreviewPdf()} style={[styles.pdfButton, exportingPdf && styles.disabled]}><FileDown color="#fff" size={14} /><Text style={styles.pdfButtonText}>{exportingPdf ? '준비 중' : 'PDF 내보내기'}</Text></TouchableOpacity>
+      </> : <TouchableOpacity accessibilityRole="button" accessibilityLabel={placementListKeys.length === 0 ? '배치목록 없음' : allPlacementListsCollapsed ? '배치목록 모두 펼치기' : '배치목록 모두 접기'} disabled={placementListKeys.length === 0} onPress={() => setCollapsedPlacementLists((current) => toggleAllPlacementLists(placementListKeys, current))} style={[styles.placementListsToggle, placementListKeys.length === 0 && styles.disabled]}><Text style={styles.placementListsToggleText}>{allPlacementListsCollapsed ? '모두 펼치기' : '모두 접기'}</Text></TouchableOpacity>}</View></View>
         <View style={styles.viewTabs} accessibilityRole="tablist">
           <TouchableOpacity accessibilityRole="tab" accessibilityLabel="병합롤 도면 탭" accessibilityState={{ selected: planningView === 'drawing' }} onPress={() => setPlanningView('drawing')} style={[styles.viewTab, planningView === 'drawing' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'drawing' && styles.viewTabTextActive]}>병합롤 도면</Text></TouchableOpacity>
           <TouchableOpacity accessibilityRole="tab" accessibilityLabel="배치목록 탭" accessibilityState={{ selected: planningView === 'list' }} onPress={() => setPlanningView('list')} style={[styles.viewTab, planningView === 'list' && styles.viewTabActive]}><Text style={[styles.viewTabText, planningView === 'list' && styles.viewTabTextActive]}>배치목록</Text></TouchableOpacity>
@@ -246,7 +334,7 @@ export default function PlanningScreen() {
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => moveMergedPlacement(planKey, placementId, targetRollIndex)} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} hidePlacementList hideLegend continuousPageView />
+            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => moveMergedPlacement(planKey, placementId, targetRollIndex)} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onDragAutoScroll={scrollPreviewDuringDrag} canUndo={(manualLayoutHistories[planKey]?.past.length ?? 0) > 0} canRedo={(manualLayoutHistories[planKey]?.future.length ?? 0) > 0} canReset={Boolean(manualLayoutHistories[planKey] && mergedPlanPlacementSignature(manualLayoutHistories[planKey]!.baseline) !== mergedPlanPlacementSignature(plan))} onUndo={() => transitionManualLayout(planKey, 'undo')} onRedo={() => transitionManualLayout(planKey, 'redo')} onReset={() => transitionManualLayout(planKey, 'reset')} hidePlacementList hideLegend continuousPageView />
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
         })()}
         {independentPlans.map((entry) => {
@@ -267,6 +355,10 @@ function mergedPlanKey(mergeGroupId: string, sourceIds: readonly string[]): stri
 
 function mergedPlanGeometrySignature(plan: MergedGroupPlan): string {
   return JSON.stringify((plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => roll.placements.map((item) => [item.sourceId, item.width, item.height]).sort()));
+}
+
+function mergedPlanPlacementSignature(plan: MergedGroupPlan): string {
+  return JSON.stringify((plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => roll.placements.map((item) => [item.id, item.x, item.y]).sort((a, b) => Number(a[0]) - Number(b[0]))));
 }
 
 function PiecePlanCard({ entry, displayName, view, busy = false, completedPlacementIds, onTogglePlacementComplete, placementListCollapsed, onTogglePlacementList }: { entry: GroupedPiecePlan; displayName?: string; view: PlanningView; busy?: boolean; completedPlacementIds?: readonly number[]; onTogglePlacementComplete(placementId: number, placementIds: readonly number[]): void; placementListCollapsed?: boolean; onTogglePlacementList?(): void }) {
@@ -308,7 +400,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 
 const styles = StyleSheet.create({
   viewTabs: { flexDirection: 'row', gap: 6, marginTop: 16, padding: 4, borderRadius: 10, backgroundColor: '#eff6ff' }, viewTab: { flex: 1, minHeight: 40, alignItems: 'center', justifyContent: 'center', borderRadius: 8 }, viewTabActive: { backgroundColor: '#2563eb' }, viewTabText: { fontSize: 12, fontWeight: '800', color: '#1d4ed8' }, viewTabTextActive: { color: '#fff' }, viewHint: { marginTop: 9, fontSize: 11, color: '#64748b' },
-  sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, pdfButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#2563eb' }, pdfButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
+  sectionHeaderActions: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }, saveLayoutButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#0f766e' }, saveLayoutButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, pdfButton: { minHeight: 32, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#2563eb' }, pdfButtonText: { fontSize: 10, fontWeight: '800', color: '#fff' }, placementListsToggle: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 10, borderRadius: 7, backgroundColor: '#dbeafe' }, placementListsToggleText: { fontSize: 10, fontWeight: '800', color: '#1d4ed8' },
   mergedRollTabs: { gap: 7, paddingTop: 14, paddingBottom: 2 }, mergedRollTab: { minWidth: 104, minHeight: 48, justifyContent: 'center', paddingHorizontal: 12, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#f8fafc' }, mergedRollTabActive: { borderColor: '#2563eb', backgroundColor: '#eff6ff' }, mergedRollTabLabel: { fontSize: 11, fontWeight: '900', color: '#475569' }, mergedRollTabLabelActive: { color: '#1d4ed8' }, mergedRollTabMeta: { marginTop: 3, fontSize: 9, color: '#94a3b8' }, mergedRollTabMetaActive: { color: '#3b82f6' },
   page: { flex: 1, backgroundColor: '#f1f5f9' }, content: { width: '100%', maxWidth: 1180, alignSelf: 'center', padding: 24, paddingBottom: 88 },
   backToPreview: { position: 'absolute', right: 14, bottom: 16, width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#2563eb', elevation: 5, shadowColor: '#0f172a', shadowOpacity: 0.2, shadowRadius: 5, shadowOffset: { width: 0, height: 2 } }, backToPreviewText: { color: '#fff', fontSize: 23, fontWeight: '900', lineHeight: 27 },

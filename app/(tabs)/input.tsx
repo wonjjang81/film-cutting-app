@@ -579,8 +579,8 @@ export default function FilmCutInputScreen() {
     setProjectId(null); setProjectName('새 프로젝트'); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   }, [routeNewProject]);
   useEffect(() => {
-    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups)));
-  }, [groups]);
+    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups, projectId)));
+  }, [groups, projectId]);
   useEffect(() => {
     if (!projectId || !projectName.trim()) return;
     void AsyncStorage.setItem(

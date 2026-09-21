@@ -8,7 +8,8 @@ import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 import { createAppLibraryRepository } from '../../src/features/library/libraryRepositoryFactory';
 import type { LibraryDocument, SavedCuttingJob, SavedProject } from '../../src/features/library/models';
 import { createEmptyProject, createProjectFromCurrentEstimate } from '../../src/features/library/projectCreation';
-import { CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot } from '../../src/features/estimate/currentGroupEstimate';
+import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, requestsFromSnapshot } from '../../src/features/estimate/currentGroupEstimate';
+import { CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, restoreManualMergedLayout } from '../../src/features/cutting/savedManualMergedLayout';
 import { parseProjectExport } from '../../src/features/library/projectTransfer';
 import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, parseCurrentProjectContext, serializeCurrentProjectContext } from '../../src/features/library/currentProjectContext';
 
@@ -86,7 +87,16 @@ export default function ProjectsScreen() {
       if (existing && !(await confirmOverwrite(name))) { setNotice('기존 프로젝트 덮어쓰기를 취소했습니다.'); return; }
       const now = new Date().toISOString();
       const bundle = createProjectFromCurrentEstimate(name, snapshot, now, projects.map((project) => project.id));
-      const project = existing ? { ...bundle.project, id: existing.id, createdAt: existing.createdAt, updatedAt: now } : bundle.project;
+      const localLayouts = parseCurrentManualLayouts(await AsyncStorage.getItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY), snapshot);
+      const calculated = calculateCurrentGroupPlan(snapshot);
+      const requests = requestsFromSnapshot(snapshot);
+      const validLayouts = [...localLayouts, ...(existing?.manualLayouts ?? [])].filter((layout) => {
+        const plan = calculated.mergedPlans[layout.planIndex];
+        return plan && restoreManualMergedLayout(plan, layout.planIndex, requests, layout);
+      });
+      const matchingLayouts = validLayouts.filter((layout, index) => validLayouts.findIndex((item) => item.planIndex === layout.planIndex) === index);
+      const project = { ...(existing ? { ...bundle.project, id: existing.id, createdAt: existing.createdAt, updatedAt: now } : bundle.project),
+        ...(matchingLayouts.length ? { manualLayouts: matchingLayouts } : {}) };
       await repository.saveProjectBundle(project, bundle.jobs, bundle.mergedJobs);
       await AsyncStorage.setItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext({ id: project.id, name: project.name }));
       setNewProjectName(project.name);

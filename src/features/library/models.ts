@@ -144,6 +144,14 @@ export type SavedProject = {
   constructionCostPerM2: number;
   createdAt: string;
   updatedAt: string;
+  /** User-adjusted physical roll layouts, restored only when source geometry still matches. */
+  manualLayouts?: SavedManualMergedLayout[];
+};
+
+export type SavedManualMergedLayout = {
+  planIndex: number;
+  geometrySignature: string;
+  rolls: { placements: (Pick<SavedMergedPlacement, 'id' | 'instanceIndex' | 'x' | 'y' | 'width' | 'height' | 'rotated'> & { sourceIndex: number })[] }[];
 };
 
 export type LibraryDocument = {

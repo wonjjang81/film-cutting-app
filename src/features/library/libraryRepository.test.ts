@@ -256,6 +256,24 @@ describe('library repository', () => {
     expect(loaded.document.jobs.map((item) => item.id)).toEqual(['job-3']);
   });
 
+  it('saves manual roll layouts with the project and includes them in project exports', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const project: SavedProject = { id: 'project-layout', name: '수동 배치 현장', jobIds: [], mergedJobIds: [], materialCostPerM: 10_000,
+      constructionCostPerM2: 15_000, createdAt: timestamp, updatedAt: timestamp };
+    await repository.saveProjectBundle(project, [], []);
+    const layouts = [{ planIndex: 0, geometrySignature: 'geometry-v1', rolls: [{ placements: [
+      { id: 1, sourceIndex: 0, instanceIndex: 0, x: 5, y: 500, width: 200, height: 300, rotated: false },
+    ] }] }];
+    await repository.saveProjectManualLayouts(project.id, layouts, '2026-09-21T00:00:00.000Z');
+    expect((await repository.load()).document.projects?.[0]?.manualLayouts).toEqual(layouts);
+    const exported = await repository.exportProject(project.id);
+    expect(JSON.parse(exported).project.manualLayouts).toEqual(layouts);
+    const importedRepository = createLibraryRepository(memoryAdapter());
+    await importedRepository.importProject(exported);
+    expect((await importedRepository.load()).document.projects?.[0]?.manualLayouts).toEqual(layouts);
+    expect(JSON.parse(await repository.exportDocument()).projects[0].manualLayouts).toEqual(layouts);
+  });
+
   it('preserves explicit allowance metadata while keeping legacy jobs valid', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     await repository.saveBatchJobs([
