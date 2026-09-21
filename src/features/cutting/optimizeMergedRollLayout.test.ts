@@ -56,6 +56,15 @@ describe('optimizeMergedRollLayout', () => {
     expect(result.placements.filter((piece) => piece.sourceId === 'small').map((piece) => [piece.x, piece.y])).toEqual([[905, 5], [905, 605]]);
   });
 
+  it('prefers the larger fitting piece at the same leftmost gap before smaller pieces', () => {
+    const result = optimizeMergedRollLayout({ rollWidthMm: 1_220, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, pieces: [
+      { sourceId: 'small-first-in-input', widthMm: 250, lengthMm: 300, quantity: 2, allowRotation: false },
+      { sourceId: 'large', widthMm: 700, lengthMm: 1_000, quantity: 1, allowRotation: false },
+    ] });
+    expect(result.placements[0]).toMatchObject({ sourceId: 'large', x: 5, y: 5 });
+    expect(result.placements.filter((piece) => piece.sourceId === 'small-first-in-input').every((piece) => piece.x >= 705)).toBe(true);
+  });
+
   it('calculates bounded-roll utilization from pieces actually placed, not requested pieces', () => {
     const result = optimizeMergedRollLayout({ rollWidthMm: 100, maxLengthMm: 100, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, pieces: [
       { sourceId: 'small', widthMm: 40, lengthMm: 40, quantity: 10, allowRotation: false },

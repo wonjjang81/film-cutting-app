@@ -43,16 +43,20 @@ function overlaps(a: { x: number; y: number; width: number; height: number }, b:
 }
 
 type GapCandidate = { sourceIndex: number; x: number; y: number; width: number; height: number; rotated: boolean; touch: number };
+type GapPriority = 'large' | 'wide' | 'low';
 
-function betterGapCandidate(next: GapCandidate, current?: GapCandidate): boolean {
+function betterGapCandidate(next: GapCandidate, current: GapCandidate | undefined, priority: GapPriority): boolean {
   if (!current) return true;
   if (next.y !== current.y) return next.y < current.y;
   if (next.x !== current.x) return next.x < current.x;
   const nextArea = next.width * next.height;
   const currentArea = current.width * current.height;
+  if (priority === 'low' && next.height !== current.height) return next.height < current.height;
+  if (priority === 'wide' && next.width !== current.width) return next.width > current.width;
   if (nextArea !== currentArea) return nextArea > currentArea;
-  if (next.rotated !== current.rotated) return !next.rotated;
   if (next.width !== current.width) return next.width > current.width;
+  if (next.height !== current.height) return next.height > current.height;
+  if (next.rotated !== current.rotated) return !next.rotated;
   return next.touch > current.touch;
 }
 
@@ -98,7 +102,7 @@ function attempt(input: MergedRollInput, order: readonly MergedRollPiece[]): Mer
 }
 
 /** Bottom-left hole filling: compare all remaining sizes at each exposed edge. */
-function attemptGapFill(input: MergedRollInput, pieces: readonly MergedRollPiece[]): MergedPlacement[] {
+function attemptGapFill(input: MergedRollInput, pieces: readonly MergedRollPiece[], priority: GapPriority): MergedPlacement[] {
   const placements: MergedPlacement[] = [];
   const remaining = pieces.map((piece) => Math.floor(piece.quantity));
   const instanceCounts = new Map<string, number>();
@@ -128,7 +132,7 @@ function attemptGapFill(input: MergedRollInput, pieces: readonly MergedRollPiece
             + (x === placed.x + placed.width ? Math.max(0, Math.min(y + candidate.height, placed.y + placed.height) - Math.max(y, placed.y)) : 0)
             + (y === placed.y + placed.height ? Math.max(0, Math.min(x + candidate.width, placed.x + placed.width) - Math.max(x, placed.x)) : 0), 0);
           const option = { sourceIndex, ...next, rotated: candidate.rotated, touch };
-          if (betterGapCandidate(option, best)) best = option;
+          if (betterGapCandidate(option, best, priority)) best = option;
         }
       }
     }
@@ -159,26 +163,31 @@ export function optimizeMergedRollLayout(input: MergedRollInput): MergedRollResu
   let best: MergedPlacement[] = [];
   let bestLength = Number.POSITIVE_INFINITY;
   let bestProduced = -1;
-  for (const score of strategies) {
-    const placements = attempt(input, [...valid].sort((a, b) => score(b) - score(a)));
-    const length = placements.length === 0 ? Number.POSITIVE_INFINITY : Math.max(...placements.map((item) => item.y + item.height)) + input.startEndMarginMm;
-    const betterBoundedPlan = input.maxLengthMm !== undefined
-      && (placements.length > bestProduced || (placements.length === bestProduced && length < bestLength));
-    const betterUnboundedPlan = input.maxLengthMm === undefined && length < bestLength;
-    if (betterBoundedPlan || betterUnboundedPlan) { best = placements; bestLength = length; bestProduced = placements.length; }
-  }
   const totalPieces = valid.reduce((sum, piece) => sum + Math.floor(piece.quantity), 0);
-  if (totalPieces <= 120 && valid.length <= 20) {
-    const placements = attemptGapFill(input, valid);
+  const consider = (placements: MergedPlacement[]) => {
     const length = placements.length === 0 ? Number.POSITIVE_INFINITY : Math.max(...placements.map((item) => item.y + item.height)) + input.startEndMarginMm;
     const anchorArea = placements[0] ? placements[0].width * placements[0].height : 0;
     const bestAnchorArea = best[0] ? best[0].width * best[0].height : 0;
     const betterLeftAnchor = anchorArea > bestAnchorArea || (anchorArea === bestAnchorArea && (placements[0]?.width ?? 0) > (best[0]?.width ?? 0));
-    if ((input.maxLengthMm !== undefined && (placements.length > bestProduced || (placements.length === bestProduced && length < bestLength)))
-      || (input.maxLengthMm === undefined && placements.length === totalPieces && length < bestLength)
-      || (placements.length === bestProduced && length === bestLength && betterLeftAnchor)) {
-      best = placements; bestLength = length; bestProduced = placements.length;
+    const betterBoundedPlan = input.maxLengthMm !== undefined
+      && (placements.length > bestProduced || (placements.length === bestProduced && (length < bestLength || (length === bestLength && betterLeftAnchor))));
+    const complete = placements.length === totalPieces;
+    const bestComplete = best.length === totalPieces;
+    const betterUnboundedPlan = input.maxLengthMm === undefined
+      && (complete && (!bestComplete || length < bestLength || (length === bestLength && betterLeftAnchor)));
+    if (betterBoundedPlan || betterUnboundedPlan) {
+      best = placements;
+      bestLength = length;
+      bestProduced = placements.length;
     }
+  };
+  for (const score of strategies) {
+    consider(attempt(input, [...valid].sort((a, b) => score(b) - score(a))));
+  }
+  if (totalPieces <= 120 && valid.length <= 20) {
+    // Adaptive gap filling is evaluated with several priorities. Roll length
+    // remains the primary objective; large-left preference only breaks ties.
+    (['large', 'wide', 'low'] as const).forEach((priority) => consider(attemptGapFill(input, valid, priority)));
   }
   const area = best.reduce((sum, piece) => sum + piece.width * piece.height, 0);
   const usedArea = input.rollWidthMm * (Number.isFinite(bestLength) ? bestLength : 0);

@@ -38,6 +38,14 @@ describe('reoptimizeManualMergedLayout', () => {
     expect(optimized.plan.rollResults?.[1]?.placements).toContainEqual(expect.objectContaining({ id: 2 }));
   });
 
+  it('keeps a manually positioned same-roll piece fixed while filling other gaps', () => {
+    const current = plan(false);
+    const before = current.rollResults?.[0]?.placements.find((item) => item.id === 2);
+    const optimized = reoptimizeManualMergedLayout(current, requests, { lockedPlacementIds: [2] });
+    expect(optimized.plan.rollResults?.[0]?.placements.find((item) => item.id === 2)).toEqual(before);
+    expect(optimized.movedCount).toBe(0);
+  });
+
   it('can fill a later-roll gap with a small piece from an earlier roll', () => {
     const base = plan(false);
     const large = base.rollResults![0]!.placements[0]!;
