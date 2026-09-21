@@ -31,9 +31,10 @@ describe('planning placement model', () => {
     expect(nextPlacementCompletion([1, 2, 3], 2, [1, 2, 3])).toEqual({ completedIds: [1, 3], complete: false });
   });
 
-  it('uses a temporary completion state until a plan is persisted', () => {
+  it('keeps newer local completion changes ahead of the last server state', () => {
     expect(resolvePlacementCompletionIds(undefined, [1, 3])).toEqual([1, 3]);
-    expect(resolvePlacementCompletionIds([2], [1, 3])).toEqual([2]);
+    expect(resolvePlacementCompletionIds([2], [1, 3])).toEqual([1, 3]);
+    expect(resolvePlacementCompletionIds([2], undefined)).toEqual([2]);
     expect(resolvePlacementCompletionIds(undefined, undefined)).toEqual([]);
   });
 

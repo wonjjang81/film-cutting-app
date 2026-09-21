@@ -4,16 +4,17 @@ import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
-import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { recordManualLayoutChange, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
 import { movePlacementToBestOtherRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally } from '../../src/features/cutting/moveMergedPlacement';
 import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptimizeManualMergedLayout';
-import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
+import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, manualLayoutScope, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
+import { parsePlanningCompletionState, PLANNING_COMPLETION_STORAGE_KEY, serializePlanningCompletionState } from '../../src/features/cutting/planningCompletionStorage';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, requestsFromSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createPlanningPreviewHtml, type PlanningPreviewSection } from '../../src/features/export/createPlanningPreviewHtml';
 import { printHtmlOnWeb } from '../../src/features/export/printHtmlOnWeb';
@@ -53,6 +54,16 @@ export default function PlanningScreen() {
   const previewSectionY = useRef(0);
   const manualMergedPlanOverrides = useRef<Record<string, { baseSignature: string; plan: MergedGroupPlan }>>({});
   const projectIdChoices = useRef<Record<string, 'keep' | 'replace'>>({});
+  const completionScopeRef = useRef('');
+  const completionDirtyRef = useRef(false);
+  const completionFlushRef = useRef<Promise<boolean> | null>(null);
+  const mergedCompletionRef = useRef<Record<string, number[]>>({});
+  const pieceCompletionRef = useRef<Record<string, number[]>>({});
+  const currentPlanRef = useRef<CurrentEstimatePlan>(emptyPlan);
+
+  useEffect(() => { mergedCompletionRef.current = mergedCompletionOverrides; }, [mergedCompletionOverrides]);
+  useEffect(() => { pieceCompletionRef.current = pieceCompletionOverrides; }, [pieceCompletionOverrides]);
+  useEffect(() => { currentPlanRef.current = currentPlan; }, [currentPlan]);
 
   const installRefreshedPlan = useCallback((calculated: CurrentEstimatePlan, mergedPlans: MergedGroupPlan[]) => {
     setManualLayoutHistories((current) => Object.fromEntries(mergedPlans.map((baseline) => {
@@ -71,12 +82,21 @@ export default function PlanningScreen() {
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [raw, localLayoutsRaw, contextRaw, loaded] = await Promise.all([
+      const [raw, localLayoutsRaw, completionRaw, contextRaw, loaded] = await Promise.all([
         AsyncStorage.getItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY),
         AsyncStorage.getItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY),
+        AsyncStorage.getItem(PLANNING_COMPLETION_STORAGE_KEY),
         AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY), repository.load(),
       ]);
       const snapshot = parseCurrentEstimateSnapshot(raw);
+      const completionScope = snapshot ? manualLayoutScope(snapshot) : '';
+      const savedCompletion = parsePlanningCompletionState(completionRaw, completionScope);
+      completionScopeRef.current = completionScope;
+      completionDirtyRef.current = savedCompletion.pendingServerSync;
+      mergedCompletionRef.current = savedCompletion.merged;
+      pieceCompletionRef.current = savedCompletion.pieces;
+      setMergedCompletionOverrides(savedCompletion.merged);
+      setPieceCompletionOverrides(savedCompletion.pieces);
       setLibrary(loaded.document);
       const calculated = snapshot ? calculateCurrentGroupPlan(snapshot) : emptyPlan;
       const requests = snapshot ? requestsFromSnapshot(snapshot) : [];
@@ -133,59 +153,118 @@ export default function PlanningScreen() {
     setNotice(choice === 'keep' ? '기존 프로젝트의 배치 ID를 유지했습니다.' : '새 최적화 배치 ID를 적용하고 기존 ID 기준 완료 표시를 초기화했습니다.');
   };
 
-  const toggleMergedPlacementComplete = useCallback(async (planKey: string, mergeGroupId: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
-    setLoading(true); setError(null);
+  const saveCompletionBackup = useCallback(async (merged = mergedCompletionRef.current, pieces = pieceCompletionRef.current) => {
+    if (!completionScopeRef.current) return;
+    await AsyncStorage.setItem(PLANNING_COMPLETION_STORAGE_KEY, serializePlanningCompletionState(completionScopeRef.current, { merged, pieces }, completionDirtyRef.current));
+  }, []);
+
+  const toggleMergedPlacementComplete = useCallback(async (planKey: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
+    setError(null);
     try {
-      const loaded = await repository.load();
-      const current = jobId ? loaded.document.mergedJobs.find((job) => job.id === jobId) : undefined;
+      const current = jobId ? library.mergedJobs.find((job) => job.id === jobId) : undefined;
       const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, mergedCompletionOverrides[planKey]);
       const next = nextPlacementCompletion(completedIds, placementId, placementIds);
-      const now = new Date().toISOString();
-      if (current) {
-        const updated: SavedMergedCuttingJob = {
-          ...current,
-          isCuttingComplete: next.complete,
-          cuttingCompletedAt: next.complete ? now : undefined,
-          updatedAt: now,
-          completedPlacementIds: next.completedIds,
-        };
-        await repository.saveMergedJob(updated);
-      } else {
-        setMergedCompletionOverrides((existing) => ({ ...existing, [planKey]: next.completedIds }));
-      }
-      await refresh();
+      const nextMergedOverrides = { ...mergedCompletionOverrides, [planKey]: next.completedIds };
+      mergedCompletionRef.current = nextMergedOverrides;
+      completionDirtyRef.current = true;
+      setMergedCompletionOverrides(nextMergedOverrides);
+      await saveCompletionBackup(nextMergedOverrides, pieceCompletionRef.current);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '재단 완료 상태를 저장하지 못했습니다.');
-      setLoading(false);
+      setError(caught instanceof Error ? caught.message : '재단 완료 상태를 로컬에 백업하지 못했습니다.');
     }
-  }, [mergedCompletionOverrides, refresh]);
+  }, [library.mergedJobs, mergedCompletionOverrides, saveCompletionBackup]);
 
   const togglePiecePlacementComplete = useCallback(async (sourceKey: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
-    setLoading(true); setError(null);
+    setError(null);
     try {
-      const loaded = await repository.load();
-      const current = jobId ? loaded.document.jobs.find((job) => job.id === jobId) : undefined;
+      const current = jobId ? library.jobs.find((job) => job.id === jobId) : undefined;
       const completedIds = resolvePlacementCompletionIds(current?.completedPlacementIds, pieceCompletionOverrides[sourceKey]);
       const next = nextPlacementCompletion(completedIds, placementId, placementIds);
-      const now = new Date().toISOString();
-      if (current) {
-        const updated: SavedCuttingJob = {
-          ...current,
-          isCuttingComplete: next.complete,
-          cuttingCompletedAt: next.complete ? now : undefined,
-          updatedAt: now,
-          completedPlacementIds: next.completedIds,
-        };
-        await repository.saveJob(updated);
-      } else {
-        setPieceCompletionOverrides((existing) => ({ ...existing, [sourceKey]: next.completedIds }));
-      }
-      await refresh();
+      const nextPieceOverrides = { ...pieceCompletionOverrides, [sourceKey]: next.completedIds };
+      pieceCompletionRef.current = nextPieceOverrides;
+      completionDirtyRef.current = true;
+      setPieceCompletionOverrides(nextPieceOverrides);
+      await saveCompletionBackup(mergedCompletionRef.current, nextPieceOverrides);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '재단 완료 상태를 저장하지 못했습니다.');
-      setLoading(false);
+      setError(caught instanceof Error ? caught.message : '재단 완료 상태를 로컬에 백업하지 못했습니다.');
     }
-  }, [pieceCompletionOverrides, refresh]);
+  }, [library.jobs, pieceCompletionOverrides, saveCompletionBackup]);
+
+  const flushCompletionToServer = useCallback(async (quiet = false): Promise<boolean> => {
+    if (!completionDirtyRef.current) return true;
+    if (completionFlushRef.current) return completionFlushRef.current;
+    const operation = (async () => {
+      try {
+        const loaded = await repository.load();
+        const plan = currentPlanRef.current;
+        const now = new Date().toISOString();
+        const updatedMergedJobs: SavedMergedCuttingJob[] = [];
+        const updatedJobs: SavedCuttingJob[] = [];
+        let unmatched = false;
+
+        plan.mergedPlans.forEach((mergedPlan) => {
+          const key = mergedPlanKey(mergedPlan.mergeGroupId, mergedPlan.sourceIds);
+          const completedIds = mergedCompletionRef.current[key];
+          if (completedIds === undefined) return;
+          const current = findLatestMergedJob(mergedPlan, loaded.document.mergedJobs);
+          if (!current) { unmatched = true; return; }
+          const placementIds = mergedPlan.result.placements.map((placement) => placement.id);
+          const complete = placementIds.length > 0 && placementIds.every((id) => completedIds.includes(id));
+          updatedMergedJobs.push({ ...current, completedPlacementIds: completedIds, isCuttingComplete: complete, cuttingCompletedAt: complete ? (current.cuttingCompletedAt ?? now) : undefined, updatedAt: now });
+        });
+
+        plan.groupedPlans.forEach((entry) => {
+          const sourceKey = `${entry.groupId}-${entry.pieceId}`;
+          const completedIds = pieceCompletionRef.current[sourceKey];
+          if (completedIds === undefined) return;
+          const displayName = plan.pieceNamesBySourceId[sourceKey] ?? entry.pieceName;
+          const current = findLatestPieceJob(entry.groupName, entry.pieceId, loaded.document.jobs, displayName);
+          if (!current) { unmatched = true; return; }
+          const placementIds = entry.plan.newRollResult?.placements.map((placement) => placement.id) ?? [];
+          const complete = placementIds.length > 0 && placementIds.every((id) => completedIds.includes(id));
+          updatedJobs.push({ ...current, completedPlacementIds: completedIds, isCuttingComplete: complete, cuttingCompletedAt: complete ? (current.cuttingCompletedAt ?? now) : undefined, updatedAt: now });
+        });
+
+        if (updatedJobs.length || updatedMergedJobs.length) {
+          await repository.saveBatchJobs(updatedJobs, updatedMergedJobs);
+          const refreshed = await repository.load();
+          setLibrary(refreshed.document);
+        }
+        completionDirtyRef.current = unmatched;
+        await saveCompletionBackup();
+        if (!quiet) setNotice(unmatched ? '완료 표시는 로컬에 저장했습니다. 프로젝트 작업을 저장한 뒤 다시 서버 저장할 수 있습니다.' : '재단완료 표시를 서버에 저장했습니다.');
+        return !unmatched;
+      } catch (caught) {
+        completionDirtyRef.current = true;
+        await saveCompletionBackup().catch(() => undefined);
+        if (!quiet) setError(caught instanceof Error ? caught.message : '재단완료 표시를 서버에 저장하지 못했습니다.');
+        return false;
+      }
+    })();
+    completionFlushRef.current = operation;
+    try { return await operation; } finally { completionFlushRef.current = null; }
+  }, [saveCompletionBackup]);
+
+  useEffect(() => {
+    const interval = setInterval(() => { void saveCompletionBackup(); }, 60_000);
+    return () => clearInterval(interval);
+  }, [saveCompletionBackup]);
+
+  useEffect(() => {
+    const flush = () => { void saveCompletionBackup(); void flushCompletionToServer(true); };
+    if (Platform.OS === 'web' && typeof document !== 'undefined' && typeof window !== 'undefined') {
+      const onVisibilityChange = () => { if (document.visibilityState === 'hidden') flush(); };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+      window.addEventListener('pagehide', flush);
+      return () => {
+        document.removeEventListener('visibilitychange', onVisibilityChange);
+        window.removeEventListener('pagehide', flush);
+        flush();
+      };
+    }
+    const subscription = AppState.addEventListener('change', (state) => { if (state === 'inactive' || state === 'background') flush(); });
+    return () => { subscription.remove(); flush(); };
+  }, [flushCompletionToServer, saveCompletionBackup]);
 
   const installManualPlan = useCallback((planKey: string, current: MergedGroupPlan, next: MergedGroupPlan, recordHistory = true) => {
     const previous = manualMergedPlanOverrides.current[planKey];
@@ -302,18 +381,20 @@ export default function PlanningScreen() {
       if (!snapshot) throw new Error('저장할 재단계산 입력값이 없습니다.');
       const requests = requestsFromSnapshot(snapshot);
       const layouts = currentPlan.mergedPlans.map((plan, index) => captureManualMergedLayout(plan, index, requests));
-      if (!layouts.length) throw new Error('저장할 병합 롤 배치가 없습니다.');
-      await AsyncStorage.setItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY, serializeCurrentManualLayouts(snapshot, layouts));
+      if (layouts.length) await AsyncStorage.setItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY, serializeCurrentManualLayouts(snapshot, layouts));
       const context = parseCurrentProjectContext(contextRaw);
       const belongsToProject = Boolean(context && (context.id === snapshot.projectId
         || (!snapshot.projectId && snapshot.pieces.every((group) => group.id.startsWith(`${context.id}-group-`)))));
       const project = context && belongsToProject
         ? (await repository.load()).document.projects?.find((item) => item.id === context.id) : undefined;
-      if (project) await repository.saveProjectManualLayouts(project.id, layouts, new Date().toISOString());
-      setNotice(project ? `수동 배치를 "${project.name}" 프로젝트에 저장했습니다.` : '수동 배치를 이 기기에 저장했습니다. 프로젝트 탭에서 프로젝트 저장을 하면 백업에도 포함됩니다.');
+      if (project && layouts.length) await repository.saveProjectManualLayouts(project.id, layouts, new Date().toISOString());
+      const completionSaved = await flushCompletionToServer(true);
+      setNotice(project
+        ? completionSaved ? `배치와 재단완료 표시를 "${project.name}" 프로젝트에 저장했습니다.` : `배치는 "${project.name}" 프로젝트에 저장했고, 재단완료 표시는 로컬에 백업했습니다.`
+        : '배치와 재단완료 표시를 이 기기에 저장했습니다. 프로젝트 탭에서 프로젝트 저장을 하면 백업에도 포함됩니다.');
     } catch (caught) { setError(caught instanceof Error ? caught.message : '수동 배치를 저장하지 못했습니다.'); }
     finally { setSavingManualLayout(false); }
-  }, [currentPlan.mergedPlans]);
+  }, [currentPlan.mergedPlans, flushCompletionToServer]);
 
   useFocusEffect(useCallback(() => { void refresh(); }, [refresh]));
 
@@ -395,7 +476,7 @@ export default function PlanningScreen() {
     {!hasPlan ? <View style={styles.empty}><Text style={styles.emptyIcon}>▦</Text><Text style={styles.emptyTitle}>{loading ? '배치 계획을 불러오는 중…' : '계산된 배치가 없습니다.'}</Text><Text style={styles.emptyBody}>재단계산 탭에서 조각별 폭·길이·수량을 입력하고 현재 조각 배치를 실행해 주세요.</Text><TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.emptyButton}><Text style={styles.emptyButtonText}>재단 계산으로 이동</Text></TouchableOpacity></View> : <>
       <View style={styles.summaryCard}><View style={styles.summaryHeader}><View><Text style={styles.sectionEyebrow}>CUTTING RESULT</Text><Text style={styles.sectionTitle}>재단 결과 · 원단 사용 계획</Text></View><Text style={styles.summaryStatus}>재단계산 결과</Text></View><View style={styles.metrics}><Metric label="계산 조각" value={`${pieceCount}개`} /><Metric label="생산 수량" value={`${producedQuantity}개`} /><Metric label="새 롤 수" value={`${newRollCount}롤`} /><Metric label="새 롤 사용 길이" value={`${Math.round(newRollLength).toLocaleString()}mm`} /></View><Text style={styles.summaryHint}>새 롤은 1롤당 최대 25m로 분할됩니다. 재단계산에서 저장된 결과를 기준으로 배치 도면과 배치목록을 확인합니다.</Text></View>
       <View style={styles.section} onLayout={(event) => { previewSectionY.current = event.nativeEvent.layout.y; }}><View style={styles.sectionHeader}><View><Text style={styles.sectionEyebrow}>LAYOUT PREVIEW</Text><Text style={styles.sectionTitle}>배치 미리보기</Text></View><View style={styles.sectionHeaderActions}>{planningView === 'drawing' && <>
-        <TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 배치 저장" disabled={savingManualLayout || loading || currentPlan.mergedPlans.length === 0} onPress={() => void saveManualLayouts()} style={[styles.saveLayoutButton, (savingManualLayout || loading || currentPlan.mergedPlans.length === 0) && styles.disabled]}><Text style={styles.saveLayoutButtonText}>{savingManualLayout ? '저장 중' : '수동 배치 저장'}</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치와 재단완료 저장" disabled={savingManualLayout || loading || !hasPlan} onPress={() => void saveManualLayouts()} style={[styles.saveLayoutButton, (savingManualLayout || loading || !hasPlan) && styles.disabled]}><Text style={styles.saveLayoutButtonText}>{savingManualLayout ? '저장 중' : '배치·완료 저장'}</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 PDF 내보내기" disabled={exportingPdf} onPress={() => void exportPreviewPdf()} style={[styles.pdfButton, exportingPdf && styles.disabled]}><FileDown color="#fff" size={14} /><Text style={styles.pdfButtonText}>{exportingPdf ? '준비 중' : 'PDF 내보내기'}</Text></TouchableOpacity>
       </>}</View></View>
         <View style={styles.previewStickyHeader}>
@@ -441,7 +522,7 @@ export default function PlanningScreen() {
           const subgroupKey = (id: string) => JSON.stringify([planKey, id]);
           const listState = Object.fromEntries(subgroupIds.map((id) => [id, collapsedPlacementLists[subgroupKey(id)] === true]));
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
-          const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, plan.mergeGroupId, job?.id, placementId, placementIds);
+          const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, job?.id, placementId, placementIds);
           return planningView === 'drawing'
             ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onShiftPlacementHorizontally={(placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView />
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;

@@ -80,9 +80,9 @@ export function nextPlacementCompletion(
   return { completedIds: normalized, complete: available.size > 0 && normalized.length === available.size };
 }
 
-/** Prefers persisted completion state and falls back to the current-session state for unsaved plans. */
+/** Prefers the current local state, which may contain changes not flushed to the server yet. */
 export function resolvePlacementCompletionIds(persistedIds?: readonly number[], temporaryIds?: readonly number[]): number[] {
-  return [...(persistedIds ?? temporaryIds ?? [])].sort((left, right) => left - right);
+  return [...(temporaryIds ?? persistedIds ?? [])].sort((left, right) => left - right);
 }
 
 /** Resolves the newest persisted completion state for the current merged plan. */
