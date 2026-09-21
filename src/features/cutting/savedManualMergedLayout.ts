@@ -175,3 +175,16 @@ export function restoreManualMergedLayout(
     result: { placements: combinedPlacements, usedLengthMm, producedQuantity: combinedPlacements.length,
       utilizationPercent, wastePercent: Math.round((100 - utilizationPercent) * 10) / 10 } };
 }
+
+/** Restores an explicit project save first, then a device-local save, or keeps fresh optimization. */
+export function restorePreferredManualLayout(
+  plan: MergedGroupPlan,
+  planIndex: number,
+  requests: readonly GroupedPieceRequest[],
+  projectSaved?: SavedManualMergedLayout,
+  localSaved?: SavedManualMergedLayout,
+): MergedGroupPlan {
+  return (projectSaved && restoreManualMergedLayout(plan, planIndex, requests, projectSaved))
+    ?? (localSaved && restoreManualMergedLayout(plan, planIndex, requests, localSaved))
+    ?? plan;
+}

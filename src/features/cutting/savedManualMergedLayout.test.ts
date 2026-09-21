@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CurrentEstimateSnapshot } from '../estimate/currentGroupEstimate';
 import { movePlacementWithinRoll } from './moveMergedPlacement';
-import { applyPlacementIdRecords, captureManualMergedLayout, parseCurrentManualLayouts, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, serializeCurrentManualLayouts } from './savedManualMergedLayout';
+import { applyPlacementIdRecords, captureManualMergedLayout, parseCurrentManualLayouts, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, restorePreferredManualLayout, serializeCurrentManualLayouts } from './savedManualMergedLayout';
 
 function request(groupId: string, pieceId: string, width: number, length: number): GroupedPieceRequest {
   return { groupId, groupName: '그룹 1', pieceId, pieceName: pieceId,
@@ -68,5 +68,15 @@ describe('saved manual merged layout', () => {
     const changed = applyPlacementIdRecords(shifted, placementIdRecordsFromPlan(shifted));
     expect(kept?.result.placements.map((placement) => [placement.id, placement.y])).toEqual([[1, 105], [2, 105]]);
     expect(changed?.result.placements.map((placement) => placement.id)).toEqual([11, 12]);
+  });
+
+  it('restores an explicitly saved project manual layout ahead of regenerated optimized coordinates', () => {
+    const optimized = plan('new');
+    const manuallyMoved = movePlacementWithinRoll(optimized, 2, 1005, 5000, [request('new', 'large', 1000, 10000), request('new', 'small', 200, 4000)]).plan!;
+    const saved = captureManualMergedLayout(manuallyMoved, 0, [request('new', 'large', 1000, 10000), request('new', 'small', 200, 4000)]);
+
+    const restored = restorePreferredManualLayout(optimized, 0, [request('new', 'large', 1000, 10000), request('new', 'small', 200, 4000)], saved);
+    expect(restored.rollResults?.[0]?.placements.find((item) => item.id === 2)).toMatchObject({ x: 1005, y: 5000 });
+    expect(restored.result.usedLengthMm).toBe(manuallyMoved.result.usedLengthMm);
   });
 });

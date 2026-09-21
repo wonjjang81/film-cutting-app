@@ -10,7 +10,7 @@ import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSv
 import { recordManualLayoutChange, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
 import { movePlacementToBestOtherRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally } from '../../src/features/cutting/moveMergedPlacement';
 import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptimizeManualMergedLayout';
-import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, manualLayoutScope, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
+import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, manualLayoutScope, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restorePreferredManualLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
@@ -109,10 +109,11 @@ export default function PlanningScreen() {
       const resolvedPlans = calculated.mergedPlans.map((plan, index) => {
         const override = manualMergedPlanOverrides.current[mergedPlanKey(plan.mergeGroupId, plan.sourceIds)];
         if (override?.baseSignature === mergedPlanGeometrySignature(plan)) return override.plan;
+        const fromProject = projectLayouts.find((layout) => layout.planIndex === index);
         const fromLocal = localLayouts.find((layout) => layout.planIndex === index);
-        // Existing projects always receive freshly optimized coordinates.
-        // Their persisted placement records are used below only to restore IDs.
-        return project ? plan : (fromLocal && restoreManualMergedLayout(plan, index, requests, fromLocal)) ?? plan;
+        // Explicit manual saves win while their geometry remains valid. If the
+        // inputs changed, validation fails and the fresh optimized plan remains.
+        return restorePreferredManualLayout(plan, index, requests, fromProject, fromLocal);
       });
       const keepPlans = resolvedPlans.map((plan, index) => {
         const layout = projectLayouts.find((item) => item.planIndex === index);
