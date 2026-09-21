@@ -4,13 +4,13 @@ import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { recordManualLayoutChange, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
 import { movePlacementToBestOtherRoll, movePlacementWithinRoll } from '../../src/features/cutting/moveMergedPlacement';
 import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptimizeManualMergedLayout';
-import { captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
+import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restoreManualMergedLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
@@ -26,6 +26,7 @@ const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
 const emptyPlan: CurrentEstimatePlan = { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
 type PlanningView = 'drawing' | 'list';
+type PendingProjectIdChoice = { key: string; projectName: string; calculated: CurrentEstimatePlan; keepPlans: MergedGroupPlan[]; replacePlans: MergedGroupPlan[] };
 
 export default function PlanningScreen() {
   const [currentPlan, setCurrentPlan] = useState<CurrentEstimatePlan>(emptyPlan);
@@ -46,10 +47,26 @@ export default function PlanningScreen() {
   const [lockedPlacementIdsByPlan, setLockedPlacementIdsByPlan] = useState<Record<string, number[]>>({});
   const [showBackToPreview, setShowBackToPreview] = useState(false);
   const [manualLayoutHistories, setManualLayoutHistories] = useState<Record<string, ManualLayoutHistory<MergedGroupPlan>>>({});
+  const [pendingProjectIdChoice, setPendingProjectIdChoice] = useState<PendingProjectIdChoice | null>(null);
   const pageScrollRef = useRef<ScrollView>(null);
   const pageScrollY = useRef(0);
   const previewSectionY = useRef(0);
   const manualMergedPlanOverrides = useRef<Record<string, { baseSignature: string; plan: MergedGroupPlan }>>({});
+  const projectIdChoices = useRef<Record<string, 'keep' | 'replace'>>({});
+
+  const installRefreshedPlan = useCallback((calculated: CurrentEstimatePlan, mergedPlans: MergedGroupPlan[]) => {
+    setManualLayoutHistories((current) => Object.fromEntries(mergedPlans.map((baseline) => {
+      const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
+      const existing = current[key];
+      return [key, existing && mergedPlanGeometrySignature(existing.baseline) === mergedPlanGeometrySignature(baseline)
+        ? existing : startManualLayoutHistory(baseline)];
+    })));
+    setLockedPlacementIdsByPlan(Object.fromEntries(calculated.mergedPlans.map((baseline, index) => {
+      const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
+      return [key, placementsMovedAcrossRolls(baseline, mergedPlans[index] ?? baseline)];
+    })));
+    setCurrentPlan({ ...calculated, mergedPlans });
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
@@ -66,8 +83,8 @@ export default function PlanningScreen() {
       const context = parseCurrentProjectContext(contextRaw);
       const belongsToProject = Boolean(snapshot && context && (snapshot.projectId === context.id
         || (!snapshot.projectId && snapshot.pieces.every((group) => group.id.startsWith(`${context.id}-group-`)))));
-      const projectLayouts = belongsToProject
-        ? loaded.document.projects?.find((project) => project.id === context?.id)?.manualLayouts ?? [] : [];
+      const project = belongsToProject ? loaded.document.projects?.find((item) => item.id === context?.id) : undefined;
+      const projectLayouts = project?.manualLayouts ?? [];
       const localLayouts = snapshot ? parseCurrentManualLayouts(localLayoutsRaw, snapshot) : [];
       const resolvedPlans = calculated.mergedPlans.map((plan, index) => {
         const override = manualMergedPlanOverrides.current[mergedPlanKey(plan.mergeGroupId, plan.sourceIds)];
@@ -77,22 +94,44 @@ export default function PlanningScreen() {
         return (fromProject && restoreManualMergedLayout(plan, index, requests, fromProject))
           ?? (fromLocal && restoreManualMergedLayout(plan, index, requests, fromLocal)) ?? plan;
       });
-      setManualLayoutHistories((current) => Object.fromEntries(calculated.mergedPlans.map((baseline) => {
-        const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
-        const existing = current[key];
-        return [key, existing && mergedPlanGeometrySignature(existing.baseline) === mergedPlanGeometrySignature(baseline)
-          ? existing : startManualLayoutHistory(baseline)];
-      })));
-      setLockedPlacementIdsByPlan(Object.fromEntries(calculated.mergedPlans.map((baseline, index) => {
-        const key = mergedPlanKey(baseline.mergeGroupId, baseline.sourceIds);
-        return [key, placementsMovedAcrossRolls(baseline, resolvedPlans[index] ?? baseline)];
-      })));
-      setCurrentPlan({ ...calculated, mergedPlans: resolvedPlans });
+      const keepPlans = resolvedPlans.map((plan, index) => {
+        const layout = projectLayouts.find((item) => item.planIndex === index);
+        const jobId = project?.mergedJobIds[index];
+        const job = jobId ? loaded.document.mergedJobs.find((item) => item.id === jobId) : undefined;
+        const records = layout ? placementIdRecordsFromManualLayout(layout) : job ? placementIdRecordsFromMergedJob(job) : [];
+        return records.length ? applyPlacementIdRecords(plan, records) ?? plan : plan;
+      });
+      const replacePlans = resolvedPlans.map((plan, index) => applyPlacementIdRecords(plan, placementIdRecordsFromPlan(calculated.mergedPlans[index] ?? plan)) ?? plan);
+      const hasPersistedIds = Boolean(project && keepPlans.some((_, index) => {
+        const layout = projectLayouts.find((item) => item.planIndex === index);
+        const jobId = project.mergedJobIds[index];
+        const job = jobId ? loaded.document.mergedJobs.find((item) => item.id === jobId) : undefined;
+        return Boolean(layout?.rolls.some((roll) => roll.placements.length) || job?.placements.length);
+      }));
+      const choiceKey = project ? `${project.id}:${project.updatedAt}` : '';
+      const priorChoice = choiceKey ? projectIdChoices.current[choiceKey] : undefined;
+      if (hasPersistedIds && !priorChoice && project) {
+        installRefreshedPlan(calculated, keepPlans);
+        setPendingProjectIdChoice({ key: choiceKey, projectName: project.name, calculated, keepPlans, replacePlans });
+      } else {
+        installRefreshedPlan(calculated, priorChoice === 'replace' ? replacePlans : keepPlans);
+      }
     } catch (caught) {
       setCurrentPlan(emptyPlan);
       setError(caught instanceof Error ? caught.message : '배치 계획을 불러오지 못했습니다.');
     } finally { setLoading(false); }
-  }, []);
+  }, [installRefreshedPlan]);
+
+  const chooseProjectPlacementIds = (choice: 'keep' | 'replace') => {
+    if (!pendingProjectIdChoice) return;
+    projectIdChoices.current[pendingProjectIdChoice.key] = choice;
+    installRefreshedPlan(pendingProjectIdChoice.calculated, choice === 'keep' ? pendingProjectIdChoice.keepPlans : pendingProjectIdChoice.replacePlans);
+    if (choice === 'replace') {
+      setMergedCompletionOverrides((current) => ({ ...current, ...Object.fromEntries(pendingProjectIdChoice.replacePlans.map((plan) => [mergedPlanKey(plan.mergeGroupId, plan.sourceIds), []])) }));
+    }
+    setPendingProjectIdChoice(null);
+    setNotice(choice === 'keep' ? '기존 프로젝트의 배치 ID를 유지했습니다.' : '새 최적화 배치 ID를 적용하고 기존 ID 기준 완료 표시를 초기화했습니다.');
+  };
 
   const toggleMergedPlacementComplete = useCallback(async (planKey: string, mergeGroupId: string, jobId: string | undefined, placementId: number, placementIds: readonly number[]) => {
     setLoading(true); setError(null);
@@ -391,7 +430,17 @@ export default function PlanningScreen() {
         })}
       </View>
     </>}
-  </ScrollView>{planningView === 'drawing' && showBackToPreview && <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 헤더로 이동" onPress={() => pageScrollRef.current?.scrollTo({ y: Math.max(0, previewSectionY.current - 8), animated: true })} style={styles.backToPreview}><Text style={styles.backToPreviewText}>↑</Text></TouchableOpacity>}</View>;
+  </ScrollView>{planningView === 'drawing' && showBackToPreview && <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 미리보기 헤더로 이동" onPress={() => pageScrollRef.current?.scrollTo({ y: Math.max(0, previewSectionY.current - 8), animated: true })} style={styles.backToPreview}><Text style={styles.backToPreviewText}>↑</Text></TouchableOpacity>}
+  <Modal visible={pendingProjectIdChoice !== null} transparent animationType="fade" onRequestClose={() => chooseProjectPlacementIds('keep')}>
+    <View style={styles.idChoiceBackdrop}><View style={styles.idChoiceCard} accessibilityViewIsModal accessibilityLabel="기존 프로젝트 배치 ID 선택">
+      <Text style={styles.idChoiceEyebrow}>PROJECT PLACEMENT ID</Text>
+      <Text style={styles.idChoiceTitle}>기존 배치 ID가 있습니다</Text>
+      <Text style={styles.idChoiceBody}>“{pendingProjectIdChoice?.projectName}” 프로젝트의 기존 조각 ID를 유지할지, 새 최적화 계산 순서의 ID로 변경할지 선택하세요. 배치 위치 최적화는 어느 선택에도 적용됩니다.</Text>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="기존 프로젝트 배치 ID 유지" onPress={() => chooseProjectPlacementIds('keep')} style={styles.idChoicePrimary}><Text style={styles.idChoicePrimaryText}>기존 ID 유지</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel="새 최적화 배치 ID 적용" onPress={() => chooseProjectPlacementIds('replace')} style={styles.idChoiceSecondary}><Text style={styles.idChoiceSecondaryText}>새 ID로 변경</Text></TouchableOpacity>
+    </View></View>
+  </Modal>
+  </View>;
 }
 
 function mergedPlanKey(mergeGroupId: string, sourceIds: readonly string[]): string {
@@ -452,6 +501,7 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 const styles = StyleSheet.create({
+  idChoiceBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.5)' }, idChoiceCard: { width: '100%', maxWidth: 390, padding: 20, borderRadius: 16, backgroundColor: '#fff', elevation: 9, shadowColor: '#0f172a', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } }, idChoiceEyebrow: { fontSize: 10, letterSpacing: 1.2, fontWeight: '900', color: '#2563eb' }, idChoiceTitle: { marginTop: 6, fontSize: 19, fontWeight: '900', color: '#0f172a' }, idChoiceBody: { marginTop: 9, fontSize: 12, lineHeight: 19, color: '#475569' }, idChoicePrimary: { minHeight: 44, marginTop: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, idChoicePrimaryText: { fontSize: 13, fontWeight: '900', color: '#fff' }, idChoiceSecondary: { minHeight: 44, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, idChoiceSecondaryText: { fontSize: 13, fontWeight: '900', color: '#475569' },
   previewStickyHeader: { position: Platform.OS === 'web' ? 'sticky' as never : 'relative', top: 0, zIndex: 30, marginTop: 14, padding: 7, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, backgroundColor: '#fff', elevation: 8, shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   stickyTopRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
   viewTabs: { flex: 1, flexDirection: 'row', gap: 5, padding: 3, borderRadius: 9, backgroundColor: '#eff6ff' }, viewTab: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, viewTabActive: { backgroundColor: '#2563eb' }, viewTabText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, viewTabTextActive: { color: '#fff' }, viewHint: { marginTop: 9, fontSize: 11, color: '#64748b' },

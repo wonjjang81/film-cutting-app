@@ -79,15 +79,15 @@ describe('planGroupedPieces', () => {
     expect(plan?.producedQuantity).toBe(60);
   });
 
-  it('moves a small piece from the first roll into the second roll gap when it shortens total material', () => {
+  it('fills the first physical roll before placing remaining pieces on the second roll', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'large', pieceName: '큰 조각', request: { brand: '영림', productNumber: 'P1', remnants: [], ...base, pieceWidthMm: 1000, pieceLengthMm: 20_000, quantity: 2, allowRotation: false } },
       { groupId: 'g2', groupName: '그룹 2', pieceId: 'small', pieceName: '작은 조각', request: { brand: '영림', productNumber: 'P1', remnants: [], ...base, pieceWidthMm: 200, pieceLengthMm: 6_000, quantity: 4, allowRotation: false } },
     ];
     const [plan] = planMergedGroups(requests);
     expect(plan?.rollResults).toHaveLength(2);
-    expect(plan?.rollResults?.map((roll) => roll.usedLengthMm)).toEqual([20_010, 20_010]);
-    expect(plan?.rollResults?.map((roll) => roll.placements.filter((piece) => piece.sourceId === 'g2-small').length)).toEqual([3, 1]);
+    expect(plan?.rollResults?.map((roll) => roll.usedLengthMm)).toEqual([24_010, 20_010]);
+    expect(plan?.rollResults?.map((roll) => roll.placements.filter((piece) => piece.sourceId === 'g2-small').length)).toEqual([4, 0]);
     expect(plan?.result.placements).toHaveLength(6);
   });
 

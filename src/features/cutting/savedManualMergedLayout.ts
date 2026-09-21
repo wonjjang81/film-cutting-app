@@ -1,4 +1,4 @@
-import type { SavedManualMergedLayout } from '../library/models';
+import type { SavedManualMergedLayout, SavedMergedCuttingJob } from '../library/models';
 import type { CurrentEstimateSnapshot } from '../estimate/currentGroupEstimate';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { MergedPlacement, MergedRollResult } from './optimizeMergedRollLayout';
@@ -38,6 +38,50 @@ export function parseCurrentManualLayouts(raw: string | null, snapshot: CurrentE
 }
 
 function sourceId(request: GroupedPieceRequest): string { return `${request.groupId}-${request.pieceId}`; }
+
+export type PlacementIdRecord = { id: number; sourceIndex: number; instanceIndex: number };
+
+export function placementIdRecordsFromPlan(plan: MergedGroupPlan): PlacementIdRecord[] {
+  return plan.result.placements.map((placement) => ({
+    id: placement.id,
+    sourceIndex: plan.sourceIds.indexOf(placement.sourceId),
+    instanceIndex: placement.instanceIndex,
+  }));
+}
+
+export function placementIdRecordsFromManualLayout(layout: SavedManualMergedLayout): PlacementIdRecord[] {
+  return layout.rolls.flatMap((roll) => roll.placements.map(({ id, sourceIndex, instanceIndex }) => ({ id, sourceIndex, instanceIndex })));
+}
+
+export function placementIdRecordsFromMergedJob(job: SavedMergedCuttingJob): PlacementIdRecord[] {
+  const sourceIds = job.sourceIds?.length ? job.sourceIds : [...new Set(job.placements.map((placement) => placement.sourceId))];
+  return job.placements.map((placement) => ({
+    id: placement.id,
+    sourceIndex: sourceIds.indexOf(placement.sourceId),
+    instanceIndex: placement.instanceIndex,
+  }));
+}
+
+/** Reuses persisted IDs by source order and instance while leaving optimized geometry untouched. */
+export function applyPlacementIdRecords(plan: MergedGroupPlan, records: readonly PlacementIdRecord[]): MergedGroupPlan | null {
+  if (records.length !== plan.result.placements.length) return null;
+  const key = (sourceIndex: number, instanceIndex: number) => `${sourceIndex}:${instanceIndex}`;
+  const idByIdentity = new Map(records.map((record) => [key(record.sourceIndex, record.instanceIndex), record.id]));
+  const ids = [...idByIdentity.values()];
+  if (idByIdentity.size !== records.length || new Set(ids).size !== ids.length || ids.some((id) => !Number.isInteger(id) || id <= 0)) return null;
+  const remap = (placement: MergedPlacement): MergedPlacement | null => {
+    const id = idByIdentity.get(key(plan.sourceIds.indexOf(placement.sourceId), placement.instanceIndex));
+    return id === undefined ? null : { ...placement, id };
+  };
+  const rollResults = (plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => {
+    const placements = roll.placements.map(remap);
+    return placements.some((placement) => placement === null) ? null : { ...roll, placements: placements as MergedPlacement[] };
+  });
+  if (rollResults.some((roll) => roll === null)) return null;
+  const combined = plan.result.placements.map(remap);
+  if (combined.some((placement) => placement === null)) return null;
+  return { ...plan, rollResults: rollResults as MergedRollResult[], result: { ...plan.result, placements: combined as MergedPlacement[] } };
+}
 
 /** Ignores generated group IDs and coordinates, but detects changes to pieces and cutting constraints. */
 export function mergedLayoutGeometrySignature(plan: MergedGroupPlan, requests: readonly GroupedPieceRequest[]): string {
@@ -87,6 +131,7 @@ export function restoreManualMergedLayout(
   const basePlacements = new Map(plan.result.placements.map((placement) => [identity(plan.sourceIds.indexOf(placement.sourceId), placement.instanceIndex), placement]));
   const requestBySource = new Map(requests.map((request) => [sourceId(request), request.request]));
   const seen = new Set<string>();
+  const seenIds = new Set<number>();
   const rollResults: MergedRollResult[] = [];
   for (const roll of saved.rolls) {
     if (!roll.placements.length) return null;
@@ -97,8 +142,9 @@ export function restoreManualMergedLayout(
       const placementIdentity = identity(position.sourceIndex, position.instanceIndex);
       const base = basePlacements.get(placementIdentity);
       const request = base && requestBySource.get(base.sourceId);
-      if (!base || !request || seen.has(placementIdentity)) return null;
+      if (!base || !request || seen.has(placementIdentity) || seenIds.has(position.id) || position.id <= 0) return null;
       seen.add(placementIdentity);
+      seenIds.add(position.id);
       const width = position.rotated ? request.pieceLengthMm : request.pieceWidthMm;
       const height = position.rotated ? request.pieceWidthMm : request.pieceLengthMm;
       if ((position.rotated && !request.allowRotation) || position.width !== width || position.height !== height
@@ -106,7 +152,7 @@ export function restoreManualMergedLayout(
         || position.x < request.sideMarginMm || position.y < request.startEndMarginMm
         || position.x + width > request.rollWidthMm - request.sideMarginMm
         || position.y + height + request.startEndMarginMm > boundedNewRollLength(request.maxLengthMm)) return null;
-      const candidate = { ...base, x: position.x, y: position.y, width, height, rotated: position.rotated };
+      const candidate = { ...base, id: position.id, x: position.x, y: position.y, width, height, rotated: position.rotated };
       if (placements.some((item) => overlaps(candidate, item, Math.max(request.gapMm, requestBySource.get(item.sourceId)?.gapMm ?? 0)))) return null;
       placements.push(candidate);
       rollWidthMm = request.rollWidthMm;

@@ -169,64 +169,6 @@ function countPlacements(placements: readonly MergedPlacement[]): Record<string,
   }, {});
 }
 
-/** Try moving a small piece into the neighbouring roll's unused width/length.
- * Repack both rolls and accept only a strictly shorter, fully placed result. */
-function rebalanceAdjacentRolls(
-  rolls: MergedRollResult[],
-  entries: readonly GroupedPieceRequest[],
-  rollWidthMm: number,
-  maxLengthMm: number,
-  condition: { gapMm: number; sideMarginMm: number; startEndMarginMm: number },
-): MergedRollResult[] {
-  if (rolls.length < 2) return rolls;
-  const specifications = new Map(entries.map((entry) => [sourceId(entry), entry]));
-  const repack = (quantities: Record<string, number>): MergedRollResult => optimizeMergedRollLayout({
-    rollWidthMm, maxLengthMm, ...condition,
-    pieces: Object.entries(quantities).filter(([, quantity]) => quantity > 0).map(([id, quantity]) => {
-      const entry = specifications.get(id)!;
-      return { sourceId: id, widthMm: entry.request.pieceWidthMm, lengthMm: entry.request.pieceLengthMm, quantity, allowRotation: entry.request.allowRotation };
-    }),
-  });
-  const current = [...rolls];
-  for (let pair = 0; pair < current.length - 1; pair += 1) {
-    let first = current[pair]!;
-    let second = current[pair + 1]!;
-    // Keep this bounded for large jobs. The pair is revisited after each accepted move.
-    const largePair = first.placements.length + second.placements.length > 120;
-    for (let pass = 0; pass < (largePair ? 1 : 3); pass += 1) {
-      const firstCounts = countPlacements(first.placements);
-      const secondCounts = countPlacements(second.placements);
-      const smallest = (counts: Record<string, number>, fromFirst: boolean) => Object.keys(counts).sort((left, right) => {
-        const a = specifications.get(left)!.request;
-        const b = specifications.get(right)!.request;
-        return a.pieceWidthMm * a.pieceLengthMm - b.pieceWidthMm * b.pieceLengthMm;
-      }).slice(0, largePair ? 2 : 4).map((id) => ({ id, fromFirst }));
-      const candidates = [...smallest(firstCounts, true), ...smallest(secondCounts, false)];
-      let best: { first: MergedRollResult; second: MergedRollResult } | undefined;
-      let bestLength = first.usedLengthMm + second.usedLengthMm;
-      for (const { id, fromFirst } of candidates) {
-        const nextFirst = { ...firstCounts };
-        const nextSecond = { ...secondCounts };
-        if (fromFirst) { nextFirst[id]!--; nextSecond[id] = (nextSecond[id] ?? 0) + 1; }
-        else { nextSecond[id]!--; nextFirst[id] = (nextFirst[id] ?? 0) + 1; }
-        const firstCandidate = repack(nextFirst);
-        const secondCandidate = repack(nextSecond);
-        const expectedFirst = first.placements.length + (fromFirst ? -1 : 1);
-        const expectedSecond = second.placements.length + (fromFirst ? 1 : -1);
-        if (firstCandidate.placements.length !== expectedFirst || secondCandidate.placements.length !== expectedSecond) continue;
-        const length = firstCandidate.usedLengthMm + secondCandidate.usedLengthMm;
-        if (length < bestLength) { bestLength = length; best = { first: firstCandidate, second: secondCandidate }; }
-      }
-      if (!best) break;
-      first = best.first;
-      second = best.second;
-    }
-    current[pair] = first;
-    current[pair + 1] = second;
-  }
-  return current.filter((roll) => roll.placements.length > 0);
-}
-
 function residualsForMerged(
   entrySet: readonly GroupedPieceRequest[],
   source: FilmRemnant,
@@ -324,7 +266,6 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     for (const [id, count] of Object.entries(countPlacements(roll.placements))) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - count));
     rollResults.push(roll);
   }
-  rollResults = rebalanceAdjacentRolls(rollResults, entries, rollWidthMm, maxNewRollLengthMm, condition);
   const sourceInstanceCounts = new Map<string, number>();
   let nextPlacementId = 1;
   rollResults = rollResults.map((roll) => ({ ...roll, placements: roll.placements.map((placement) => {
