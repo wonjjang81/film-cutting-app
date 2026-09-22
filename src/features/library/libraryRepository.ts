@@ -496,30 +496,30 @@ function isOptimisticConflict(error: unknown): boolean {
   return error instanceof Error && error.message.includes('다른 기기에서 프로젝트가 변경되었습니다');
 }
 
-function orderJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
-  return jobs
-    .map(clone)
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
-    .slice(0, MAX_SAVED_JOBS);
-}
-
 function sortJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
   return jobs
     .map(clone)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id));
 }
 
-function orderMergedJobs(jobs: readonly SavedMergedCuttingJob[]): SavedMergedCuttingJob[] {
-  return jobs
-    .map(clone)
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id))
-    .slice(0, MAX_SAVED_JOBS);
+function orderJobsForProjects(jobs: readonly SavedCuttingJob[], projects: readonly SavedProject[]): SavedCuttingJob[] {
+  const referencedIds = new Set(projects.flatMap((project) => project.jobIds));
+  const sorted = sortJobs(jobs);
+  const standaloneIds = new Set(sorted.filter((job) => !referencedIds.has(job.id)).slice(0, MAX_SAVED_JOBS).map((job) => job.id));
+  return sorted.filter((job) => referencedIds.has(job.id) || standaloneIds.has(job.id));
 }
 
 function sortMergedJobs(jobs: readonly SavedMergedCuttingJob[]): SavedMergedCuttingJob[] {
   return jobs
     .map(clone)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id));
+}
+
+function orderMergedJobsForProjects(jobs: readonly SavedMergedCuttingJob[], projects: readonly SavedProject[]): SavedMergedCuttingJob[] {
+  const referencedIds = new Set(projects.flatMap((project) => project.mergedJobIds));
+  const sorted = sortMergedJobs(jobs);
+  const standaloneIds = new Set(sorted.filter((job) => !referencedIds.has(job.id)).slice(0, MAX_SAVED_JOBS).map((job) => job.id));
+  return sorted.filter((job) => referencedIds.has(job.id) || standaloneIds.has(job.id));
 }
 
 function orderProjects(projects: readonly SavedProject[]): SavedProject[] {
@@ -660,12 +660,13 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       const parsed = parseDocument(raw);
       if (parsed.warnings.length > 0) throw new Error(`프로젝트 파일을 가져오지 못했습니다. ${parsed.warnings.join(' ')}`);
       await mutate((document) => {
+        const projects = orderProjects(parsed.document.projects ?? []);
         document.version = parsed.document.version;
         document.presets = clone(parsed.document.presets);
-        document.jobs = orderJobs(parsed.document.jobs);
+        document.jobs = orderJobsForProjects(parsed.document.jobs, projects);
         document.remnants = clone(parsed.document.remnants);
-        document.mergedJobs = orderMergedJobs(parsed.document.mergedJobs);
-        document.projects = orderProjects(parsed.document.projects ?? []);
+        document.mergedJobs = orderMergedJobsForProjects(parsed.document.mergedJobs, projects);
+        document.projects = projects;
       });
       return { document: clone(parsed.document), warnings: [] };
     },
@@ -690,9 +691,10 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
           || document.mergedJobs.some((item) => mergedIds.has(item.id) && !previousMergedIds.has(item.id))) {
           throw new Error('가져온 프로젝트의 작업 ID가 기존 데이터와 충돌합니다.');
         }
-        document.jobs = orderJobs([...document.jobs.filter((item) => !previousJobIds.has(item.id)), ...jobs]);
-        document.mergedJobs = orderMergedJobs([...document.mergedJobs.filter((item) => !previousMergedIds.has(item.id)), ...mergedJobs]);
-        document.projects = orderProjects(replaceById(document.projects ?? [], project));
+        const projects = orderProjects(replaceById(document.projects ?? [], project));
+        document.jobs = orderJobsForProjects([...document.jobs.filter((item) => !previousJobIds.has(item.id)), ...jobs], projects);
+        document.mergedJobs = orderMergedJobsForProjects([...document.mergedJobs.filter((item) => !previousMergedIds.has(item.id)), ...mergedJobs], projects);
+        document.projects = projects;
       });
       return await read();
     },
@@ -714,7 +716,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
     async saveJob(job): Promise<void> {
       const valid = assertValid(job, validateJob, 'job');
       await mutate((document) => {
-        document.jobs = orderJobs(replaceById(document.jobs, valid));
+        document.jobs = orderJobsForProjects(replaceById(document.jobs, valid), document.projects ?? []);
       });
     },
 
@@ -724,8 +726,8 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       const allIds = [...validJobs.map((job) => job.id), ...validMergedJobs.map((job) => job.id)];
       if (new Set(allIds).size !== allIds.length) throw new Error('동일 작업을 여러 번 저장할 수 없습니다.');
       await mutate((document) => {
-        document.jobs = orderJobs(validJobs.reduce((items, job) => replaceById(items, job), document.jobs));
-        document.mergedJobs = orderMergedJobs(validMergedJobs.reduce((items, job) => replaceById(items, job), document.mergedJobs));
+        document.jobs = orderJobsForProjects(validJobs.reduce((items, job) => replaceById(items, job), document.jobs), document.projects ?? []);
+        document.mergedJobs = orderMergedJobsForProjects(validMergedJobs.reduce((items, job) => replaceById(items, job), document.mergedJobs), document.projects ?? []);
       });
     },
 
@@ -742,15 +744,16 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         const previous = (document.projects ?? []).find((item) => item.id === validProject.id);
         const replacedJobIds = new Set([...(previous?.jobIds ?? []), ...validProject.jobIds]);
         const replacedMergedIds = new Set([...(previous?.mergedJobIds ?? []), ...validProject.mergedJobIds]);
-        document.jobs = sortJobs([
+        const projects = orderProjects(replaceById(document.projects ?? [], validProject));
+        document.jobs = orderJobsForProjects([
           ...document.jobs.filter((job) => !replacedJobIds.has(job.id)),
           ...validJobs,
-        ]);
-        document.mergedJobs = sortMergedJobs([
+        ], projects);
+        document.mergedJobs = orderMergedJobsForProjects([
           ...document.mergedJobs.filter((job) => !replacedMergedIds.has(job.id)),
           ...validMergedJobs,
-        ]);
-        document.projects = orderProjects(replaceById(document.projects ?? [], validProject));
+        ], projects);
+        document.projects = projects;
       });
     },
 
@@ -796,9 +799,9 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       const normalizedUpdatedAt = normalizeTimestamp(updatedAt);
       if (normalizedUpdatedAt === undefined) throw new Error('Job updatedAt must be an ISO timestamp.');
       await mutate((document) => {
-        document.jobs = orderJobs(document.jobs.map((job) => job.id === id
+        document.jobs = orderJobsForProjects(document.jobs.map((job) => job.id === id
           ? { ...job, name, updatedAt: normalizedUpdatedAt }
-          : clone(job)));
+          : clone(job)), document.projects ?? []);
       });
     },
 
@@ -812,7 +815,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
     async saveMergedJob(job): Promise<void> {
       const valid = assertValid(job, validateMergedJob, 'merged cutting job');
       await mutate((document) => {
-        document.mergedJobs = orderMergedJobs(replaceById(document.mergedJobs, valid));
+        document.mergedJobs = orderMergedJobsForProjects(replaceById(document.mergedJobs, valid), document.projects ?? []);
       });
     },
 
@@ -851,7 +854,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         }
         applyInventoryDeltaToDocument(document, delta);
         const now = new Date().toISOString();
-        document.jobs = orderJobs(replaceById(document.jobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }));
+        document.jobs = orderJobsForProjects(replaceById(document.jobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }), document.projects ?? []);
       });
     },
 
@@ -869,7 +872,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         applyInventoryDeltaToDocument(document, delta);
         const now = new Date().toISOString();
         const confirmed = new Map(validJobs.map((job) => [job.id, { ...job, isInventoryConfirmed: true, inventoryConfirmedAt: now }]));
-        document.jobs = orderJobs(document.jobs.map((job) => confirmed.get(job.id) ?? clone(job)));
+        document.jobs = orderJobsForProjects(document.jobs.map((job) => confirmed.get(job.id) ?? clone(job)), document.projects ?? []);
       });
     },
 
@@ -884,7 +887,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
         }
         applyInventoryDeltaToDocument(document, delta);
         const now = new Date().toISOString();
-        document.mergedJobs = orderMergedJobs(replaceById(document.mergedJobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }));
+        document.mergedJobs = orderMergedJobsForProjects(replaceById(document.mergedJobs, { ...valid, isInventoryConfirmed: true, inventoryConfirmedAt: now }), document.projects ?? []);
       });
     },
   };

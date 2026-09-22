@@ -241,6 +241,23 @@ describe('library repository', () => {
     expect(loaded.document.mergedJobs).toHaveLength(1);
   });
 
+  it('does not discard project jobs when a completion batch updates one job', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const projectJobs = Array.from({ length: 102 }, (_, index) => job(index + 1));
+    const project: SavedProject = {
+      id: 'project-many-jobs', name: '대형 현장', jobIds: projectJobs.map((item) => item.id), mergedJobIds: [],
+      materialCostPerM: 10_000, constructionCostPerM2: 15_000, createdAt: timestamp, updatedAt: timestamp,
+    };
+    await repository.saveProjectBundle(project, projectJobs, []);
+
+    await repository.saveBatchJobs([{ ...projectJobs[0]!, isCuttingComplete: true }], []);
+
+    const loaded = await repository.load();
+    expect(loaded.document.jobs).toHaveLength(102);
+    expect(loaded.document.jobs.find((item) => item.id === projectJobs[0]!.id)?.isCuttingComplete).toBe(true);
+    expect(loaded.document.projects?.[0]?.jobIds).toHaveLength(102);
+  });
+
   it('saves a project bundle as one replaceable project and removes its old records', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     const first = job(1, { name: '그룹 1 · 조각 1 작업' });
