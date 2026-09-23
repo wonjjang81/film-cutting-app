@@ -7,6 +7,7 @@ ALLOWED_ORIGIN = "https://film.example.com"
 GOOGLE_OAUTH_CLIENT_ID = "YOUR_EXISTING_CONSTRUCTION_MANAGER_CLIENT_ID"
 AUTH_REDIRECT_URI = "https://film.example.com/api/auth/callback"
 AUTH_OWNER_EMAIL = "tubebluemoon@gmail.com"
+CONSTRUCTION_MANAGER_ORIGIN = "https://construction-manager.tubebluemoon.workers.dev"
 # GOOGLE_OAUTH_CLIENT_SECRET is an encrypted Cloudflare secret. Do not commit it.
 
 [[d1_databases]]

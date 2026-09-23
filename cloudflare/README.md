@@ -7,6 +7,7 @@
 3. 기존 Construction Manager Google OAuth 웹 클라이언트에 정확한 승인된 리디렉션 URI `https://film-cutting-app.pages.dev/api/auth/callback`을 추가합니다. 기존 리디렉션 URI는 삭제하지 않습니다.
 4. `wrangler.toml.example`을 기준으로 Pages 환경 변수와 D1 바인딩을 설정합니다. `ALLOWED_ORIGIN`과 `AUTH_REDIRECT_URI`는 배포 환경의 정확한 HTTPS 주소를 사용합니다.
 5. Pages 환경 변수에 `GOOGLE_OAUTH_CLIENT_ID`, `AUTH_REDIRECT_URI`, `AUTH_OWNER_EMAIL=tubebluemoon@gmail.com`을 설정하고 `GOOGLE_OAUTH_CLIENT_SECRET`은 암호화된 Secret으로만 등록합니다.
+6. 건설매니저 견적 제출을 사용할 때 `CONSTRUCTION_MANAGER_ORIGIN`을 운영 주소로 설정하고, 건설매니저에서 발급한 필름 전용 값을 `CONSTRUCTION_MANAGER_SERVICE_TOKEN` Secret으로 등록합니다. 이 값은 클라이언트 환경 변수에 넣지 않습니다.
 6. 마이그레이션과 Pages Functions를 먼저 preview 환경에 배포해 실제 Google 로그인, 로그아웃, 미등록 사용자 거부, 관리자 회원 승인을 검증합니다.
 7. 검증 및 백업이 끝난 뒤에만 기존 Cloudflare Access 로그인을 해제합니다. 롤백 중에는 Access 설정을 즉시 복구할 수 있도록 유지합니다.
 
