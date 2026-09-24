@@ -17,6 +17,7 @@ import { COMPANY_INFO_STORAGE_KEY, emptyCompanyInfo, LEGACY_COMPANY_NAME_STORAGE
 import { DIFFICULTY_PRICING } from '../../src/features/estimate/difficultyPricing';
 import { buildSubgroupRoughEstimateLines, type SubgroupRoughEstimateLine } from '../../src/features/estimate/subgroupRoughEstimate';
 import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, parseCurrentProjectContext } from '../../src/features/library/currentProjectContext';
+import { buildFilmEstimateSubmission, CONSTRUCTION_MANAGER_CONTEXT_KEY, parseConstructionManagerContext, type ConstructionManagerContext } from '../../src/features/integration/constructionManager';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -31,6 +32,8 @@ export default function EstimateScreen() {
   const [company, setCompany] = useState<CompanyInfo>(emptyCompanyInfo);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [constructionManagerContext, setConstructionManagerContext] = useState<ConstructionManagerContext | null>(null);
+  const [submittingToConstructionManager, setSubmittingToConstructionManager] = useState(false);
   const [materialCostText, setMaterialCostText] = useState(String(DEFAULT_MATERIAL_COST_PER_M));
   const [constructionCostText, setConstructionCostText] = useState(String(DEFAULT_CONSTRUCTION_COST_PER_M2));
   const [globalRateOverride, setGlobalRateOverride] = useState(false);
@@ -47,10 +50,11 @@ export default function EstimateScreen() {
   const refresh = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const [loaded, projectContextRaw] = await Promise.all([repository.load(), AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY)]);
+      const [loaded, projectContextRaw, cmContextRaw] = await Promise.all([repository.load(), AsyncStorage.getItem(CURRENT_PROJECT_CONTEXT_STORAGE_KEY), AsyncStorage.getItem(CONSTRUCTION_MANAGER_CONTEXT_KEY)]);
       setLibrary(loaded.document);
       const projectContext = parseCurrentProjectContext(projectContextRaw);
       setCurrentProjectId(projectContext?.id ?? null);
+      try { setConstructionManagerContext(cmContextRaw ? parseConstructionManagerContext(JSON.parse(cmContextRaw)) : null); } catch { setConstructionManagerContext(null); }
       const companyRaw = await AsyncStorage.getItem(COMPANY_INFO_STORAGE_KEY); const legacyCompany = companyRaw ? null : await AsyncStorage.getItem(LEGACY_COMPANY_NAME_STORAGE_KEY); setCompany(parseCompanyInfo(companyRaw ?? (legacyCompany ? JSON.stringify(legacyCompany) : null)));
       setMaterialCostText(String(DEFAULT_MATERIAL_COST_PER_M)); setConstructionCostText(String(DEFAULT_CONSTRUCTION_COST_PER_M2)); setGlobalRateOverride(false); setGroupMaterialRateText({}); setDiscountEnabled(false); setDiscountText('');
       const activeProject = (loaded.document.projects ?? []).find((project) => project.id === projectContext?.id);
@@ -102,6 +106,17 @@ export default function EstimateScreen() {
     else { const file = await Print.printToFileAsync({ html }); if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(file.uri, { mimeType: 'application/pdf', dialogTitle: '견적서 PDF 공유' }); }
   };
   const copyEstimate = async () => { if (!hasEstimate) return; await Clipboard.setStringAsync(createGroupedEstimateText(projectEstimate, company)); };
+  const submitToConstructionManager = async () => {
+    if (!hasEstimate || !constructionManagerContext) return;
+    setSubmittingToConstructionManager(true); setError(null);
+    try {
+      const payload = buildFilmEstimateSubmission({ context: constructionManagerContext, externalEntityId: activeProject?.id ?? currentProjectId ?? '', sourceUpdatedAt: activeProject?.updatedAt ?? new Date().toISOString(), materialCost: projectEstimate.materialCost, constructionCost: projectEstimate.constructionCost, discount: projectEstimate.discount, total: projectEstimate.total });
+      const response = await fetch('/api/integrations/construction-manager/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? '건설매니저 제출에 실패했습니다.');
+      setError('건설매니저에 견적 검토본을 제출했습니다.');
+    } catch (caught) { setError(caught instanceof Error ? caught.message : '건설매니저 제출에 실패했습니다.'); }
+    finally { setSubmittingToConstructionManager(false); }
+  };
   // Deep links on web can render before Expo Router emits its first focus event.
   // Load on mount as well so a direct /estimate visit never remains in a spinner.
   useEffect(() => { void refresh(); }, [refresh]);
@@ -114,6 +129,7 @@ export default function EstimateScreen() {
   return <ScrollView style={styles.page} contentContainerStyle={[styles.content, width < 420 && styles.contentSmall]}>
     <View style={styles.header}><View><Text style={styles.eyebrow}>ESTIMATE WORKSPACE</Text><Text style={styles.title}>자동 견적</Text><Text style={styles.description}>현재 입력된 그룹·조각의 원단·시공 비용을 자동 계산합니다.</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="견적 새로고침" onPress={() => void refresh()} style={styles.refresh}><Text style={styles.refreshText}>새로고침</Text></TouchableOpacity></View>
     {error && <Text style={styles.error}>{error}</Text>}
+    {constructionManagerContext && <TouchableOpacity accessibilityRole="button" disabled={!hasEstimate || submittingToConstructionManager} onPress={() => void submitToConstructionManager()} style={[styles.pdfButton, (!hasEstimate || submittingToConstructionManager) && styles.disabledButton]}><Text style={styles.pdfButtonText}>{submittingToConstructionManager ? '건설매니저 제출 중…' : '건설매니저로 견적 제출'}</Text></TouchableOpacity>}
     {loading ? <Text style={styles.empty}>견적을 불러오는 중입니다…</Text> : <><View style={styles.controls}><Text style={styles.controlsTitle}>{estimateMode === 'project' && savedProjectSource.jobs.length > 0 ? '저장된 프로젝트 통합 견적' : '현재 그룹·조각 통합 견적'}</Text><Text style={styles.currentHint}>{estimateMode === 'project' && savedProjectSource.jobs.length > 0 ? '현재 선택된 프로젝트의 작업과 병합 롤만 하나의 통합 견적으로 계산합니다.' : '재단 계산 탭에 입력된 모든 유효 그룹·조각을 하나의 통합 견적으로 계산합니다.'}</Text>{savedProjectSource.jobs.length > 0 && <View style={styles.sourceSelector}><Text style={styles.controlLabel}>견적 기준</Text><View style={styles.sourceButtons}><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: estimateMode === 'project' }} onPress={() => setEstimateMode('project')} style={[styles.sourceButton, estimateMode === 'project' && styles.sourceButtonActive]}><Text style={[styles.sourceButtonText, estimateMode === 'project' && styles.sourceButtonTextActive]}>저장 프로젝트 ({savedProjectSource.jobs.length})</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityState={{ selected: estimateMode === 'current' }} onPress={() => setEstimateMode('current')} style={[styles.sourceButton, estimateMode === 'current' && styles.sourceButtonActive]}><Text style={[styles.sourceButtonText, estimateMode === 'current' && styles.sourceButtonTextActive]}>현재 입력 ({estimateJobs.length})</Text></TouchableOpacity></View></View>}<View style={styles.controlGrid}><EstimateInput label="기본 원단 단가" unit="원/m" value={materialCostText} onChangeText={setMaterialCostText} /><EstimateInput label="기본 시공 단가" unit="원/m²" value={constructionCostText} onChangeText={setConstructionCostText} /></View>{groupRateEntries.length > 0 && <View style={styles.groupRates}><Text style={styles.controlLabel}>대그룹별 원단 단가</Text><Text style={styles.controlHint}>입력한 대그룹 원단 단가를 해당 대그룹의 모든 소그룹에 적용합니다.</Text>{groupRateEntries.map((group) => <View key={group.id} style={styles.groupRateRow}><View style={styles.groupRateCopy}><Text style={styles.groupRateLabel}>{group.label}</Text><Text style={styles.groupRateMeta}>{group.jobCount}개 작업</Text></View><View style={styles.groupRateInputWrap}><TextInput accessibilityLabel={`${group.label} 원단 단가`} value={groupMaterialRateText[group.id] ?? ''} onChangeText={(value) => setGroupMaterialRateText((current) => ({ ...current, [group.id]: value.replace(/[^0-9]/g, '') }))} placeholder={String(materialCost)} keyboardType="numeric" style={styles.groupRateInput} /><Text style={styles.unit}>원/m</Text></View></View>)}</View>}<PricePresetRow value={constructionCost} onChange={setConstructionCostText} /><View style={styles.overrideRow}><View style={styles.discountCopy}><Text style={styles.controlLabel}>전체 단가 덮어쓰기</Text><Text style={styles.controlHint}>{globalRateOverride ? '입력한 기본 단가를 모든 그룹에 적용합니다.' : '그룹별 개별 단가를 우선 적용합니다.'}</Text></View><Switch accessibilityLabel="전체 단가 덮어쓰기" value={globalRateOverride} onValueChange={setGlobalRateOverride} /></View><View style={styles.discountRow}><View style={styles.discountCopy}><Text style={styles.controlLabel}>할인 적용</Text><Text style={styles.controlHint}>{discountEnabled ? '입력한 할인율을 적용합니다.' : '면적 기준 자동 할인을 적용합니다.'}</Text></View><Switch accessibilityLabel="할인 적용" value={discountEnabled} onValueChange={setDiscountEnabled} /><TextInput accessibilityLabel="할인율 퍼센트" editable={discountEnabled} value={discountText} onChangeText={(value) => setDiscountText(value.replace(/[^0-9.]/g, ''))} placeholder="0" keyboardType="numeric" style={[styles.discountInput, !discountEnabled && styles.disabledInput]} /><Text style={styles.percent}>%</Text></View><View style={projectStyles.estimateActions}><TouchableOpacity accessibilityRole="button" disabled={!hasEstimate} onPress={() => void exportEstimatePdf()} style={[styles.pdfButton, !hasEstimate && styles.disabledButton]}><Text style={styles.pdfButtonText}>통합 견적 PDF·인쇄</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" disabled={!hasEstimate} onPress={() => void copyEstimate()} style={[projectStyles.copyButton, !hasEstimate && styles.disabledButton]}><Text style={projectStyles.copyButtonText}>견적 요약 복사</Text></TouchableOpacity></View></View>{subgroupRoughEstimates.length > 0 && <SubgroupRoughEstimateCard lines={subgroupRoughEstimates} />}{estimatePanels.showProjectSummary ? <><ProjectEstimateSummary estimate={projectEstimate} jobCount={projectEstimate.jobCount} company={company} /><ProjectEstimateBreakdown estimate={projectEstimate} /></> : <View style={styles.emptyCard}><Text style={styles.emptyTitle}>견적 대상 작업이 없습니다.</Text><Text style={styles.emptyDescription}>저장 프로젝트를 만들거나 재단 계산 탭에서 유효한 그룹·조각을 입력해 주세요.</Text></View>}</>}
   </ScrollView>;
 }

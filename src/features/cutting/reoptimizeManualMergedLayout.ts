@@ -13,6 +13,8 @@ export type ReoptimizedManualMergedLayout = {
 export type ReoptimizeManualMergedLayoutOptions = {
   /** Placements explicitly moved between rolls by the user stay anchored. */
   lockedPlacementIds?: readonly number[];
+  /** Restrict gap filling to one physical roll after a manual move. */
+  targetRollIndex?: number;
 };
 
 function sourceId(entry: GroupedPieceRequest): string { return `${entry.groupId}-${entry.pieceId}`; }
@@ -101,6 +103,7 @@ export function reoptimizeManualMergedLayout(
   const startingLength = rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0);
   const movedIds = new Set<number>();
   const lockedPlacementIds = new Set(options.lockedPlacementIds ?? []);
+  const targetRollIndex = options.targetRollIndex;
   const lockedRollIndexById = new Map(rolls.flatMap((roll, rollIndex) => roll.placements
     .filter((placement) => lockedPlacementIds.has(placement.id))
     .map((placement) => [placement.id, rollIndex] as const)));
@@ -111,6 +114,7 @@ export function reoptimizeManualMergedLayout(
     let changed = false;
     const candidates = rolls.flatMap((roll, rollIndex) => roll.placements.map((placement) => ({ placement, rollIndex })))
       .filter(({ placement }) => !lockedPlacementIds.has(placement.id))
+      .filter(({ rollIndex }) => targetRollIndex === undefined || rollIndex === targetRollIndex)
       .sort((left, right) => right.rollIndex - left.rollIndex
         || left.placement.width * left.placement.height - right.placement.width * right.placement.height
         || left.placement.id - right.placement.id)
@@ -133,6 +137,7 @@ export function reoptimizeManualMergedLayout(
       let bestScore = currentScore;
 
       for (let targetRollIndex = 0; targetRollIndex < without.length; targetRollIndex += 1) {
+        if (options.targetRollIndex !== undefined && targetRollIndex !== options.targetRollIndex) continue;
         const target = without[targetRollIndex]!;
         for (const orientation of orientations) {
           for (const point of uniquePoints(target.placements, gapMm, sideMarginMm, startEndMarginMm)) {

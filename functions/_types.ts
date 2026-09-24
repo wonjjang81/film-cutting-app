@@ -19,6 +19,8 @@ export type CloudflareEnv = {
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   AUTH_REDIRECT_URI?: string;
   AUTH_OWNER_EMAIL?: string;
+  CONSTRUCTION_MANAGER_ORIGIN?: string;
+  CONSTRUCTION_MANAGER_SERVICE_TOKEN?: string;
 };
 
 export type PagesContext<Env extends CloudflareEnv = CloudflareEnv, Data extends Record<string, unknown> = Record<string, unknown>> = {

@@ -1,11 +1,21 @@
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthSession } from '../../src/features/auth/AuthSession';
+import { CONSTRUCTION_MANAGER_CONTEXT_KEY, parseConstructionManagerContext } from '../../src/features/integration/constructionManager';
 
 // A static web build cannot provide a trustworthy authentication boundary.
 export default function LoginScreen() {
   const auth = useAuthSession();
-  if (auth.state === 'authenticated') return <Redirect href="/input" />;
+  const params = useLocalSearchParams<{ cmProjectId?: string; cmProjectName?: string; cmExternalEntityId?: string }>();
+  const [contextStored, setContextStored] = useState(!params.cmProjectId);
+  useEffect(() => {
+    const context = parseConstructionManagerContext({ canonicalProjectId: params.cmProjectId, projectName: params.cmProjectName, externalEntityId: params.cmExternalEntityId });
+    if (!context) { setContextStored(true); return; }
+    void AsyncStorage.setItem(CONSTRUCTION_MANAGER_CONTEXT_KEY, JSON.stringify(context)).finally(() => setContextStored(true));
+  }, [params.cmExternalEntityId, params.cmProjectId, params.cmProjectName]);
+  if (auth.state === 'authenticated' && contextStored) return <Redirect href="/input" />;
   if (auth.state === 'loading') return <View style={styles.page}><Text style={styles.title}>로그인 확인 중…</Text></View>;
   const local = auth.state === 'local';
   return <View style={styles.page}><Text style={styles.eyebrow}>{local ? 'LOCAL WORKSPACE' : 'SECURE TEAM WORKSPACE'}</Text><Text style={styles.title}>필름 재단 계산기</Text><Text style={styles.body}>{local ? 'GitHub Pages 버전은 서버 인증 없이 기기 저장 방식으로 동작합니다.' : '등록된 Google 계정으로 로그인해 프로젝트를 안전하게 불러오세요.'}</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel={local ? '로컬 작업 화면 열기' : 'Google 계정으로 로그인'} onPress={() => local ? router.replace('/input') : auth.login()} style={styles.button}><Text style={styles.buttonText}>{local ? '작업 화면 열기' : 'Google 계정으로 로그인'}</Text></TouchableOpacity><Text style={styles.hint}>{local ? 'Cloudflare 운영 버전에서는 Google 로그인을 사용합니다.' : '등록되지 않은 계정은 로그인할 수 없습니다.'}</Text></View>;
