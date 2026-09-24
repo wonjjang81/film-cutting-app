@@ -13,6 +13,11 @@ export function startManualLayoutHistory<T>(baseline: T): ManualLayoutHistory<T>
   return { baseline, past: [], future: [] };
 }
 
+/** Starts a fresh edit history from the layout that was just persisted. */
+export function rebaseManualLayoutHistory<T>(saved: T): ManualLayoutHistory<T> {
+  return { baseline: saved, past: [], future: [] };
+}
+
 export function recordManualLayoutChange<T>(history: ManualLayoutHistory<T>, current: T): ManualLayoutHistory<T> {
   return { ...history, past: [...history.past, current], future: [] };
 }

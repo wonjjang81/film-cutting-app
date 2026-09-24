@@ -16,6 +16,15 @@ export type PlacementCompletionControl = {
   label: '재단 완료' | '완료 해제';
 };
 
+export type LayoutUtilizationComparison = { automatic: number; current: number; delta: number };
+
+/** Keeps the automatic result as a stable baseline and measures live manual-layout changes. */
+export function layoutUtilizationComparison(automaticPercent: number, currentPercent: number): LayoutUtilizationComparison {
+  const automatic = Math.round(automaticPercent * 10) / 10;
+  const current = Math.round(currentPercent * 10) / 10;
+  return { automatic, current, delta: Math.round((current - automatic) * 10) / 10 };
+}
+
 /** Keeps the current merged-roll tab when possible and otherwise selects the first available tab. */
 export function resolveActiveMergedPlanKey(keys: readonly string[], currentKey: string | null): string | null {
   return currentKey && keys.includes(currentKey) ? currentKey : (keys[0] ?? null);

@@ -3,8 +3,10 @@ import type { MergedPlacement, MergedRollResult } from './optimizeMergedRollLayo
 import { boundedNewRollLength } from './rollLengthLimit';
 
 const GRID_MM = 5;
-const MAGNET_SNAP_TOLERANCE_MM = 20;
+const MAGNET_SNAP_TOLERANCE_MM = 50;
 const BACKING_GRID_MM = 100;
+
+export type PlacementEdgeDirection = 'left' | 'right' | 'top' | 'bottom';
 
 export type MovedMergedPlacement = {
   plan: MergedGroupPlan;
@@ -13,18 +15,22 @@ export type MovedMergedPlacement = {
   savedLengthMm: number;
 };
 
-export type ManualMergedPlacementResult = { plan?: MergedGroupPlan; error?: string };
+export type ManualMergedPlacementResult = { plan?: MergedGroupPlan; error?: string; movedPlacementIds?: number[] };
 export type CompactedMergedLayout = { plan: MergedGroupPlan; movedCount: number; savedLengthMm: number };
 
 function sourceId(entry: GroupedPieceRequest): string { return `${entry.groupId}-${entry.pieceId}`; }
 function snap(value: number): number { return Math.ceil(value / GRID_MM) * GRID_MM; }
 
-function magneticSnap(value: number, anchors: readonly number[]): number {
+function magneticSnap(value: number, anchors: readonly number[], boundaryAnchors: readonly number[] = []): number {
   const gridAnchor = Math.round(value / BACKING_GRID_MM) * BACKING_GRID_MM;
   const nearby = anchors
     .filter((anchor) => Math.abs(anchor - value) <= MAGNET_SNAP_TOLERANCE_MM)
     .sort((left, right) => Math.abs(left - value) - Math.abs(right - value) || left - right)[0];
   if (nearby !== undefined) return nearby;
+  const nearbyBoundary = boundaryAnchors
+    .filter((anchor) => Math.abs(anchor - value) <= MAGNET_SNAP_TOLERANCE_MM)
+    .sort((left, right) => Math.abs(left - value) - Math.abs(right - value) || left - right)[0];
+  if (nearbyBoundary !== undefined) return nearbyBoundary;
   if (Math.abs(gridAnchor - value) <= MAGNET_SNAP_TOLERANCE_MM) return gridAnchor;
   return Math.round(value / GRID_MM) * GRID_MM;
 }
@@ -38,6 +44,35 @@ function collides(candidate: Pick<MergedPlacement, 'x' | 'y' | 'width' | 'height
 
 function verticallyIntersects(left: MergedPlacement, right: MergedPlacement, gapMm: number): boolean {
   return left.y < right.y + right.height + gapMm && left.y + left.height + gapMm > right.y;
+}
+
+function horizontallyIntersects(top: MergedPlacement, bottom: MergedPlacement, gapMm: number): boolean {
+  return top.x < bottom.x + bottom.width + gapMm && top.x + top.width + gapMm > bottom.x;
+}
+
+function attachedInDirection(current: MergedPlacement, next: MergedPlacement, direction: PlacementEdgeDirection, gapMm: number): boolean {
+  if (direction === 'right') return verticallyIntersects(current, next, gapMm)
+    && Math.abs(next.x - (current.x + current.width + gapMm)) <= GRID_MM;
+  if (direction === 'left') return verticallyIntersects(current, next, gapMm)
+    && Math.abs(current.x - (next.x + next.width + gapMm)) <= GRID_MM;
+  if (direction === 'bottom') return horizontallyIntersects(current, next, gapMm)
+    && Math.abs(next.y - (current.y + current.height + gapMm)) <= GRID_MM;
+  return horizontallyIntersects(current, next, gapMm)
+    && Math.abs(current.y - (next.y + next.height + gapMm)) <= GRID_MM;
+}
+
+function attachedPushChain(placements: readonly MergedPlacement[], selectedId: number, direction: PlacementEdgeDirection, gapMm: number): Set<number> {
+  const moving = new Set<number>([selectedId]);
+  const queue = placements.filter((item) => item.id === selectedId);
+  while (queue.length) {
+    const current = queue.shift()!;
+    for (const candidate of placements) {
+      if (moving.has(candidate.id) || !attachedInDirection(current, candidate, direction, gapMm)) continue;
+      moving.add(candidate.id);
+      queue.push(candidate);
+    }
+  }
+  return moving;
 }
 
 function metrics(placements: readonly MergedPlacement[], rollWidthMm: number, endMarginMm: number): MergedRollResult {
@@ -75,32 +110,45 @@ export function movePlacementWithinRoll(
   if (!specification) return { error: '조각의 재단 조건을 찾지 못했습니다.' };
   if (!Number.isFinite(xMm) || !Number.isFinite(yMm)) return { error: '이동 위치가 올바르지 않습니다.' };
   const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
-  const others = roll.placements.filter((item) => item.id !== placementId);
-  const xAnchors = [sideMarginMm, rollWidthMm - sideMarginMm - selected.width, ...others.flatMap((item) => [
+  const rawDeltaX = xMm - selected.x;
+  const rawDeltaY = yMm - selected.y;
+  const direction: PlacementEdgeDirection = Math.abs(rawDeltaX) >= Math.abs(rawDeltaY)
+    ? (rawDeltaX >= 0 ? 'right' : 'left') : (rawDeltaY >= 0 ? 'bottom' : 'top');
+  const movingIds = attachedPushChain(roll.placements, placementId, direction, gapMm);
+  const others = roll.placements.filter((item) => !movingIds.has(item.id));
+  const xAnchors = others.flatMap((item) => [
     item.x,
     item.x + item.width + gapMm,
     item.x - selected.width - gapMm,
     item.x + item.width - selected.width,
-  ])];
-  const yAnchors = [startEndMarginMm, roll.usedLengthMm - startEndMarginMm - selected.height, ...others.flatMap((item) => [
+  ]);
+  const yAnchors = others.flatMap((item) => [
     item.y,
     item.y + item.height + gapMm,
     item.y - selected.height - gapMm,
     item.y + item.height - selected.height,
-  ])];
-  const candidate = { ...selected, x: magneticSnap(xMm, xAnchors), y: magneticSnap(yMm, yAnchors) };
+  ]);
+  const candidate = { ...selected,
+    x: magneticSnap(xMm, xAnchors, [sideMarginMm, rollWidthMm - sideMarginMm - selected.width]),
+    y: magneticSnap(yMm, yAnchors, [startEndMarginMm, roll.usedLengthMm - startEndMarginMm - selected.height]),
+  };
+  const deltaX = candidate.x - selected.x;
+  const deltaY = candidate.y - selected.y;
+  const translated = roll.placements.map((item) => movingIds.has(item.id)
+    ? { ...item, x: item.x + deltaX, y: item.y + deltaY } : item);
   const maxLengthMm = Math.min(roll.usedLengthMm, boundedNewRollLength(specification.request.maxLengthMm));
-  if (candidate.x < sideMarginMm || candidate.y < startEndMarginMm
-    || candidate.x + candidate.width > rollWidthMm - sideMarginMm
-    || candidate.y + candidate.height > maxLengthMm - startEndMarginMm) {
+  if (translated.some((item) => movingIds.has(item.id) && (item.x < sideMarginMm || item.y < startEndMarginMm
+    || item.x + item.width > rollWidthMm - sideMarginMm
+    || item.y + item.height > maxLengthMm - startEndMarginMm))) {
     return { error: '조각이 롤의 여백 또는 현재 도면 길이를 벗어납니다.' };
   }
-  if (roll.placements.some((item) => item.id !== placementId && collides(candidate, item, gapMm))) {
+  if (translated.some((item) => movingIds.has(item.id)
+    && translated.some((other) => !movingIds.has(other.id) && collides(item, other, gapMm)))) {
     return { error: '다른 조각과 겹치거나 필요한 간격이 부족합니다.' };
   }
-  const updated = metrics(roll.placements.map((item) => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
+  const updated = metrics(translated, rollWidthMm, startEndMarginMm);
   const nextRolls = rolls.map((item, index) => index === rollIndex ? updated : item);
-  return { plan: rebuildPlan(plan, nextRolls, rollWidthMm) };
+  return { plan: rebuildPlan(plan, nextRolls, rollWidthMm), movedPlacementIds: [...movingIds] };
 }
 
 /** Pushes a placement horizontally until it reaches the closest blocker or usable roll edge. */
@@ -108,6 +156,16 @@ export function shiftPlacementHorizontally(
   plan: MergedGroupPlan,
   placementId: number,
   direction: 'left' | 'right',
+  requests: readonly GroupedPieceRequest[],
+): ManualMergedPlacementResult {
+  return shiftPlacementToEdge(plan, placementId, direction, requests);
+}
+
+/** Moves a placement and any directly attached pieces to the nearest usable edge or blocker. */
+export function shiftPlacementToEdge(
+  plan: MergedGroupPlan,
+  placementId: number,
+  direction: PlacementEdgeDirection,
   requests: readonly GroupedPieceRequest[],
 ): ManualMergedPlacementResult {
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
@@ -118,21 +176,38 @@ export function shiftPlacementHorizontally(
   const specification = requests.find((entry) => sourceId(entry) === selected.sourceId);
   if (!specification) return { error: '조각의 재단 조건을 찾지 못했습니다.' };
   const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
-  const blockers = roll.placements.filter((item) => item.id !== placementId && verticallyIntersects(selected, item, gapMm));
-  const targetX = direction === 'left'
-    ? blockers.filter((item) => item.x + item.width <= selected.x)
-      .reduce((edge, item) => Math.max(edge, item.x + item.width + gapMm), sideMarginMm)
-    : blockers.filter((item) => item.x >= selected.x + selected.width)
-      .reduce((edge, item) => Math.min(edge, item.x - selected.width - gapMm), rollWidthMm - sideMarginMm - selected.width);
-  const x = direction === 'left'
-    ? Math.ceil(targetX / GRID_MM) * GRID_MM
-    : Math.floor(targetX / GRID_MM) * GRID_MM;
-  if (x === selected.x) return { error: direction === 'left' ? '더 이상 왼쪽으로 밀 수 없습니다.' : '더 이상 오른쪽으로 밀 수 없습니다.' };
-  const candidate = { ...selected, x };
-  if (candidate.x < sideMarginMm || candidate.x + candidate.width > rollWidthMm - sideMarginMm
-    || blockers.some((item) => collides(candidate, item, gapMm))) return { error: '해당 방향에 조각이 들어갈 공간이 없습니다.' };
-  const updated = metrics(roll.placements.map((item) => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
-  return { plan: rebuildPlan(plan, rolls.map((item, index) => index === rollIndex ? updated : item), rollWidthMm) };
+  const movingIds = attachedPushChain(roll.placements, placementId, direction, gapMm);
+  const moving = roll.placements.filter((item) => movingIds.has(item.id));
+  const stationary = roll.placements.filter((item) => !movingIds.has(item.id));
+  let delta = direction === 'left'
+    ? sideMarginMm - Math.min(...moving.map((item) => item.x))
+    : direction === 'right'
+      ? rollWidthMm - sideMarginMm - Math.max(...moving.map((item) => item.x + item.width))
+      : direction === 'top'
+        ? startEndMarginMm - Math.min(...moving.map((item) => item.y))
+        : roll.usedLengthMm - startEndMarginMm - Math.max(...moving.map((item) => item.y + item.height));
+  for (const item of moving) {
+    for (const blocker of stationary) {
+      if (direction === 'right' && verticallyIntersects(item, blocker, gapMm) && blocker.x >= item.x + item.width) delta = Math.min(delta, blocker.x - gapMm - item.x - item.width);
+      if (direction === 'left' && verticallyIntersects(item, blocker, gapMm) && blocker.x + blocker.width <= item.x) delta = Math.max(delta, blocker.x + blocker.width + gapMm - item.x);
+      if (direction === 'bottom' && horizontallyIntersects(item, blocker, gapMm) && blocker.y >= item.y + item.height) delta = Math.min(delta, blocker.y - gapMm - item.y - item.height);
+      if (direction === 'top' && horizontallyIntersects(item, blocker, gapMm) && blocker.y + blocker.height <= item.y) delta = Math.max(delta, blocker.y + blocker.height + gapMm - item.y);
+    }
+  }
+  delta = direction === 'left' || direction === 'top'
+    ? Math.ceil(delta / GRID_MM) * GRID_MM : Math.floor(delta / GRID_MM) * GRID_MM;
+  if (delta === 0) {
+    const label = direction === 'left' ? '왼쪽' : direction === 'right' ? '오른쪽' : direction === 'top' ? '위쪽' : '아래쪽';
+    return { error: `더 이상 ${label}으로 밀 수 없습니다.` };
+  }
+  const translated = roll.placements.map((item) => !movingIds.has(item.id) ? item : ({ ...item,
+    x: item.x + (direction === 'left' || direction === 'right' ? delta : 0),
+    y: item.y + (direction === 'top' || direction === 'bottom' ? delta : 0),
+  }));
+  if (translated.some((item) => movingIds.has(item.id)
+    && stationary.some((blocker) => collides(item, blocker, gapMm)))) return { error: '해당 방향에 조각이 들어갈 공간이 없습니다.' };
+  const updated = metrics(translated, rollWidthMm, startEndMarginMm);
+  return { plan: rebuildPlan(plan, rolls.map((item, index) => index === rollIndex ? updated : item), rollWidthMm), movedPlacementIds: [...movingIds] };
 }
 
 /** Removes fully empty horizontal bands without changing each occupied band's internal arrangement. */

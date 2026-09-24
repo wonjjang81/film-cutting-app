@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, majorGroupTabLabel, nextPlacementCompletion, placementCompletionControl, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
+import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, layoutUtilizationComparison, majorGroupTabLabel, nextPlacementCompletion, placementCompletionControl, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
@@ -90,5 +90,10 @@ describe('planning placement model', () => {
   it('labels merged roll tabs by major group', () => {
     expect(majorGroupTabLabel(['그룹 2'], 1)).toBe('대그룹 2');
     expect(majorGroupTabLabel([], 2)).toBe('대그룹 3');
+  });
+
+  it('keeps automatic utilization fixed while reporting the changing manual result', () => {
+    expect(layoutUtilizationComparison(82.34, 87.86)).toEqual({ automatic: 82.3, current: 87.9, delta: 5.6 });
+    expect(layoutUtilizationComparison(82.34, 79.91)).toEqual({ automatic: 82.3, current: 79.9, delta: -2.4 });
   });
 });

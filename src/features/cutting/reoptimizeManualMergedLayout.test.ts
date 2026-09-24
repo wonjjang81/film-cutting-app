@@ -46,6 +46,24 @@ describe('reoptimizeManualMergedLayout', () => {
     expect(optimized.movedCount).toBe(0);
   });
 
+  it('reoptimizes only the selected current roll after a manual move', () => {
+    const base = plan(true);
+    const secondRollSmall = { ...base.rollResults![1]!.placements[0]!, y: 10005 };
+    const secondRollLarge = { ...base.rollResults![0]!.placements[0]!, id: 3, sourceId: 'g-large', x: 5, y: 5 };
+    const current = {
+      ...base,
+      rollResults: [base.rollResults![0]!, { ...base.rollResults![1]!, placements: [secondRollSmall, secondRollLarge], usedLengthMm: 15010, producedQuantity: 2 }],
+      result: { ...base.result, usedLengthMm: 25020, producedQuantity: 3 }, pieceCount: 3, producedQuantity: 3, newRollQuantity: 3,
+    };
+
+    const optimized = reoptimizeManualMergedLayout(current, requests, { lockedPlacementIds: [3], targetRollIndex: 1 });
+    expect(optimized.plan.rollResults?.[0]?.placements).toEqual(base.rollResults![0]!.placements);
+    expect(optimized.plan.rollResults?.[0]?.usedLengthMm).toBe(base.rollResults![0]!.usedLengthMm);
+    expect(optimized.plan.rollResults?.[1]?.placements.find((item) => item.id === 3)).toEqual(secondRollLarge);
+    expect(optimized.plan.rollResults?.[1]?.placements.find((item) => item.id === 2)).toMatchObject({ x: 705, y: 5 });
+    expect(optimized.savedLengthMm).toBe(5000);
+  });
+
   it('can fill a later-roll gap with a small piece from an earlier roll', () => {
     const base = plan(false);
     const large = base.rollResults![0]!.placements[0]!;

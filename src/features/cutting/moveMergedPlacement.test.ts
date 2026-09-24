@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { movePlacementToBestOtherRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally } from './moveMergedPlacement';
+import { movePlacementToBestOtherRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally, shiftPlacementToEdge } from './moveMergedPlacement';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 
 const request = (pieceId: string, width: number, length: number): GroupedPieceRequest => ({
@@ -101,6 +101,30 @@ describe('movePlacementToBestOtherRoll', () => {
     expect(plan.rollResults[0]?.placements[1]?.y).toBe(5);
   });
 
+  it('strongly snaps a dragged piece to a nearby piece edge', () => {
+    const requests = [request('large', 1000, 10000), request('small', 200, 4000)];
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-large', instanceIndex: 0, x: 5, y: 5, width: 1000, height: 10000, rotated: false },
+      { id: 2, sourceId: 'g1-small', instanceIndex: 0, x: 1005, y: 5, width: 200, height: 4000, rotated: false },
+    ], usedLengthMm: 10010, producedQuantity: 2, utilizationPercent: 88.5, wastePercent: 11.5 };
+    const plan = { mergeGroupId: 'auto', sourceIds: requests.map((entry) => `${entry.groupId}-${entry.pieceId}`), groupNames: ['그룹 1'], pieceCount: 2, result: roll, rollResults: [roll], newRollQuantity: 2, producedQuantity: 2, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+
+    expect(movePlacementWithinRoll(plan, 2, 1044, 5044, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
+  });
+
+  it('pushes an attached chain together during a manual drag', () => {
+    const requests = [request('a', 300, 1000), request('b', 300, 1000), request('c', 300, 1000)];
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-a', instanceIndex: 0, x: 5, y: 5, width: 300, height: 1000, rotated: false },
+      { id: 2, sourceId: 'g1-b', instanceIndex: 0, x: 305, y: 5, width: 300, height: 1000, rotated: false },
+      { id: 3, sourceId: 'g1-c', instanceIndex: 0, x: 605, y: 5, width: 300, height: 1000, rotated: false },
+    ], usedLengthMm: 1010, producedQuantity: 3, utilizationPercent: 73.8, wastePercent: 26.2 };
+    const plan = { mergeGroupId: 'auto', sourceIds: requests.map((entry) => `${entry.groupId}-${entry.pieceId}`), groupNames: ['그룹 1'], pieceCount: 3, result: roll, rollResults: [roll], newRollQuantity: 3, producedQuantity: 3, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+
+    const moved = movePlacementWithinRoll(plan, 1, 105, 5, requests).plan?.rollResults?.[0]?.placements;
+    expect(moved?.map((item) => [item.id, item.x])).toEqual([[1, 100], [2, 400], [3, 700]]);
+  });
+
   it('pushes a piece to the nearest free left or right edge', () => {
     const requests = [request('left', 300, 1000), request('moving', 200, 1000), request('right', 300, 1000)];
     const roll = { placements: [
@@ -112,6 +136,19 @@ describe('movePlacementToBestOtherRoll', () => {
 
     expect(shiftPlacementHorizontally(plan, 2, 'left', requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 305 });
     expect(shiftPlacementHorizontally(plan, 2, 'right', requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 715 });
+  });
+
+  it('moves a selected piece to all four usable roll edges', () => {
+    const requests = [request('moving', 200, 1000)];
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-moving', instanceIndex: 0, x: 500, y: 2000, width: 200, height: 1000, rotated: false },
+    ], usedLengthMm: 5005, producedQuantity: 1, utilizationPercent: 3.3, wastePercent: 96.7 };
+    const plan = { mergeGroupId: 'auto', sourceIds: ['g1-moving'], groupNames: ['그룹 1'], pieceCount: 1, result: roll, rollResults: [roll], newRollQuantity: 1, producedQuantity: 1, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+
+    expect(shiftPlacementToEdge(plan, 1, 'left', requests).plan?.rollResults?.[0]?.placements[0]).toMatchObject({ x: 5, y: 2000 });
+    expect(shiftPlacementToEdge(plan, 1, 'right', requests).plan?.rollResults?.[0]?.placements[0]).toMatchObject({ x: 1015, y: 2000 });
+    expect(shiftPlacementToEdge(plan, 1, 'top', requests).plan?.rollResults?.[0]?.placements[0]).toMatchObject({ x: 500, y: 5 });
+    expect(shiftPlacementToEdge(plan, 1, 'bottom', requests).plan?.rollResults?.[0]?.placements[0]).toMatchObject({ x: 500, y: 4000 });
   });
 
   it('removes completely empty horizontal bands while preserving each band layout', () => {
