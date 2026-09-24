@@ -8,6 +8,7 @@ import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacements
 import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
 import { runPlacementPopupAction } from './placementPopupAction';
 import type { PlacementEdgeDirection } from './moveMergedPlacement';
+import { dragAutoScrollStep } from './dragAutoScroll';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -18,10 +19,12 @@ type Props = {
   onToggleComplete?(): void;
   onTogglePlacementComplete?(placementId: number): void;
   onMovePlacementToAnotherRoll?(placementId: number, targetRollIndex: number): number | null;
+  onMovePlacementToNewRoll?(placementId: number): number | null;
   onMovePlacementWithinRoll?(placementId: number, xMm: number, yMm: number): string | null;
   onShiftPlacementToEdge?(placementId: number, direction: PlacementEdgeDirection): string | null;
   onReoptimize?(): void;
-  onDragAutoScroll?(deltaY: number): void;
+  onDragAutoScroll?(deltaY: number): number;
+  onDragGestureChange?(active: boolean): void;
   canUndo?: boolean;
   canRedo?: boolean;
   canReset?: boolean;
@@ -52,7 +55,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementWithinRoll, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
   const [localRollIndex, setLocalRollIndex] = React.useState(0);
   const selectedRollIndex = controlledRollIndex ?? localRollIndex;
   const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
@@ -91,6 +94,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
     setLastMovedToRollIndex((current) => current === null || current >= rolls.length ? null : current);
   }, [controlledRollIndex, rolls.length]);
   React.useEffect(() => setSelectedGap(null), [selectedRollIndex]);
+  React.useEffect(() => () => onDragGestureChange?.(false), [onDragGestureChange]);
   const measureClickedGap = (event: { nativeEvent: { locationX?: number; locationY?: number } }) => {
     const { locationX, locationY } = event.nativeEvent;
     if (typeof locationX !== 'number' || typeof locationY !== 'number') return;
@@ -140,16 +144,16 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       const pieceHeight = dragging.height * scaleY;
       const handleWidth = Math.max(pieceWidth, 32);
       const handleHeight = Math.max(pieceHeight, 32);
-      return <View accessibilityRole="button" accessibilityLabel={`조각 ${dragging.id} 수동 이동 손잡이`} onStartShouldSetResponder={() => true} onResponderTerminationRequest={() => false} onResponderGrant={(event) => { dragStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }; dragScrollOffset.current = 0; setDragDelta({ x: 0, y: 0 }); setMoveError(null); }} onResponderMove={(event) => {
+      return <View accessibilityRole="button" accessibilityLabel={`조각 ${dragging.id} 수동 이동 손잡이`} onStartShouldSetResponder={() => true} onMoveShouldSetResponder={() => true} onResponderTerminationRequest={() => false} onResponderGrant={(event) => { onDragGestureChange?.(true); dragStart.current = { x: event.nativeEvent.pageX, y: event.nativeEvent.pageY }; dragScrollOffset.current = 0; setDragDelta({ x: 0, y: 0 }); setMoveError(null); }} onResponderMove={(event) => {
         const viewportY = (event.nativeEvent as unknown as { clientY?: number }).clientY ?? event.nativeEvent.pageY;
         const screenHeight = Dimensions.get('window').height;
-        const scrollStep = viewportY < 92 ? -28 : viewportY > screenHeight - 112 ? 28 : 0;
+        const scrollStep = dragAutoScrollStep(viewportY, screenHeight);
         if (scrollStep !== 0 && onDragAutoScroll) {
-          onDragAutoScroll(scrollStep);
-          dragScrollOffset.current += scrollStep;
+          dragScrollOffset.current += onDragAutoScroll(scrollStep);
         }
         setDragDelta({ x: event.nativeEvent.pageX - dragStart.current.x, y: event.nativeEvent.pageY - dragStart.current.y + dragScrollOffset.current });
       }} onResponderRelease={(event) => {
+        onDragGestureChange?.(false);
         const deltaX = event.nativeEvent.pageX - dragStart.current.x;
         const deltaY = event.nativeEvent.pageY - dragStart.current.y + dragScrollOffset.current;
         dragScrollOffset.current = 0;
@@ -158,7 +162,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         const error = onMovePlacementWithinRoll?.(dragging.id, dragging.x + deltaX / scaleX, dragging.y + deltaY / scaleY);
         if (error) setMoveError(error);
         else setMoveError(null);
-      }} onResponderTerminate={() => { dragScrollOffset.current = 0; setDragDelta({ x: 0, y: 0 }); }} style={[styles.dragHandle, { left: (dragging.x - viewBoxX) * scaleX + (pieceWidth - handleWidth) / 2, top: dragging.y * scaleY + (pieceHeight - handleHeight) / 2, width: handleWidth, height: handleHeight, transform: [{ translateX: dragDelta.x }, { translateY: dragDelta.y }] }]}><Text style={styles.dragHandleText}>✥ #{dragging.id}</Text></View>;
+      }} onResponderTerminate={() => { onDragGestureChange?.(false); dragScrollOffset.current = 0; setDragDelta({ x: 0, y: 0 }); }} style={[styles.dragHandle, { left: (dragging.x - viewBoxX) * scaleX + (pieceWidth - handleWidth) / 2, top: dragging.y * scaleY + (pieceHeight - handleHeight) / 2, width: handleWidth, height: handleHeight, transform: [{ translateX: dragDelta.x }, { translateY: dragDelta.y }] }]}><Text style={styles.dragHandleText}>✥ #{dragging.id}</Text></View>;
     })()}
   </View>;
 
@@ -191,7 +195,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         <View style={styles.utilizationMetric}><Text style={styles.utilizationLabel}>수동 배치 · 현재</Text><Text style={styles.utilizationCurrent}>{utilization.current}%</Text></View>
         <Text style={[styles.utilizationDelta, utilization.delta > 0 ? styles.utilizationDeltaUp : utilization.delta < 0 ? styles.utilizationDeltaDown : undefined]}>{utilization.delta > 0 ? '+' : ''}{utilization.delta}%p</Text>
       </View>
-      {dragging && <View style={styles.dragHintRow}><Text style={styles.dragHintText}>#{dragging.id} · 조각 경계와 100mm 모눈에 스냅됩니다. 현재 위치를 누르면 종료합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 이동 취소" onPress={() => { setDraggingId(null); setMoveError(null); }}><Text style={styles.dragCancelText}>취소</Text></TouchableOpacity></View>}
+      {dragging && <View style={styles.dragHintRow}><Text style={styles.dragHintText}>#{dragging.id} · 이동 중 화면은 고정되며, 화면 맨 위·아래에서만 스크롤됩니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 이동 취소" onPress={() => { setDraggingId(null); setMoveError(null); }}><Text style={styles.dragCancelText}>취소</Text></TouchableOpacity></View>}
       {moveError && dragging && <Text style={styles.dragErrorText}>{moveError}</Text>}
       {result.placements.length > 0 ? <>
         <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
@@ -254,6 +258,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 아래쪽 끝으로 이동`} disabled={busy} onPress={() => { const error = onShiftPlacementToEdge(selected.id, 'bottom'); setMoveError(error); if (!error) setSelectedId(null); }} style={[styles.modalDirectionButton, styles.modalDirectionBottom, busy && styles.disabled]}><Text style={styles.modalDirectionText}>↓</Text></TouchableOpacity>
               </View>}
               {onMovePlacementWithinRoll && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 현재 롤에서 수동 이동`} disabled={busy} onPress={() => { setDraggingId(selected.id); setSelectedId(null); setMoveError(null); }} style={[styles.modalMove, busy && styles.disabled]}><Text style={styles.modalMoveText}>현재 롤에서 끌어서 이동</Text></TouchableOpacity>}
+              {onMovePlacementToNewRoll && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 새 롤 추가 이동`} disabled={busy} onPress={() => { const targetRollIndex = onMovePlacementToNewRoll(selected.id); if (targetRollIndex !== null) { setLastMovedToRollIndex(targetRollIndex); setSelectedId(null); setMoveError(null); } else { setMoveError('새 롤로 이동할 수 없습니다. 현재 롤의 유일한 조각이거나 롤 규격을 초과합니다.'); } }} style={[styles.modalMove, busy && styles.disabled]}><Text style={styles.modalMoveText}>＋ 새로운 롤 추가 이동</Text></TouchableOpacity>}
               {rolls.length > 1 && <ScrollView style={styles.modalRollChoices} nestedScrollEnabled>{rolls.map((roll, index) => index === selectedRollIndex ? null : <TouchableOpacity key={index} accessibilityRole="button" accessibilityLabel={`${info.label} ${index + 1}롤 빈공간으로 자동배치`} disabled={busy || !onMovePlacementToAnotherRoll} onPress={() => { const targetRollIndex = onMovePlacementToAnotherRoll?.(selected.id, index); if (targetRollIndex !== null && targetRollIndex !== undefined) { setLastMovedToRollIndex(targetRollIndex); setSelectedId(null); setMoveError(null); } else { setMoveError(`${index + 1}롤에 배치 가능한 공간이 없습니다.`); } }} style={[styles.modalMove, (busy || !onMovePlacementToAnotherRoll) && styles.disabled]}><Text style={styles.modalMoveText}>{index + 1}롤로 이동 · 현재 {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
               {moveError && <Text style={styles.modalMoveError}>{moveError}</Text>}
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`${info.label} 재단 완료`} accessibilityState={{ checked: completion.checked, disabled: completion.disabled }} disabled={completion.disabled} onPress={() => runPlacementPopupAction(() => onTogglePlacementComplete?.(selected.id), () => setSelectedId(null))} style={[styles.modalComplete, completion.checked && styles.modalCompleteDone, completion.disabled && styles.disabled]}><Text style={[styles.modalCompleteText, completion.checked && styles.modalCompleteTextDone]}>{completion.checked ? '✓ ' : '○ '}{completion.label}</Text></TouchableOpacity>
