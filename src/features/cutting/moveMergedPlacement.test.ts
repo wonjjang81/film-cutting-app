@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { movePlacementToBestOtherRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally, shiftPlacementToEdge } from './moveMergedPlacement';
+import { movePlacementToBestOtherRoll, movePlacementToNewRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally, shiftPlacementToEdge } from './moveMergedPlacement';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 
 const request = (pieceId: string, width: number, length: number): GroupedPieceRequest => ({
@@ -8,6 +8,25 @@ const request = (pieceId: string, width: number, length: number): GroupedPieceRe
 });
 
 describe('movePlacementToBestOtherRoll', () => {
+  it('creates a new roll and moves only the selected piece into it', () => {
+    const requests = [request('large', 1000, 10000), request('small', 200, 4000)];
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-large', instanceIndex: 0, x: 5, y: 5, width: 1000, height: 10000, rotated: false },
+      { id: 2, sourceId: 'g1-small', instanceIndex: 0, x: 1005, y: 5, width: 200, height: 4000, rotated: false },
+    ], usedLengthMm: 10010, producedQuantity: 2, utilizationPercent: 88.5, wastePercent: 11.5 };
+    const plan = { mergeGroupId: 'auto', sourceIds: requests.map((entry) => `${entry.groupId}-${entry.pieceId}`), groupNames: ['그룹 1'], pieceCount: 2, result: roll, rollResults: [roll], newRollQuantity: 2, producedQuantity: 2, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+
+    const moved = movePlacementToNewRoll(plan, 2, requests);
+
+    expect(moved?.fromRollIndex).toBe(0);
+    expect(moved?.toRollIndex).toBe(1);
+    expect(moved?.plan.rollResults).toHaveLength(2);
+    expect(moved?.plan.rollResults?.[0]?.placements.map((item) => item.id)).toEqual([1]);
+    expect(moved?.plan.rollResults?.[1]?.placements).toEqual([
+      expect.objectContaining({ id: 2, x: 5, y: 5, width: 200, height: 4000, rotated: false }),
+    ]);
+  });
+
   it('moves the selected piece into another roll gap and shortens total length', () => {
     const requests = [request('large-a', 1000, 10000), request('small', 200, 4000), request('large-b', 1000, 10000)];
     const rollResults = [

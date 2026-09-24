@@ -291,6 +291,29 @@ describe('library repository', () => {
     expect(JSON.parse(await repository.exportDocument()).projects[0].manualLayouts).toEqual(layouts);
   });
 
+  it('does not erase saved manual layouts or cutting completion when the same project is saved again', async () => {
+    const repository = createLibraryRepository(memoryAdapter());
+    const layouts = [{ planIndex: 0, geometrySignature: 'geometry-v1', rolls: [{ placements: [
+      { id: 7, sourceIndex: 0, instanceIndex: 0, x: 5, y: 500, width: 200, height: 300, rotated: false },
+    ] }] }];
+    const completedJob = job(1, { completedPlacementIds: [1], isCuttingComplete: false });
+    const completedMerged = mergedJob(1, { completedPlacementIds: [1], isCuttingComplete: true, cuttingCompletedAt: timestamp });
+    const project: SavedProject = { id: 'project-safe-save', name: '보존 현장', jobIds: [completedJob.id], mergedJobIds: [completedMerged.id],
+      materialCostPerM: 10_000, constructionCostPerM2: 15_000, createdAt: timestamp, updatedAt: timestamp, manualLayouts: layouts };
+    await repository.saveProjectBundle(project, [completedJob], [completedMerged]);
+
+    await repository.saveProjectBundle(
+      { ...project, updatedAt: '2026-08-16T00:01:00.000Z', manualLayouts: undefined },
+      [{ ...completedJob, completedPlacementIds: undefined, isCuttingComplete: undefined, cuttingCompletedAt: undefined }],
+      [{ ...completedMerged, placements: completedMerged.placements.map((placement) => ({ ...placement, id: 7 })), completedPlacementIds: undefined, isCuttingComplete: undefined, cuttingCompletedAt: undefined }],
+    );
+
+    const loaded = await repository.load();
+    expect(loaded.document.projects?.[0]?.manualLayouts).toEqual(layouts);
+    expect(loaded.document.jobs[0]).toMatchObject({ completedPlacementIds: [1], isCuttingComplete: false });
+    expect(loaded.document.mergedJobs[0]).toMatchObject({ completedPlacementIds: [7], isCuttingComplete: true, cuttingCompletedAt: timestamp });
+  });
+
   it('preserves explicit allowance metadata while keeping legacy jobs valid', async () => {
     const repository = createLibraryRepository(memoryAdapter());
     await repository.saveBatchJobs([

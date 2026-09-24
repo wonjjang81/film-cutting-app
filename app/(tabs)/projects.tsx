@@ -90,7 +90,9 @@ export default function ProjectsScreen() {
       const localLayouts = parseCurrentManualLayouts(await AsyncStorage.getItem(CURRENT_MANUAL_LAYOUT_STORAGE_KEY), snapshot);
       const calculated = calculateCurrentGroupPlan(snapshot);
       const requests = requestsFromSnapshot(snapshot);
-      const validLayouts = [...localLayouts, ...(existing?.manualLayouts ?? [])].filter((layout) => {
+      // The project's server copy is authoritative. A device-local layout is
+      // only a recovery fallback when no valid project layout exists.
+      const validLayouts = [...(existing?.manualLayouts ?? []), ...localLayouts].filter((layout) => {
         const plan = calculated.mergedPlans[layout.planIndex];
         return plan && restoreManualMergedLayout(plan, layout.planIndex, requests, layout);
       });

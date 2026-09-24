@@ -502,6 +502,51 @@ function sortJobs(jobs: readonly SavedCuttingJob[]): SavedCuttingJob[] {
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt) || right.createdAt.localeCompare(left.createdAt) || left.id.localeCompare(right.id));
 }
 
+function sameCuttingJobGeometry(previous: SavedCuttingJob, next: SavedCuttingJob): boolean {
+  return JSON.stringify(previous.input) === JSON.stringify(next.input)
+    && previous.result.producedQuantity === next.result.producedQuantity;
+}
+
+function preserveCuttingCompletion(previous: SavedCuttingJob | undefined, next: SavedCuttingJob): SavedCuttingJob {
+  if (!previous || !sameCuttingJobGeometry(previous, next)) return next;
+  return {
+    ...next,
+    ...(next.completedPlacementIds !== undefined || previous.completedPlacementIds === undefined
+      ? {} : { completedPlacementIds: [...previous.completedPlacementIds] }),
+    ...(next.isCuttingComplete !== undefined || previous.isCuttingComplete === undefined
+      ? {} : { isCuttingComplete: previous.isCuttingComplete }),
+    ...(next.cuttingCompletedAt !== undefined || previous.cuttingCompletedAt === undefined
+      ? {} : { cuttingCompletedAt: previous.cuttingCompletedAt }),
+  };
+}
+
+function mergedPlacementIdentity(placement: SavedMergedPlacement): string {
+  return JSON.stringify([placement.sourceId, placement.instanceIndex, placement.width, placement.height, placement.rotated]);
+}
+
+function preserveMergedCompletion(previous: SavedMergedCuttingJob | undefined, next: SavedMergedCuttingJob): SavedMergedCuttingJob {
+  if (!previous) return next;
+  const previousById = new Map(previous.placements.map((placement) => [placement.id, mergedPlacementIdentity(placement)]));
+  const nextByIdentity = new Map(next.placements.map((placement) => [mergedPlacementIdentity(placement), placement.id]));
+  if (previousById.size !== previous.placements.length || nextByIdentity.size !== next.placements.length
+    || previous.placements.length !== next.placements.length
+    || previous.placements.some((placement) => !nextByIdentity.has(mergedPlacementIdentity(placement)))) return next;
+  const remappedCompletedIds = previous.completedPlacementIds?.flatMap((id) => {
+    const identity = previousById.get(id);
+    const nextId = identity === undefined ? undefined : nextByIdentity.get(identity);
+    return nextId === undefined ? [] : [nextId];
+  });
+  return {
+    ...next,
+    ...(next.completedPlacementIds !== undefined || remappedCompletedIds === undefined
+      ? {} : { completedPlacementIds: [...new Set(remappedCompletedIds)].sort((left, right) => left - right) }),
+    ...(next.isCuttingComplete !== undefined || previous.isCuttingComplete === undefined
+      ? {} : { isCuttingComplete: previous.isCuttingComplete }),
+    ...(next.cuttingCompletedAt !== undefined || previous.cuttingCompletedAt === undefined
+      ? {} : { cuttingCompletedAt: previous.cuttingCompletedAt }),
+  };
+}
+
 function orderJobsForProjects(jobs: readonly SavedCuttingJob[], projects: readonly SavedProject[]): SavedCuttingJob[] {
   const referencedIds = new Set(projects.flatMap((project) => project.jobIds));
   const sorted = sortJobs(jobs);
@@ -742,16 +787,23 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       }
       await mutate((document) => {
         const previous = (document.projects ?? []).find((item) => item.id === validProject.id);
+        const projectToSave = validProject.manualLayouts === undefined && previous?.manualLayouts !== undefined
+          ? { ...validProject, manualLayouts: clone(previous.manualLayouts) }
+          : validProject;
+        const previousJobsById = new Map(document.jobs.map((job) => [job.id, job]));
+        const previousMergedJobsById = new Map(document.mergedJobs.map((job) => [job.id, job]));
+        const jobsToSave = validJobs.map((job) => preserveCuttingCompletion(previousJobsById.get(job.id), job));
+        const mergedJobsToSave = validMergedJobs.map((job) => preserveMergedCompletion(previousMergedJobsById.get(job.id), job));
         const replacedJobIds = new Set([...(previous?.jobIds ?? []), ...validProject.jobIds]);
         const replacedMergedIds = new Set([...(previous?.mergedJobIds ?? []), ...validProject.mergedJobIds]);
-        const projects = orderProjects(replaceById(document.projects ?? [], validProject));
+        const projects = orderProjects(replaceById(document.projects ?? [], projectToSave));
         document.jobs = orderJobsForProjects([
           ...document.jobs.filter((job) => !replacedJobIds.has(job.id)),
-          ...validJobs,
+          ...jobsToSave,
         ], projects);
         document.mergedJobs = orderMergedJobsForProjects([
           ...document.mergedJobs.filter((job) => !replacedMergedIds.has(job.id)),
-          ...validMergedJobs,
+          ...mergedJobsToSave,
         ], projects);
         document.projects = projects;
       });
