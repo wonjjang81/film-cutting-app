@@ -8,9 +8,9 @@ export const DIFFICULTY_PRICING: Record<ConstructionDifficulty, {
   max: number;
   defaultRate: number;
 }> = {
-  low: { label: '하', min: 25_000, max: 35_000, defaultRate: 30_000 },
-  medium: { label: '중', min: 35_000, max: 60_000, defaultRate: 47_500 },
-  high: { label: '상', min: 70_000, max: 130_000, defaultRate: 100_000 },
+  low: { label: '하', min: 15_000, max: 15_000, defaultRate: 15_000 },
+  medium: { label: '중', min: 25_000, max: 25_000, defaultRate: 25_000 },
+  high: { label: '상', min: 35_000, max: 35_000, defaultRate: 35_000 },
 };
 
 export function normalizeDifficulty(value: unknown): ConstructionDifficulty {

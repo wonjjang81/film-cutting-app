@@ -1,13 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { movePlacementToBestOtherRoll, movePlacementToNewRoll, movePlacementWithinRoll, removeEmptyRollSpaces, shiftPlacementHorizontally, shiftPlacementToEdge } from './moveMergedPlacement';
+import { movePlacementToBestOtherRoll, movePlacementToNewRoll, movePlacementWithinRoll, removeEmptyRollSpaces, rotatePlacementWithinRoll, shiftPlacementHorizontally, shiftPlacementToEdge } from './moveMergedPlacement';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
 
-const request = (pieceId: string, width: number, length: number): GroupedPieceRequest => ({
+const request = (pieceId: string, width: number, length: number, allowRotation = false): GroupedPieceRequest => ({
   groupId: 'g1', groupName: '그룹 1', pieceId, pieceName: pieceId,
-  request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity: 1, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: false, remnants: [] },
+  request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity: 1, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation, remnants: [] },
 });
 
 describe('movePlacementToBestOtherRoll', () => {
+  it('manually rotates only a non-pattern-fixed piece when the free space fits', () => {
+    const rotatingRequest = request('rotating', 300, 600, true);
+    const fixedRequest = request('rotating', 300, 600, false);
+    const roll = { placements: [
+      { id: 1, sourceId: 'g1-rotating', instanceIndex: 0, x: 105, y: 205, width: 300, height: 600, rotated: false },
+    ], usedLengthMm: 1210, producedQuantity: 1, utilizationPercent: 12.2, wastePercent: 87.8 };
+    const plan = { mergeGroupId: 'auto', sourceIds: ['g1-rotating'], groupNames: ['그룹 1'], pieceCount: 1, result: roll, rollResults: [roll], newRollQuantity: 1, producedQuantity: 1, remnantUses: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} }, inventoryAfter: [] } satisfies MergedGroupPlan;
+
+    expect(rotatePlacementWithinRoll(plan, 1, [rotatingRequest]).plan?.rollResults?.[0]?.placements[0]).toMatchObject({ width: 600, height: 300, rotated: true });
+    expect(rotatePlacementWithinRoll(plan, 1, [fixedRequest]).error).toContain('무늬고정');
+  });
+
   it('creates a new roll and moves only the selected piece into it', () => {
     const requests = [request('large', 1000, 10000), request('small', 200, 4000)];
     const roll = { placements: [

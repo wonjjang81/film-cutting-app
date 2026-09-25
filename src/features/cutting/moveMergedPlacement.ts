@@ -93,6 +93,42 @@ function rebuildPlan(plan: MergedGroupPlan, rolls: readonly MergedRollResult[], 
   return { ...plan, rollResults: rolls.map((roll) => ({ ...roll, placements: roll.placements.map((item) => ({ ...item })) })), result: { ...combined, usedLengthMm: rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0) }, newRollQuantity: placements.length };
 }
 
+/** Rotates a piece 90 degrees around its center when its source allows rotation. */
+export function rotatePlacementWithinRoll(
+  plan: MergedGroupPlan,
+  placementId: number,
+  requests: readonly GroupedPieceRequest[],
+): ManualMergedPlacementResult {
+  const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
+  const rollIndex = rolls.findIndex((roll) => roll.placements.some((item) => item.id === placementId));
+  if (rollIndex < 0) return { error: '회전할 조각을 찾지 못했습니다.' };
+  const roll = rolls[rollIndex]!;
+  const selected = roll.placements.find((item) => item.id === placementId)!;
+  const specification = requests.find((entry) => sourceId(entry) === selected.sourceId);
+  if (!specification) return { error: '조각의 재단 조건을 찾지 못했습니다.' };
+  if (!specification.request.allowRotation) return { error: '무늬고정 조각은 회전할 수 없습니다.' };
+  if (selected.width === selected.height) return { error: '정사각형 조각은 회전해도 배치가 같아집니다.' };
+
+  const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
+  const maxX = rollWidthMm - sideMarginMm - selected.height;
+  const maxY = roll.usedLengthMm - startEndMarginMm - selected.width;
+  if (maxX < sideMarginMm || maxY < startEndMarginMm) return { error: '현재 롤 영역 안에서 회전할 수 없습니다.' };
+  const centerX = selected.x + selected.width / 2;
+  const centerY = selected.y + selected.height / 2;
+  const candidate = {
+    ...selected,
+    x: Math.max(sideMarginMm, Math.min(maxX, snap(centerX - selected.height / 2))),
+    y: Math.max(startEndMarginMm, Math.min(maxY, snap(centerY - selected.width / 2))),
+    width: selected.height,
+    height: selected.width,
+    rotated: !selected.rotated,
+  };
+  const others = roll.placements.filter((item) => item.id !== placementId);
+  if (others.some((item) => collides(candidate, item, gapMm))) return { error: '회전 후 다른 조각과 겹치거나 필요한 간격이 부족합니다.' };
+  const updated = metrics(roll.placements.map((item) => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
+  return { plan: rebuildPlan(plan, rolls.map((item, index) => index === rollIndex ? updated : item), rollWidthMm), movedPlacementIds: [placementId] };
+}
+
 /** Repositions a piece inside its current roll, without changing orientation or piece count. */
 export function movePlacementWithinRoll(
   plan: MergedGroupPlan,
