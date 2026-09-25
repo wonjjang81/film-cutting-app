@@ -165,7 +165,7 @@ function PricePresetRow({ value, onChange }: { value: number; onChange(value: st
     { label: '중', value: DIFFICULTY_PRICING.medium.defaultRate },
     { label: '상', value: DIFFICULTY_PRICING.high.defaultRate },
   ];
-  return <View style={styles.pricePresetRow}>{presets.map((preset) => { const difficulty = preset.label === '하' ? DIFFICULTY_PRICING.low : preset.label === '상' ? DIFFICULTY_PRICING.high : DIFFICULTY_PRICING.medium; return <TouchableOpacity key={preset.label} accessibilityRole="button" accessibilityLabel={`시공 단가 ${preset.label}`} onPress={() => onChange(String(preset.value))} style={[styles.pricePreset, value === preset.value && styles.pricePresetActive]}><Text style={[styles.pricePresetLabel, value === preset.value && styles.pricePresetLabelActive]}>{preset.label}</Text><Text style={[styles.pricePresetValue, value === preset.value && styles.pricePresetLabelActive]}>{preset.value.toLocaleString('ko-KR')}원</Text><Text style={styles.pricePresetRange}>{difficulty.min.toLocaleString('ko-KR')}~{difficulty.max.toLocaleString('ko-KR')}</Text></TouchableOpacity>; })}</View>;
+  return <View style={styles.pricePresetRow}>{presets.map((preset) => <TouchableOpacity key={preset.label} accessibilityRole="button" accessibilityLabel={`시공 단가 ${preset.label}`} onPress={() => onChange(String(preset.value))} style={[styles.pricePreset, value === preset.value && styles.pricePresetActive]}><Text style={[styles.pricePresetLabel, value === preset.value && styles.pricePresetLabelActive]}>{preset.label}</Text><Text style={[styles.pricePresetValue, value === preset.value && styles.pricePresetLabelActive]}>{preset.value.toLocaleString('ko-KR')}원</Text></TouchableOpacity>)}</View>;
 }
 
 const styles = StyleSheet.create({

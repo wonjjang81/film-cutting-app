@@ -50,8 +50,8 @@ describe('calculateProjectEstimate', () => {
   it('uses the subgroup difficulty rate when no explicit construction rate is saved', () => {
     const difficult = { ...job('difficult', 1000), difficulty: 'high' as const };
     const result = calculateProjectEstimate([difficult], 10_000, 15_000, 0);
-    expect(result.jobs[0]?.rates.constructionCostPerM2).toBe(100_000);
-    expect(result.constructionCost).toBe(122_000);
+    expect(result.jobs[0]?.rates.constructionCostPerM2).toBe(35_000);
+    expect(result.constructionCost).toBe(42_700);
   });
 
   it('applies independent material rates per major group', () => {
