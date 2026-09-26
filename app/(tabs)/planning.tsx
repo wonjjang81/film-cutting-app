@@ -4,7 +4,7 @@ import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
-import { AppState, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';
 import { recordManualLayoutChange, rebaseManualLayoutHistory, redoManualLayout, resetManualLayout, startManualLayoutHistory, undoManualLayout, type ManualLayoutHistory } from '../../src/features/cutting/manualLayoutHistory';
@@ -14,7 +14,7 @@ import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYO
 import { selectBestLearnedManualLayout } from '../../src/features/cutting/learnedManualLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
-import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
+import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, findPlacementById, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { parsePlanningCompletionState, PLANNING_COMPLETION_STORAGE_KEY, serializePlanningCompletionState } from '../../src/features/cutting/planningCompletionStorage';
 import { calculateCurrentGroupPlan, CURRENT_GROUP_ESTIMATE_STORAGE_KEY, parseCurrentEstimateSnapshot, requestsFromSnapshot, type CurrentEstimatePlan } from '../../src/features/estimate/currentGroupEstimate';
 import { createPlanningPreviewHtml, type PlanningPreviewSection } from '../../src/features/export/createPlanningPreviewHtml';
@@ -53,9 +53,12 @@ export default function PlanningScreen() {
   const [learnedMergedPlanKeys, setLearnedMergedPlanKeys] = useState<string[]>([]);
   const [pendingProjectIdChoice, setPendingProjectIdChoice] = useState<PendingProjectIdChoice | null>(null);
   const [dragGestureActive, setDragGestureActive] = useState(false);
+  const [placementSearch, setPlacementSearch] = useState('');
+  const [focusedPlacement, setFocusedPlacement] = useState<{ planKey: string; placementId: number; requestKey: number } | null>(null);
   const pageScrollRef = useRef<ScrollView>(null);
   const pageScrollY = useRef(0);
   const previewSectionY = useRef(0);
+  const drawingContentY = useRef(0);
   const manualMergedPlanOverrides = useRef<Record<string, { baseSignature: string; plan: MergedGroupPlan }>>({});
   const projectIdChoices = useRef<Record<string, 'keep' | 'replace'>>({});
   const completionScopeRef = useRef('');
@@ -412,6 +415,13 @@ export default function PlanningScreen() {
     return nextY - currentY;
   }, []);
 
+  const scrollToFocusedPlacement = useCallback((yPx: number) => {
+    pageScrollRef.current?.scrollTo({
+      y: Math.max(0, previewSectionY.current + drawingContentY.current + yPx - 220),
+      animated: true,
+    });
+  }, []);
+
   const saveManualLayouts = useCallback(async () => {
     setSavingManualLayout(true); setError(null);
     try {
@@ -474,6 +484,32 @@ export default function PlanningScreen() {
   ], [currentPlan.mergedPlans, currentPlan.subgroupNamesBySourceId, independentPlans, majorGroupNamesBySourceId]);
   const allPlacementListsCollapsed = areAllPlacementListsCollapsed(placementListKeys, collapsedPlacementLists);
 
+  const navigateToPlacement = useCallback((placementId: number, preferredPlanKey?: string | null) => {
+    const target = findPlacementById(mergedPlanTabs.map((tab) => ({
+      key: tab.key,
+      rolls: tab.plan.rollResults?.length ? tab.plan.rollResults : [tab.plan.result],
+    })), placementId, preferredPlanKey ?? activeMergedPlanKey);
+    if (!target) {
+      setNotice(`#${placementId} 배치 조각을 찾지 못했습니다.`);
+      return;
+    }
+    setPlanningView('drawing');
+    setPreviewHeaderCollapsed(false);
+    setSelectedMergedPlanKey(target.planKey);
+    setSelectedRollByPlan((current) => ({ ...current, [target.planKey]: target.rollIndex }));
+    setFocusedPlacement({ planKey: target.planKey, placementId: target.placementId, requestKey: Date.now() });
+    setNotice(`#${target.placementId} · ${target.rollIndex + 1}롤 위치로 이동했습니다.`);
+  }, [activeMergedPlanKey, mergedPlanTabs]);
+
+  const submitPlacementSearch = useCallback(() => {
+    const placementId = Number(placementSearch.replace(/[^0-9]/g, ''));
+    if (!Number.isInteger(placementId) || placementId < 1) {
+      setNotice('검색할 배치 ID 번호를 입력해 주세요.');
+      return;
+    }
+    navigateToPlacement(placementId);
+  }, [navigateToPlacement, placementSearch]);
+
   const exportPreviewPdf = useCallback(async () => {
     setExportingPdf(true); setError(null); setNotice(null);
     try {
@@ -532,6 +568,10 @@ export default function PlanningScreen() {
             </View>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel={`배치 미리보기 헤더 ${previewHeaderCollapsed ? '펼치기' : '최소화'}`} onPress={() => setPreviewHeaderCollapsed((collapsed) => !collapsed)} style={styles.headerCollapseButton}><Text style={styles.headerCollapseText}>{previewHeaderCollapsed ? '펼치기 ▼' : '최소화 ▲'}</Text></TouchableOpacity>
           </View>
+          <View style={styles.placementSearchRow} accessibilityLabel="배치 조각 ID 검색">
+            <TextInput accessibilityLabel="배치 ID 번호" value={placementSearch} onChangeText={setPlacementSearch} onSubmitEditing={submitPlacementSearch} inputMode="numeric" keyboardType="number-pad" returnKeyType="search" placeholder="# ID 번호" placeholderTextColor="#94a3b8" style={styles.placementSearchInput} />
+            <TouchableOpacity accessibilityRole="button" accessibilityLabel="배치 ID 검색 실행" onPress={submitPlacementSearch} style={styles.placementSearchButton}><Text style={styles.placementSearchButtonText}>검색</Text></TouchableOpacity>
+          </View>
           {!previewHeaderCollapsed && <>
             {mergedPlanTabs.length > 0 && <View style={styles.hierarchyRow}><Text style={styles.hierarchyLabel}>대그룹</Text><ScrollView horizontal style={styles.hierarchyScroller} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mergedRollTabs} accessibilityLabel="대그룹 병합 롤 선택">
               {mergedPlanTabs.map((tab) => {
@@ -572,8 +612,8 @@ export default function PlanningScreen() {
           const changeListState = (next: Record<string, boolean>) => setCollapsedPlacementLists((current) => ({ ...current, ...Object.fromEntries(Object.entries(next).map(([id, collapsed]) => [subgroupKey(id), collapsed])) }));
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, job?.id, placementId, placementIds);
           return planningView === 'drawing'
-            ? <MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} automaticUtilizationPercent={automaticUtilizationPercent} learnedLayoutApplied={learnedMergedPlanKeys.includes(planKey)} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementToNewRoll={(placementId) => { const movedTo = moveMergedPlacementToNewRoll(planKey, placementId); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onRotatePlacement={(placementId) => rotateMergedPlacement(planKey, placementId)} onShiftPlacementToEdge={(placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} onDragGestureChange={setDragGestureActive} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView />
-            : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} />;
+            ? <View onLayout={(event) => { drawingContentY.current = event.nativeEvent.layout.y; }}><MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} automaticUtilizationPercent={automaticUtilizationPercent} learnedLayoutApplied={learnedMergedPlanKeys.includes(planKey)} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} focusedPlacementId={focusedPlacement?.planKey === planKey ? focusedPlacement.placementId : null} focusRequestKey={focusedPlacement?.planKey === planKey ? focusedPlacement.requestKey : 0} onFocusedPlacementY={scrollToFocusedPlacement} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementToNewRoll={(placementId) => { const movedTo = moveMergedPlacementToNewRoll(planKey, placementId); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onRotatePlacement={(placementId) => rotateMergedPlacement(planKey, placementId)} onShiftPlacementToEdge={(placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} onDragGestureChange={setDragGestureActive} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView /></View>
+            : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} onSelectPlacement={(placementId) => navigateToPlacement(placementId, planKey)} />;
         })()}
         {independentPlans.map((entry) => {
           const sourceKey = `${entry.groupId}-${entry.pieceId}`;
@@ -663,6 +703,10 @@ const styles = StyleSheet.create({
   idChoiceBackdrop: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 20, backgroundColor: 'rgba(15, 23, 42, 0.5)' }, idChoiceCard: { width: '100%', maxWidth: 390, padding: 20, borderRadius: 16, backgroundColor: '#fff', elevation: 9, shadowColor: '#0f172a', shadowOpacity: 0.22, shadowRadius: 18, shadowOffset: { width: 0, height: 8 } }, idChoiceEyebrow: { fontSize: 10, letterSpacing: 1.2, fontWeight: '900', color: '#2563eb' }, idChoiceTitle: { marginTop: 6, fontSize: 19, fontWeight: '900', color: '#0f172a' }, idChoiceBody: { marginTop: 9, fontSize: 12, lineHeight: 19, color: '#475569' }, idChoicePrimary: { minHeight: 44, marginTop: 16, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: '#2563eb' }, idChoicePrimaryText: { fontSize: 13, fontWeight: '900', color: '#fff' }, idChoiceSecondary: { minHeight: 44, marginTop: 8, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 9, backgroundColor: '#fff' }, idChoiceSecondaryText: { fontSize: 13, fontWeight: '900', color: '#475569' },
   previewStickyHeader: { position: Platform.OS === 'web' ? 'sticky' as never : 'relative', top: 0, zIndex: 30, marginTop: 14, padding: 7, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 12, backgroundColor: '#fff', elevation: 8, shadowColor: '#0f172a', shadowOpacity: 0.12, shadowRadius: 8, shadowOffset: { width: 0, height: 3 } },
   stickyTopRow: { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  placementSearchRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 7 },
+  placementSearchInput: { flex: 1, minWidth: 0, height: 34, paddingHorizontal: 10, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 8, backgroundColor: '#fff', color: '#0f172a', fontSize: 11, fontWeight: '800' },
+  placementSearchButton: { minWidth: 54, height: 34, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderRadius: 8, backgroundColor: '#2563eb' },
+  placementSearchButtonText: { fontSize: 10, fontWeight: '900', color: '#fff' },
   viewTabs: { flex: 1, flexDirection: 'row', gap: 5, padding: 3, borderRadius: 9, backgroundColor: '#eff6ff' }, viewTab: { flex: 1, minHeight: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 7 }, viewTabActive: { backgroundColor: '#2563eb' }, viewTabText: { fontSize: 11, fontWeight: '800', color: '#1d4ed8' }, viewTabTextActive: { color: '#fff' }, viewHint: { marginTop: 9, fontSize: 11, color: '#64748b' },
   headerCollapseButton: { minHeight: 34, justifyContent: 'center', paddingHorizontal: 9, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#f8fafc' }, headerCollapseText: { fontSize: 9, fontWeight: '900', color: '#475569' },
   hierarchyRow: { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 7 }, hierarchyLabel: { width: 37, fontSize: 9, fontWeight: '900', color: '#64748b' }, hierarchyScroller: { flex: 1 },

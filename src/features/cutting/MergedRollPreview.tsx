@@ -49,6 +49,10 @@ type Props = {
   sourceMajorGroups?: Record<string, string>;
   collapsedSubgroups?: Record<string, boolean>;
   onChangeCollapsedSubgroups?(collapsed: Record<string, boolean>): void;
+  focusedPlacementId?: number | null;
+  focusRequestKey?: number;
+  onFocusedPlacementY?(yPx: number): void;
+  onSelectPlacement?(placementId: number): void;
 };
 
 function colorFor(sourceId: string, sourceIds: readonly string[]): string {
@@ -56,7 +60,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[]): string {
   return COLORS[index % COLORS.length] ?? '#2563eb';
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onRotatePlacement, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onRotatePlacement, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups, focusedPlacementId, focusRequestKey = 0, onFocusedPlacementY }: Props) {
   const [localRollIndex, setLocalRollIndex] = React.useState(0);
   const selectedRollIndex = controlledRollIndex ?? localRollIndex;
   const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
@@ -95,6 +99,11 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
     setLastMovedToRollIndex((current) => current === null || current >= rolls.length ? null : current);
   }, [controlledRollIndex, rolls.length]);
   React.useEffect(() => setSelectedGap(null), [selectedRollIndex]);
+  React.useEffect(() => {
+    if (!focusedPlacementId || !onFocusedPlacementY) return;
+    const placement = result.placements.find((item) => item.id === focusedPlacementId);
+    if (placement) onFocusedPlacementY(((placement.y + placement.height / 2) / safeLength) * height);
+  }, [focusRequestKey, focusedPlacementId, height, onFocusedPlacementY, result.placements, safeLength]);
   React.useEffect(() => () => onDragGestureChange?.(false), [onDragGestureChange]);
   const measureClickedGap = (event: { nativeEvent: { locationX?: number; locationY?: number } }) => {
     const { locationX, locationY } = event.nativeEvent;
@@ -115,7 +124,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       </G>
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
-        const active = selectedId === placement.id;
+        const active = selectedId === placement.id || focusedPlacementId === placement.id;
         const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
         const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
         const centerX = placement.x + placement.width / 2;
@@ -299,7 +308,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
  * The merged-roll piece list lives in the material-plan section so it has the
  * same placement-list position as a single-piece calculation.
  */
-export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, onTogglePlacementComplete, collapsedSubgroups, onChangeCollapsedSubgroups }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'sourceMajorGroups' | 'onTogglePlacementComplete' | 'collapsedSubgroups' | 'onChangeCollapsedSubgroups'>) {
+export function MergedRollPlacementList({ plan, job, busy = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, onTogglePlacementComplete, collapsedSubgroups, onChangeCollapsedSubgroups, onSelectPlacement }: Pick<Props, 'plan' | 'job' | 'busy' | 'completedPlacementIds' | 'sourceLabels' | 'sourceSubgroups' | 'sourceMajorGroups' | 'onTogglePlacementComplete' | 'collapsedSubgroups' | 'onChangeCollapsedSubgroups' | 'onSelectPlacement'>) {
   const sourceIds = [...new Set(plan.result.placements.map((placement) => placement.sourceId))];
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
   const [localCollapsedGroups, setLocalCollapsedGroups] = React.useState<Record<string, boolean>>({});
@@ -327,7 +336,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           {!collapsed && group.items.map((placement) => {
             const completed = completedPlacementIds.has(placement.id);
             return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 선택`} onPress={() => setSelectedId((current) => current === placement.id ? null : placement.id)} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 도면에서 보기`} onPress={() => { setSelectedId(placement.id); onSelectPlacement?.(placement.id); }} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 조각 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
             </View>;
           })}

@@ -1,9 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, groupPlacementsBySubgroup, layoutUtilizationComparison, majorGroupTabLabel, nextPlacementCompletion, placementCompletionControl, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
+import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, findPlacementById, groupPlacementsBySubgroup, layoutUtilizationComparison, majorGroupTabLabel, nextPlacementCompletion, placementCompletionControl, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from './planningPlacementModel';
 
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
 describe('planning placement model', () => {
+  it('finds an ID in its physical roll and prefers the selected major group when IDs repeat', () => {
+    const plans = [
+      { key: 'group-1', rolls: [{ placements: [{ id: 7, y: 100, height: 200 }] }] },
+      { key: 'group-2', rolls: [{ placements: [] }, { placements: [{ id: 7, y: 900, height: 300 }] }] },
+    ];
+    expect(findPlacementById(plans, 7, 'group-2')).toEqual({ planKey: 'group-2', rollIndex: 1, placementId: 7, yMm: 1050 });
+    expect(findPlacementById(plans, 7, 'missing')).toEqual({ planKey: 'group-1', rollIndex: 0, placementId: 7, yMm: 200 });
+    expect(findPlacementById(plans, 99, 'group-1')).toBeNull();
+    expect(findPlacementById(plans, 0, 'group-1')).toBeNull();
+  });
+
   it('groups placement rows by subgroup while preserving first-seen order', () => {
     const groups = groupPlacementsBySubgroup(
       [placement(1, 'g1-p1'), placement(2, 'g1-p2'), placement(3, 'g1-p1')],
