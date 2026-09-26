@@ -17,6 +17,30 @@ export type PlacementCompletionControl = {
 };
 
 export type LayoutUtilizationComparison = { automatic: number; current: number; delta: number };
+export type PlacementLookupPlan = {
+  key: string;
+  rolls: readonly { placements: readonly { id: number; y: number; height: number }[] }[];
+};
+export type PlacementLookupTarget = { planKey: string; rollIndex: number; placementId: number; yMm: number };
+
+/** Finds a placement by visible ID, preferring the currently selected major group when IDs repeat. */
+export function findPlacementById(
+  plans: readonly PlacementLookupPlan[],
+  placementId: number,
+  preferredPlanKey?: string | null,
+): PlacementLookupTarget | null {
+  if (!Number.isInteger(placementId) || placementId < 1) return null;
+  const ordered = preferredPlanKey
+    ? [...plans.filter((plan) => plan.key === preferredPlanKey), ...plans.filter((plan) => plan.key !== preferredPlanKey)]
+    : plans;
+  for (const plan of ordered) {
+    for (let rollIndex = 0; rollIndex < plan.rolls.length; rollIndex += 1) {
+      const placement = plan.rolls[rollIndex]?.placements.find((item) => item.id === placementId);
+      if (placement) return { planKey: plan.key, rollIndex, placementId, yMm: placement.y + placement.height / 2 };
+    }
+  }
+  return null;
+}
 
 /** Keeps the automatic result as a stable baseline and measures live manual-layout changes. */
 export function layoutUtilizationComparison(automaticPercent: number, currentPercent: number): LayoutUtilizationComparison {
