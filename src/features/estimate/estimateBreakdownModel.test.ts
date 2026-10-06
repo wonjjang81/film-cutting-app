@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import type { SavedCuttingJob } from '../library/models';
 import { calculateProjectEstimate } from './calculateProjectEstimate';
-import { buildEstimateGroupBreakdown } from './estimateBreakdownModel';
+import { buildEstimateGroupBreakdown, majorGroupEstimateLabel } from './estimateBreakdownModel';
 
 const job = (id: string, groupId: string, subgroupName: string, length: number): SavedCuttingJob => ({
   id,
@@ -20,6 +20,12 @@ const job = (id: string, groupId: string, subgroupName: string, length: number):
 });
 
 describe('estimate group breakdown', () => {
+  it('uses a compact group number for both fresh and restored project identifiers', () => {
+    expect(majorGroupEstimateLabel('group-1')).toBe('대그룹1');
+    expect(majorGroupEstimateLabel('project-1789961912977-group-1')).toBe('대그룹1');
+    expect(majorGroupEstimateLabel('project-1789961912977-group-2')).toBe('대그룹2');
+    expect(majorGroupEstimateLabel('group-12-1789961912977')).toBe('대그룹12');
+  });
   it('shows the applied part rate rather than the fallback square-metre rate', () => {
     const source = { ...job('01', 'group-1', 'A', 2000), installationPart: '책장', constructionCostPerM: 27500 };
     const grouped = buildEstimateGroupBreakdown(calculateProjectEstimate([source], 10000, 15000, 0));
@@ -39,8 +45,8 @@ describe('estimate group breakdown', () => {
     const groups = buildEstimateGroupBreakdown(estimate);
 
     expect(groups.map((group) => [group.label, group.subgroups.map((subgroup) => subgroup.name)])).toEqual([
-      ['대그룹 ID 1', ['A', 'B']],
-      ['대그룹 ID 2', ['A']],
+      ['대그룹1', ['A', 'B']],
+      ['대그룹2', ['A']],
     ]);
     expect(groups[0]?.pieceCount).toBe(3);
     expect(groups[0]?.subgroups[0]?.pieceCount).toBe(2);

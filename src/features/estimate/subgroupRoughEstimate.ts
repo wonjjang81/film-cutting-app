@@ -1,6 +1,7 @@
 import type { ConstructionDifficulty } from './difficultyPricing';
 import { constructionRateForDifficulty } from './difficultyPricing';
 import type { SavedCuttingJob } from '../library/models';
+import { allocateLaborCost, calculateInstallationLabor, installationSubgroupKey, resolveInstallationPart, type InstallationMode, type InstallationLaborCalculation } from './installationLabor';
 
 export type SubgroupOverallDimensions = {
   widthMm: number;
@@ -24,6 +25,7 @@ export type SubgroupRoughEstimateLine = SubgroupRoughEstimate & {
   dimensions: SubgroupOverallDimensions;
   siteCount: number;
   difficulty?: ConstructionDifficulty;
+  installationLabor?: InstallationLaborCalculation;
 };
 
 function nonnegative(value: unknown): number {
@@ -89,6 +91,8 @@ export function buildSubgroupRoughEstimateLines(
     constructionCostPerM2: number;
     materialRatesByGroupId?: Record<string, number | undefined>;
     globalRateOverride?: boolean;
+    installationMode?: InstallationMode;
+    installationPartsBySubgroupId?: Record<string, string | undefined>;
   },
 ): SubgroupRoughEstimateLine[] {
   const unique = new Map<string, SavedCuttingJob>();
@@ -99,7 +103,7 @@ export function buildSubgroupRoughEstimateLines(
     const key = `${groupId}::${subgroupName}`;
     if (!unique.has(key)) unique.set(key, job);
   }
-  return [...unique.entries()].map(([id, job]) => {
+  const lines: SubgroupRoughEstimateLine[] = [...unique.entries()].map(([id, job]) => {
     const groupId = job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류';
     const subgroupName = job.subgroupName?.trim() || '미분류';
     const dimensions = normalizeSubgroupOverallDimensions(job.subgroupOverallDimensions);
@@ -110,6 +114,9 @@ export function buildSubgroupRoughEstimateLines(
     const constructionCostPerM2 = options.globalRateOverride
       ? options.constructionCostPerM2
       : job.constructionCostPerM2;
+    const rough = calculateSubgroupRoughEstimate(dimensions, { siteCount, materialCostPerM, constructionCostPerM2, constructionCostPerM: !options.globalRateOverride && options.installationPartsBySubgroupId?.[installationSubgroupKey(job)] !== '' && job.installationPart ? job.constructionCostPerM : undefined, difficulty: job.difficulty });
+    const part = resolveInstallationPart(job, options.installationPartsBySubgroupId);
+    const installationLabor = !options.globalRateOverride && options.installationMode && part ? calculateInstallationLabor(part, rough.materialLengthM, options.installationMode, job.constructionCostPerM) : undefined;
     return {
       id,
       groupId,
@@ -117,7 +124,19 @@ export function buildSubgroupRoughEstimateLines(
       dimensions,
       siteCount,
       difficulty: job.difficulty,
-      ...calculateSubgroupRoughEstimate(dimensions, { siteCount, materialCostPerM, constructionCostPerM2, constructionCostPerM: !options.globalRateOverride && job.installationPart ? job.constructionCostPerM : undefined, difficulty: job.difficulty }),
+      ...rough,
+      ...(installationLabor ? { installationLabor, constructionCost: installationLabor.constructionCost, total: rough.materialCost + installationLabor.constructionCost } : {}),
     };
   });
+  const totalLabor = lines.reduce((sum, line) => sum + line.constructionCost, 0);
+  if (!options.globalRateOverride && options.installationMode === 'standalone' && lines.some((line) => line.materialLengthM > 0) && totalLabor < 125_000) {
+    const extras = allocateLaborCost(125_000 - totalLabor, lines.map((line) => totalLabor > 0 ? line.constructionCost : line.materialLengthM));
+    lines.forEach((line, index) => {
+      line.constructionCost += extras[index]!;
+      line.total += extras[index]!;
+      if (line.installationLabor) line.installationLabor = { ...line.installationLabor, constructionCost: line.constructionCost, billedUnits: line.constructionCost / 250_000, minimumApplied: true,
+        formula: `${line.installationLabor.formula}; 개산견적 합산 최소 0.5품 보정 배분 +${extras[index]!.toLocaleString('ko-KR')}원` };
+    });
+  }
+  return lines;
 }

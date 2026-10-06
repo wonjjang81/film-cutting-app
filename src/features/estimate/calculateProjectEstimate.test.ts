@@ -5,6 +5,53 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('applies the standalone half-unit minimum to all subgroup labor combined exactly once', () => {
+    const sources = [
+      { ...job('a', 1000), groupId: 'group-1', subgroupName: '책장', installationPart: '책장' },
+      { ...job('b', 1000), groupId: 'group-1', subgroupName: '화장대', installationPart: '화장대' },
+    ];
+    const original = JSON.stringify(sources);
+    const whole = calculateProjectEstimate(sources, 10000, 15000, 0, [], { installationMode: 'whole' });
+    expect(whole.constructionCost).toBe(27500 + Math.floor(68750 / 3.13));
+    const solo = calculateProjectEstimate(sources, 10000, 15000, 0, [], { installationMode: 'standalone' });
+    expect(solo.constructionCost).toBe(125000);
+    expect(solo.jobs.reduce((sum, line) => sum + line.estimate.constructionCost, 0)).toBe(125000);
+    expect(solo.installationLaborLines?.reduce((sum, line) => sum + line.constructionCost, 0)).toBe(125000);
+    expect(solo.installationLaborLines?.every((line) => line.calculation?.billedUnits !== 0.5)).toBe(true);
+    expect(solo.total).toBe(solo.materialCost + 125000);
+    expect(JSON.stringify(sources)).toBe(original);
+  });
+
+  it('keeps the same whole-project rates when the standalone sum exceeds half a unit', () => {
+    const source = { ...job('a', 6000), subgroupName: '책장' };
+    const result = calculateProjectEstimate([source], 10000, 15000, 0, [], { installationMode: 'standalone' });
+    expect(result.constructionCost).toBe(165000);
+    expect(result.installationLaborLines?.[0]?.minimumSupplement).toBeUndefined();
+  });
+
+  it('does not duplicate minimum labor for a subgroup spanning multiple physical rolls', () => {
+    const sources = [
+      { ...job('a', 1000), groupId: 'group-1', subgroupName: '책장' },
+      { ...job('b', 1000), groupId: 'group-1', subgroupName: '책장' },
+    ];
+    const merged = sources.map((source, index) => ({ id: `merged-${index}`, name: '롤', mergeGroupId: 'auto', groupNames: ['그룹 1'], sourceJobIds: [source.id], createdAt: source.createdAt, updatedAt: source.updatedAt, rollWidthMm: 1220, usedLengthMm: 1000, producedQuantity: 20, utilizationPercent: 80, wastePercent: 20, placements: [] }));
+    const result = calculateProjectEstimate(sources, 10000, 15000, 0, merged, { installationMode: 'standalone' });
+    expect(result.constructionCost).toBe(125000);
+    expect(result.installationLaborLines).toHaveLength(1);
+    expect(result.mergedJobs.reduce((sum, line) => sum + line.estimate.constructionCost, 0)).toBe(125000);
+    expect(result.constructionCostRange).toEqual({ min: 125000, max: 125000 });
+  });
+
+  it('selects a part in the estimate without changing saved data and honors deselection/global override', () => {
+    const source = { ...job('a', 1000), groupId: 'group-1', subgroupName: 'A', installationPart: '책장', constructionCostPerM: 27500 };
+    const result = calculateProjectEstimate([source], 10000, 15000, 0, [], { installationMode: 'whole', installationPartsBySubgroupId: { 'group-1::A': '화장대' } });
+    expect(result.constructionCost).toBe(Math.floor(68750 / 3.13));
+    const cleared = calculateProjectEstimate([source], 10000, 15000, 0, [], { installationMode: 'whole', installationPartsBySubgroupId: { 'group-1::A': '' } });
+    expect(cleared.constructionCost).toBe(30500);
+    const global = calculateProjectEstimate([source], 10000, 15000, 0, [], { rateMode: 'global', installationMode: 'standalone' });
+    expect(global.constructionCost).toBe(18300);
+    expect(global.installationLaborLines).toBeUndefined();
+  });
   it('prices selected parts per metre, truncates fractional won and keeps legacy rates unchanged', () => {
     const selected = { ...job('part', 1234), installationPart: '화장대', constructionCostPerM: 21960, difficulty: 'high' as const };
     const result = calculateProjectEstimate([selected, job('legacy', 1000)], 10000, 15000, 0);

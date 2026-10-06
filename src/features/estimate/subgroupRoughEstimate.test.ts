@@ -37,5 +37,11 @@ describe('subgroup rough estimate', () => {
     const lines = buildSubgroupRoughEstimateLines([{ ...base }, { ...base, id: 'job-2', name: '그룹 1 · A_02' }], { materialCostPerM: 10_000, constructionCostPerM2: 20_000, globalRateOverride: true });
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ groupId: 'group-1', subgroupName: 'A', areaM2: 10, total: 281_967 });
+    const parts = [{ ...base, subgroupName: '책장', siteCount: 1, subgroupOverallDimensions: { widthMm: 1220, heightMm: 1000, depthMm: 0, doorCount: 1 } },
+      { ...base, id: 'job-b', subgroupName: '화장대', siteCount: 1, subgroupOverallDimensions: { widthMm: 1220, heightMm: 1000, depthMm: 0, doorCount: 1 } }];
+    const solo = buildSubgroupRoughEstimateLines(parts, { materialCostPerM: 10000, constructionCostPerM2: 15000, installationMode: 'standalone' });
+    expect(solo.reduce((sum, line) => sum + line.constructionCost, 0)).toBe(125000);
+    expect(solo.reduce((sum, line) => sum + line.total, 0)).toBe(145000);
+    expect(solo.every((line) => line.installationLabor?.minimumApplied)).toBe(true);
   });
 });
