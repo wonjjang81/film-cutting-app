@@ -1,9 +1,11 @@
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
 import { calculateEstimateAtRates, CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MIN, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M, type Estimate } from './calculateEstimate';
 import { constructionRateForDifficulty } from './difficultyPricing';
+import { installationSubgroupKey, type InstallationMode } from './installationLabor';
+import { repriceInstallationLabor, type InstallationLaborLine } from './repriceInstallationLabor';
 
 export type EstimateRateMode = 'group' | 'global';
-export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; constructionCostPerM?: number; mixed?: boolean };
+export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; constructionCostPerM?: number; installationPart?: string; mixed?: boolean };
 export type ProjectEstimateLine<TJob> = {
   job: TJob;
   estimate: Estimate;
@@ -19,10 +21,14 @@ export type ProjectEstimate = Estimate & {
   mergedJobs: ProjectEstimateLine<SavedMergedCuttingJob>[];
   constructionCostRange: { min: number; max: number };
   totalRange: { min: number; max: number };
+  installationLaborLines?: InstallationLaborLine[];
+  installationMode?: InstallationMode;
 };
 
 export type RateOptions = {
   rateMode?: EstimateRateMode;
+  installationMode?: InstallationMode;
+  installationPartsBySubgroupId?: Record<string, string | undefined>;
   /** Optional material rate entered once for every major group. */
   materialRatesByGroupId?: Record<string, number | undefined>;
   /** Optional piece-level rates take precedence over the major-group rate. */
@@ -42,7 +48,7 @@ function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructio
   return mode === 'global'
     ? { materialCostPerM, constructionCostPerM2 }
     : { materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2),
-      ...(job.installationPart && job.constructionCostPerM !== undefined && Number.isFinite(job.constructionCostPerM) && job.constructionCostPerM >= 0 ? { constructionCostPerM: job.constructionCostPerM } : {}) };
+      ...(options.installationPartsBySubgroupId?.[installationSubgroupKey(job)] !== '' && job.installationPart && job.constructionCostPerM !== undefined && Number.isFinite(job.constructionCostPerM) && job.constructionCostPerM >= 0 ? { constructionCostPerM: job.constructionCostPerM, installationPart: job.installationPart } : {}) };
 }
 
 function sumEstimates(items: readonly Estimate[]): Estimate {
@@ -108,6 +114,13 @@ export function calculateProjectEstimate(
     const rates = aggregateRates(sourceDetails);
     return [{ job: mergedJob, estimate, rates, sourceDetails }];
   });
+  const installationLaborLines = options.installationMode && rateMode !== 'global'
+    ? repriceInstallationLabor([...details, ...mergedDetails.flatMap((line) => line.sourceDetails)], options.installationMode, options.installationPartsBySubgroupId)
+    : undefined;
+  if (installationLaborLines) mergedDetails.forEach((line) => {
+    line.estimate = sumEstimates(line.sourceDetails.map((source) => source.estimate));
+    line.rates = aggregateRates(line.sourceDetails);
+  });
   const allDetails = [...details, ...mergedDetails];
   const materialLengthM = allDetails.reduce((sum, item) => sum + item.estimate.materialLengthM, 0);
   const materialCost = allDetails.reduce((sum, item) => sum + item.estimate.materialCost, 0);
@@ -121,6 +134,10 @@ export function calculateProjectEstimate(
     min: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MIN)),
     max: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MAX)),
   };
+  if (installationLaborLines?.some((line) => (line.minimumSupplement ?? 0) > 0)) {
+    constructionCostRange.min = constructionCost;
+    constructionCostRange.max = constructionCost;
+  }
   const subtotal = materialCost + constructionCost;
   const automaticDiscountRate = materialAreaM2 >= 10 ? 0.15 : materialAreaM2 >= 5 ? 0.1 : materialAreaM2 >= 1 ? 0.05 : 0;
   const discountRate = discountRateOverride === undefined ? automaticDiscountRate : Math.min(1, Math.max(0, discountRateOverride));
@@ -129,5 +146,6 @@ export function calculateProjectEstimate(
     min: Math.max(0, Math.round((materialCost + constructionCostRange.min) * (1 - discountRate))),
     max: Math.max(0, Math.round((materialCost + constructionCostRange.max) * (1 - discountRate))),
   };
-  return { inputPieceCount, materialLengthM, materialAreaM2, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount, jobCount: allDetails.length, jobs: details, mergedJobs: mergedDetails, constructionCostRange, totalRange };
+  return { inputPieceCount, materialLengthM, materialAreaM2, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount, jobCount: allDetails.length, jobs: details, mergedJobs: mergedDetails, constructionCostRange, totalRange,
+    ...(installationLaborLines ? { installationLaborLines, installationMode: options.installationMode } : {}) };
 }

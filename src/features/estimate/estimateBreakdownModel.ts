@@ -38,7 +38,7 @@ function addAmounts(target: EstimateBreakdownAmounts, source: EstimateBreakdownA
 
 export function majorGroupEstimateLabel(groupId: string): string {
   const numericId = groupId.match(/(?:^|-)group-(\d+)(?:-|$)/)?.[1];
-  return numericId ? `대그룹 ID ${numericId}` : `대그룹 ${groupId}`;
+  return numericId ? `대그룹${numericId}` : `대그룹 ${groupId}`;
 }
 
 function normalizedGroupId(job: SavedCuttingJob): string {
@@ -78,7 +78,7 @@ export function buildEstimateGroupBreakdown(estimate: Pick<ProjectEstimate, 'job
     subgroup.pieceCount += 1;
     subgroup.inputQuantity += job.input.quantity;
     if (job.siteCount !== undefined) subgroup.siteCounts.add(job.siteCount);
-    if (rates.constructionCostPerM !== undefined) subgroup.laborDescriptions.add(`${job.installationPart} · ${rates.constructionCostPerM.toLocaleString('ko-KR')}원/m`);
+    if (rates.constructionCostPerM !== undefined) subgroup.laborDescriptions.add(`${rates.installationPart ?? job.installationPart} · ${rates.constructionCostPerM.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원/m`);
     else subgroup.laborDescriptions.add(`${rates.constructionCostPerM2.toLocaleString('ko-KR')}원/m²`);
     addAmounts(group.amounts, amounts);
     addAmounts(subgroup.amounts, amounts);
