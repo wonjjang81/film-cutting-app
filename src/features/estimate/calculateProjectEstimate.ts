@@ -3,7 +3,7 @@ import { calculateEstimateAtRates, CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MI
 import { constructionRateForDifficulty } from './difficultyPricing';
 
 export type EstimateRateMode = 'group' | 'global';
-export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; mixed?: boolean };
+export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; constructionCostPerM?: number; mixed?: boolean };
 export type ProjectEstimateLine<TJob> = {
   job: TJob;
   estimate: Estimate;
@@ -41,7 +41,8 @@ function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructio
   const effectiveMaterialCost = jobMaterialRate ?? groupMaterialRate ?? job.materialCostPerM ?? materialCostPerM;
   return mode === 'global'
     ? { materialCostPerM, constructionCostPerM2 }
-    : { materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2) };
+    : { materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2),
+      ...(job.installationPart && job.constructionCostPerM !== undefined && Number.isFinite(job.constructionCostPerM) && job.constructionCostPerM >= 0 ? { constructionCostPerM: job.constructionCostPerM } : {}) };
 }
 
 function sumEstimates(items: readonly Estimate[]): Estimate {
@@ -58,7 +59,7 @@ function aggregateRates(items: readonly { estimate: Estimate; rates: EstimateRat
   const estimate = sumEstimates(items.map((item) => item.estimate));
   const materialCostPerM = estimate.materialLengthM > 0 ? estimate.materialCost / estimate.materialLengthM : 0;
   const constructionCostPerM2 = estimate.materialAreaM2 > 0 ? estimate.constructionCost / estimate.materialAreaM2 : 0;
-  const distinct = new Set(items.map((item) => `${item.rates.materialCostPerM}|${item.rates.constructionCostPerM2}`));
+  const distinct = new Set(items.map((item) => `${item.rates.materialCostPerM}|${item.rates.constructionCostPerM2}|${item.rates.constructionCostPerM ?? 'area'}`));
   return { materialCostPerM, constructionCostPerM2, ...(distinct.size > 1 ? { mixed: true } : {}) };
 }
 
@@ -79,7 +80,7 @@ export function calculateProjectEstimate(
   const mergedSourceIds = new Set(mergedJobs.flatMap((mergedJob) => mergedJob.sourceJobIds));
   const details = jobs.filter((job) => !mergedSourceIds.has(job.id)).map((job) => {
     const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
-    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0) };
+    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, undefined, rates.constructionCostPerM) };
   });
   const mergedDetails = mergedJobs.flatMap((mergedJob) => {
     const sources = mergedJob.sourceJobIds.map((sourceId) => jobs.find((job) => job.id === sourceId)).filter((job): job is SavedCuttingJob => Boolean(job));
@@ -100,7 +101,7 @@ export function calculateProjectEstimate(
         materialLengthMm: mergedJob.usedLengthMm * share,
         materialWidthMm: mergedJob.rollWidthMm,
         productAreaM2: requestedAreas[index]!,
-      });
+      }, rates.constructionCostPerM);
       return { job, estimate, rates };
     });
     const estimate = sumEstimates(sourceDetails.map((item) => item.estimate));
@@ -113,9 +114,12 @@ export function calculateProjectEstimate(
   const productAreaM2 = allDetails.reduce((sum, item) => sum + item.estimate.productAreaM2, 0);
   const materialAreaM2 = allDetails.reduce((sum, item) => sum + item.estimate.materialAreaM2, 0);
   const constructionCost = allDetails.reduce((sum, item) => sum + item.estimate.constructionCost, 0);
+  const pricedSources = [...details, ...mergedDetails.flatMap((line) => line.sourceDetails)];
+  const fixedLabor = pricedSources.filter((line) => line.rates.constructionCostPerM !== undefined).reduce((sum, line) => sum + line.estimate.constructionCost, 0);
+  const variableArea = pricedSources.filter((line) => line.rates.constructionCostPerM === undefined).reduce((sum, line) => sum + line.estimate.materialAreaM2, 0);
   const constructionCostRange = {
-    min: Math.max(0, Math.round(materialAreaM2 * CONSTRUCTION_PRICE_MIN)),
-    max: Math.max(0, Math.round(materialAreaM2 * CONSTRUCTION_PRICE_MAX)),
+    min: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MIN)),
+    max: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MAX)),
   };
   const subtotal = materialCost + constructionCost;
   const automaticDiscountRate = materialAreaM2 >= 10 ? 0.15 : materialAreaM2 >= 5 ? 0.1 : materialAreaM2 >= 1 ? 0.05 : 0;

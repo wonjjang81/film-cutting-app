@@ -18,7 +18,7 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
-  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: EditableSubgroupOverallDimensions }[];
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: EditableSubgroupOverallDimensions; installationPart?: string; constructionCostPerM?: number }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
@@ -70,6 +70,8 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     subgroupName: subgroup?.name,
     siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount),
     difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
+    installationPart: subgroup?.installationPart,
+    constructionCostPerM: subgroup?.constructionCostPerM,
     subgroupOverallDimensions: subgroup?.overallDimensions === undefined ? undefined : normalizeSubgroupOverallDimensions({
       widthMm: Number(subgroup.overallDimensions.widthMm),
       heightMm: Number(subgroup.overallDimensions.heightMm),
@@ -122,6 +124,8 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     siteCount: entry.siteCount,
     difficulty: entry.difficulty,
     subgroupOverallDimensions: entry.subgroupOverallDimensions,
+    installationPart: entry.installationPart,
+    constructionCostPerM: entry.constructionCostPerM,
     materialCostPerM: entry.materialCostPerM,
     constructionCostPerM2: entry.constructionCostPerM2,
   }));

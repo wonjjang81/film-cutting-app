@@ -17,6 +17,8 @@ export type GroupedPieceRequest = {
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
   subgroupOverallDimensions?: SubgroupOverallDimensions;
+  installationPart?: string;
+  constructionCostPerM?: number;
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   request: RemnantPlanRequest;

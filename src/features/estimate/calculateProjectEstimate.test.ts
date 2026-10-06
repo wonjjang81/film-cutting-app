@@ -5,6 +5,32 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('prices selected parts per metre, truncates fractional won and keeps legacy rates unchanged', () => {
+    const selected = { ...job('part', 1234), installationPart: '화장대', constructionCostPerM: 21960, difficulty: 'high' as const };
+    const result = calculateProjectEstimate([selected, job('legacy', 1000)], 10000, 15000, 0);
+    expect(result.jobs[0]?.estimate.constructionCost).toBe(Math.floor(1.234 * 21960));
+    expect(result.jobs[1]?.estimate.constructionCost).toBe(18300);
+    const global = calculateProjectEstimate([selected], 10000, 15000, 0, [], { rateMode: 'global' });
+    expect(global.constructionCost).toBe(Math.round(1.234 * 1.22 * 15000));
+    expect(global.jobs[0]?.rates.constructionCostPerM).toBeUndefined();
+    expect(calculateProjectEstimate([{ ...selected, constructionCostPerM: 0 }], 10000, 15000, 0).constructionCost).toBe(0);
+  });
+
+  it('allocates the physical merged length to each part instead of billing source lengths twice', () => {
+    const sources = [
+      { ...job('a', 8000), installationPart: '책장', constructionCostPerM: 27500 },
+      { ...job('b', 8000), installationPart: '신발장', constructionCostPerM: 14950 },
+    ];
+    const merged = { id: 'merged-parts', name: '롤', mergeGroupId: 'auto', groupNames: ['그룹 1'], sourceJobIds: ['a', 'b'],
+      createdAt: sources[0]!.createdAt, updatedAt: sources[0]!.updatedAt, rollWidthMm: 1220, usedLengthMm: 2000,
+      producedQuantity: 40, utilizationPercent: 80, wastePercent: 20, placements: [] };
+    const result = calculateProjectEstimate(sources, 10000, 15000, 0, [merged]);
+    expect(result.jobs).toHaveLength(0);
+    expect(result.materialLengthM).toBe(2);
+    expect(result.constructionCost).toBe(42450);
+    expect(result.constructionCostRange).toEqual({ min: 42450, max: 42450 });
+    expect(result.mergedJobs[0]?.sourceDetails?.map((source) => source.estimate.constructionCost)).toEqual([27500, 14950]);
+  });
   it('sums jobs and applies one project discount', () => {
     const result = calculateProjectEstimate([job('a', 1000), job('b', 2000)], 10000, 15000);
     expect(result.jobCount).toBe(2);

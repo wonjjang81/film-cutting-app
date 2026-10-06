@@ -12,6 +12,11 @@ const job: SavedCuttingJob = {
 };
 
 describe('calculateEstimate', () => {
+  it('uses a saved part rate unless an explicit area-rate override is supplied', () => {
+    const selected = { ...job, installationPart: '책장', constructionCostPerM: 27500 };
+    expect(calculateEstimate(selected).constructionCost).toBe(55000);
+    expect(calculateEstimate(selected, 10000, 20000).constructionCost).toBe(48800);
+  });
   it('calculates default material, construction, and tier discount', () => {
     expect(calculateEstimate(job)).toEqual({
       materialLengthM: 2, materialAreaM2: 2.44, materialCost: 20_000, productAreaM2: 2.5,

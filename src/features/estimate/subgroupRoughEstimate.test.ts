@@ -4,6 +4,11 @@ import { buildSubgroupRoughEstimateLines, calculateSubgroupRoughEstimate, hasSub
 import type { SavedCuttingJob } from '../library/models';
 
 describe('subgroup rough estimate', () => {
+  it('uses linear metre part pricing and site counts for rough estimates', () => {
+    const result = calculateSubgroupRoughEstimate({ widthMm: 1000, heightMm: 2000, depthMm: 500 }, { siteCount: 2, rollWidthMm: 1000, constructionCostPerM: 21960 });
+    expect(result.materialLengthM).toBe(10);
+    expect(result.constructionCost).toBe(219600);
+  });
   it('normalizes empty and invalid editable values safely', () => {
     expect(normalizeSubgroupOverallDimensions(undefined)).toEqual({ widthMm: 0, heightMm: 0, depthMm: 0, doorCount: 0 });
     expect(normalizeSubgroupOverallDimensions({ widthMm: -1, heightMm: Number.NaN, depthMm: 300, doorCount: 2.9 })).toEqual({ widthMm: 0, heightMm: 0, depthMm: 300, doorCount: 2 });

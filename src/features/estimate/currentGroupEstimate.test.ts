@@ -8,6 +8,17 @@ const form = (pieceWidth: string, pieceLength: string, quantity = '1') => ({
 });
 
 describe('current group estimate', () => {
+  it('retains a subgroup part and rate through snapshots and multiplies quantities by sites only once', () => {
+    const snapshot = createCurrentEstimateSnapshot([{ id: 'g1', name: '그룹 1', subgroups: [
+      { id: 'sg1', name: '주방', pieceIds: ['p1'], siteCount: 2, installationPart: '싱크대 하부장', constructionCostPerM: 20160 },
+    ], pieces: [{ id: 'p1', name: '조각 1', form: form('500', '1000', '3') }] }]);
+    const restored = parseCurrentEstimateSnapshot(JSON.stringify(snapshot));
+    const result = calculateCurrentGroupEstimate(restored!);
+    expect(result.jobs[0]).toMatchObject({ installationPart: '싱크대 하부장', constructionCostPerM: 20160, siteCount: 2, input: { quantity: 6 } });
+    const estimate = calculateProjectEstimate(result.jobs, 10000, 15000, 0, result.mergedJobs);
+    expect(estimate.inputPieceCount).toBe(6);
+    expect(estimate.constructionCost).toBe(Math.floor(estimate.materialLengthM * 20160));
+  });
   it('calculates all valid current pieces without saving a project', () => {
     const snapshot = createCurrentEstimateSnapshot([{ id: 'g1', name: '그룹 1', pieces: [
       { id: 'p1', name: '조각 1', form: form('500', '1000', '2') },

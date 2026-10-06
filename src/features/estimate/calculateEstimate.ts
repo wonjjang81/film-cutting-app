@@ -27,13 +27,14 @@ export type EstimateUsageOverride = {
   productAreaM2: number;
 };
 
-/** Calculates an estimate using the exact rates supplied by the caller. */
+/** Uses a part's linear-metre labor rate when supplied; otherwise retains area pricing. */
 export function calculateEstimateAtRates(
   job: SavedCuttingJob,
   materialCostPerM: number,
   constructionCostPerM2: number,
   discountRateOverride?: number,
   usageOverride?: EstimateUsageOverride,
+  constructionCostPerM?: number,
 ): Estimate {
   const materialLengthMm = Math.max(0, usageOverride?.materialLengthMm ?? job.result.newRollLengthMm);
   const materialWidthMm = Math.max(0, usageOverride?.materialWidthMm ?? job.input.rollWidthMm);
@@ -43,7 +44,9 @@ export function calculateEstimateAtRates(
     ? Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * job.input.quantity) / 1_000_000
     : Math.max(0, usageOverride.productAreaM2);
   const materialCost = roundWon(materialLengthM * Math.max(0, materialCostPerM));
-  const constructionCost = roundWon(materialAreaM2 * Math.max(0, constructionCostPerM2));
+  const constructionCost = constructionCostPerM !== undefined && Number.isFinite(constructionCostPerM) && constructionCostPerM >= 0
+    ? Math.floor(materialLengthM * constructionCostPerM)
+    : roundWon(materialAreaM2 * Math.max(0, constructionCostPerM2));
   const subtotal = materialCost + constructionCost;
   const automaticDiscountRate = materialAreaM2 >= 10 ? 0.15 : materialAreaM2 >= 5 ? 0.1 : materialAreaM2 >= 1 ? 0.05 : 0;
   const discountRate = discountRateOverride === undefined ? automaticDiscountRate : Math.min(1, Math.max(0, discountRateOverride));
@@ -65,5 +68,6 @@ export function calculateEstimate(
 ): Estimate {
   const effectiveMaterialCost = materialCostPerM === DEFAULT_MATERIAL_COST_PER_M && job.materialCostPerM !== undefined ? job.materialCostPerM : materialCostPerM;
   const effectiveConstructionCost = constructionCostPerM2 === DEFAULT_CONSTRUCTION_COST_PER_M2 && job.constructionCostPerM2 !== undefined ? job.constructionCostPerM2 : constructionCostPerM2;
-  return calculateEstimateAtRates(job, effectiveMaterialCost, effectiveConstructionCost, discountRateOverride, usageOverride);
+  return calculateEstimateAtRates(job, effectiveMaterialCost, effectiveConstructionCost, discountRateOverride, usageOverride,
+    constructionCostPerM2 === DEFAULT_CONSTRUCTION_COST_PER_M2 && job.installationPart ? job.constructionCostPerM : undefined);
 }

@@ -58,6 +58,7 @@ export function calculateSubgroupRoughEstimate(
     rollWidthMm?: number;
     materialCostPerM?: number;
     constructionCostPerM2?: number;
+    constructionCostPerM?: number;
     difficulty?: ConstructionDifficulty;
   } = {},
 ): SubgroupRoughEstimate {
@@ -74,7 +75,9 @@ export function calculateSubgroupRoughEstimate(
   const areaM2 = exposedAreaMm2 * siteCount / 1_000_000;
   const materialLengthM = exposedAreaMm2 * siteCount / rollWidthMm / 1_000;
   const materialCost = Math.round(materialLengthM * materialCostPerM);
-  const constructionCost = Math.round(areaM2 * constructionCostPerM2);
+  const constructionCost = options.constructionCostPerM !== undefined && Number.isFinite(options.constructionCostPerM) && options.constructionCostPerM >= 0
+    ? Math.floor(materialLengthM * options.constructionCostPerM)
+    : Math.round(areaM2 * constructionCostPerM2);
   return { areaM2, materialLengthM, materialCost, constructionCost, total: materialCost + constructionCost };
 }
 
@@ -114,7 +117,7 @@ export function buildSubgroupRoughEstimateLines(
       dimensions,
       siteCount,
       difficulty: job.difficulty,
-      ...calculateSubgroupRoughEstimate(dimensions, { siteCount, materialCostPerM, constructionCostPerM2, difficulty: job.difficulty }),
+      ...calculateSubgroupRoughEstimate(dimensions, { siteCount, materialCostPerM, constructionCostPerM2, constructionCostPerM: !options.globalRateOverride && job.installationPart ? job.constructionCostPerM : undefined, difficulty: job.difficulty }),
     };
   });
 }

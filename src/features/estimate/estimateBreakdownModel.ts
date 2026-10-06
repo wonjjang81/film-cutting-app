@@ -10,6 +10,7 @@ export type SubgroupEstimateBreakdown = {
   pieceCount: number;
   inputQuantity: number;
   siteCount?: number;
+  laborDescription?: string;
   amounts: EstimateBreakdownAmounts;
 };
 
@@ -22,7 +23,7 @@ export type MajorGroupEstimateBreakdown = {
   subgroups: SubgroupEstimateBreakdown[];
 };
 
-type MutableSubgroup = Omit<SubgroupEstimateBreakdown, 'siteCount'> & { siteCounts: Set<number> };
+type MutableSubgroup = Omit<SubgroupEstimateBreakdown, 'siteCount'> & { siteCounts: Set<number>; laborDescriptions: Set<string> };
 type MutableGroup = Omit<MajorGroupEstimateBreakdown, 'subgroups'> & { subgroups: Map<string, MutableSubgroup> };
 
 const emptyAmounts = (): EstimateBreakdownAmounts => ({ materialLengthM: 0, materialAreaM2: 0, materialCost: 0, constructionCost: 0, subtotal: 0 });
@@ -47,12 +48,12 @@ function normalizedGroupId(job: SavedCuttingJob): string {
 /** Builds two-level estimate rows from independent and merged-roll source allocations. */
 export function buildEstimateGroupBreakdown(estimate: Pick<ProjectEstimate, 'jobs' | 'mergedJobs'>): MajorGroupEstimateBreakdown[] {
   const sources = [
-    ...estimate.jobs.map(({ job, estimate: amounts }) => ({ job, amounts })),
-    ...estimate.mergedJobs.flatMap(({ sourceDetails }) => (sourceDetails ?? []).map(({ job, estimate: amounts }) => ({ job, amounts }))),
+    ...estimate.jobs.map(({ job, estimate: amounts, rates }) => ({ job, amounts, rates })),
+    ...estimate.mergedJobs.flatMap(({ sourceDetails }) => (sourceDetails ?? []).map(({ job, estimate: amounts, rates }) => ({ job, amounts, rates }))),
   ];
   const groups = new Map<string, MutableGroup>();
 
-  sources.forEach(({ job, amounts }) => {
+  sources.forEach(({ job, amounts, rates }) => {
     const groupId = normalizedGroupId(job);
     const subgroupName = job.subgroupName?.trim() || '미분류';
     const group = groups.get(groupId) ?? {
@@ -70,12 +71,15 @@ export function buildEstimateGroupBreakdown(estimate: Pick<ProjectEstimate, 'job
       inputQuantity: 0,
       amounts: emptyAmounts(),
       siteCounts: new Set<number>(),
+      laborDescriptions: new Set<string>(),
     };
     group.pieceCount += 1;
     group.inputQuantity += job.input.quantity;
     subgroup.pieceCount += 1;
     subgroup.inputQuantity += job.input.quantity;
     if (job.siteCount !== undefined) subgroup.siteCounts.add(job.siteCount);
+    if (rates.constructionCostPerM !== undefined) subgroup.laborDescriptions.add(`${job.installationPart} · ${rates.constructionCostPerM.toLocaleString('ko-KR')}원/m`);
+    else subgroup.laborDescriptions.add(`${rates.constructionCostPerM2.toLocaleString('ko-KR')}원/m²`);
     addAmounts(group.amounts, amounts);
     addAmounts(subgroup.amounts, amounts);
     group.subgroups.set(subgroupName, subgroup);
@@ -88,8 +92,9 @@ export function buildEstimateGroupBreakdown(estimate: Pick<ProjectEstimate, 'job
     pieceCount: group.pieceCount,
     inputQuantity: group.inputQuantity,
     amounts: group.amounts,
-    subgroups: [...group.subgroups.values()].map(({ siteCounts, ...subgroup }) => ({
+    subgroups: [...group.subgroups.values()].map(({ siteCounts, laborDescriptions, ...subgroup }) => ({
       ...subgroup,
+      laborDescription: [...laborDescriptions].join(' / '),
       ...(siteCounts.size === 1 ? { siteCount: [...siteCounts][0] } : {}),
     })),
   }));
