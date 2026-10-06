@@ -89,6 +89,8 @@ export type BuildSavedCuttingJobOptions = {
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
   subgroupOverallDimensions?: SubgroupOverallDimensions;
+  installationPart?: string;
+  constructionCostPerM?: number;
 };
 
 /** Builds the storage/export view of a tentative plan without mutating it. */
@@ -107,6 +109,8 @@ export function buildSavedCuttingJob({
   siteCount,
   difficulty,
   subgroupOverallDimensions,
+  installationPart,
+  constructionCostPerM,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
   const inventoryById = new Map(inventory.map((remnant) => [remnant.id, remnant]));
   const usageCounts = new Map<string, number>();
@@ -153,6 +157,8 @@ export function buildSavedCuttingJob({
     ...(siteCount === undefined ? {} : { siteCount }),
     ...(difficulty === undefined ? {} : { difficulty }),
     ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions: { ...subgroupOverallDimensions } }),
+    ...(installationPart?.trim() ? { installationPart: installationPart.trim() } : {}),
+    ...(constructionCostPerM === undefined ? {} : { constructionCostPerM }),
     createdAt,
     updatedAt: createdAt,
     input: {

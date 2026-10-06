@@ -20,6 +20,14 @@ const job = (id: string, groupId: string, subgroupName: string, length: number):
 });
 
 describe('estimate group breakdown', () => {
+  it('shows the applied part rate rather than the fallback square-metre rate', () => {
+    const source = { ...job('01', 'group-1', 'A', 2000), installationPart: '책장', constructionCostPerM: 27500 };
+    const grouped = buildEstimateGroupBreakdown(calculateProjectEstimate([source], 10000, 15000, 0));
+    expect(grouped[0]?.subgroups[0]?.laborDescription).toBe('책장 · 27,500원/m');
+    expect(grouped[0]?.subgroups[0]?.amounts.constructionCost).toBe(55000);
+    const global = buildEstimateGroupBreakdown(calculateProjectEstimate([source], 10000, 15000, 0, [], { rateMode: 'global' }));
+    expect(global[0]?.subgroups[0]?.laborDescription).toBe('15,000원/m²');
+  });
   it('aggregates piece estimates into major-group and subgroup totals', () => {
     const estimate = calculateProjectEstimate([
       job('01', 'group-1', 'A', 1000),

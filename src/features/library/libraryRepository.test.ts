@@ -158,6 +158,13 @@ function mergedJob(index = 1, overrides: Partial<SavedMergedCuttingJob> = {}): S
 }
 
 describe('library repository', () => {
+  it('preserves part pricing including zero through save, backup export and import', async () => {
+    const source = createLibraryRepository(memoryAdapter());
+    await source.saveJob(job(1, { subgroupName: '벽체', installationPart: '벽체', constructionCostPerM: 0 }));
+    const target = createLibraryRepository(memoryAdapter());
+    await target.importDocument(await source.exportDocument());
+    expect((await target.load()).document.jobs[0]).toMatchObject({ subgroupName: '벽체', installationPart: '벽체', constructionCostPerM: 0 });
+  });
   it('saves and reloads a branded remnant at its exact size', async () => {
     const repository = createLibraryRepository(memoryAdapter());
 

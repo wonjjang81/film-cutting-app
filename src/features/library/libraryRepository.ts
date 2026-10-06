@@ -269,6 +269,8 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   if (value.subgroupOverallDimensions !== undefined && subgroupOverallDimensions === undefined) return undefined;
   if (value.materialCostPerM !== undefined && !finiteNonnegative(value.materialCostPerM)) return undefined;
   if (value.constructionCostPerM2 !== undefined && !finiteNonnegative(value.constructionCostPerM2)) return undefined;
+  if (value.installationPart !== undefined && (typeof value.installationPart !== 'string' || !value.installationPart.trim())) return undefined;
+  if (value.constructionCostPerM !== undefined && !finiteNonnegative(value.constructionCostPerM)) return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
   if (value.isInventoryConfirmed !== undefined && typeof value.isInventoryConfirmed !== 'boolean') return undefined;
   if (value.inventoryConfirmedAt !== undefined && inventoryConfirmedAt === undefined) return undefined;
@@ -284,6 +286,8 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions }),
     ...(value.materialCostPerM === undefined ? {} : { materialCostPerM: value.materialCostPerM }),
     ...(value.constructionCostPerM2 === undefined ? {} : { constructionCostPerM2: value.constructionCostPerM2 }),
+    ...(value.installationPart === undefined ? {} : { installationPart: value.installationPart.trim() }),
+    ...(value.constructionCostPerM === undefined ? {} : { constructionCostPerM: value.constructionCostPerM }),
     remnantIds: [...value.remnantIds], remnantSummary: remnantSummary as SavedRemnantSummary[], result,
     ...(value.isCuttingComplete === undefined ? {} : { isCuttingComplete: value.isCuttingComplete }),
     ...(cuttingCompletedAt === undefined ? {} : { cuttingCompletedAt }),
