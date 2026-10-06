@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ProjectEstimate } from './calculateProjectEstimate';
 import { INSTALLATION_LABOR_REFERENCES, type InstallationMode } from './installationLabor';
-import { majorGroupEstimateLabel } from './estimateBreakdownModel';
+import { buildEstimateGroupBreakdown } from './estimateBreakdownModel';
 
 const number = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 
@@ -12,30 +12,24 @@ export function InstallationLaborPanel({ estimate, mode, disabled, onChangeMode,
 }) {
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const lines = estimate.installationLaborLines ?? [];
-  const calculated = lines.flatMap((line) => line.calculation ? [line.calculation] : []);
-  const units = calculated.reduce((sum, line) => sum + line.allocatedUnits, 0);
+  const materialCosts = new Map(buildEstimateGroupBreakdown(estimate).flatMap((group) => group.subgroups.map((subgroup) => [subgroup.id, subgroup.amounts.materialCost] as const)));
+  const siteCounts = new Map(buildEstimateGroupBreakdown(estimate).flatMap((group) => group.subgroups.map((subgroup) => [subgroup.id, subgroup.siteCount ?? 1] as const)));
   const billed = estimate.constructionCost / 250_000;
-  const length = calculated.reduce((sum, line) => sum + line.lengthM, 0);
   return <View style={styles.card}>
     <Text style={styles.title}>부위별 품수 · 인건비</Text>
     <View style={styles.buttons}>{(['whole', 'standalone'] as const).map((value) => <TouchableOpacity key={value} disabled={disabled} accessibilityRole="button" accessibilityState={{ selected: mode === value, disabled }} onPress={() => onChangeMode(value)} style={[styles.button, mode === value && styles.active]}><Text style={[styles.buttonText, mode === value && styles.activeText]}>{value === 'whole' ? '전체시공' : '단독시공'}</Text></TouchableOpacity>)}</View>
-    <Text style={styles.hint}>평균 할당품수 ÷ 기준 물량(m) × 적용 길이(m) × 250,000원/품</Text>
-    <Text style={styles.hint}>단독시공: MAX(전체 합산 인건비, 125,000원) · 합산 최소 0.5품 한 번만 적용 (할인 전)</Text>
     {disabled ? <Text style={styles.warning}>전체 단가 덮어쓰기 중에는 기본 원/m² 단가를 사용합니다. 덮어쓰기를 끄면 부위별 계산을 적용합니다.</Text> : <>
-      <Text style={styles.total}>할당 {number(units)}품 · 청구 {number(billed)}품</Text>
+      <Text style={styles.total}>시공비 {estimate.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {estimate.materialCost.toLocaleString('ko-KR')}원</Text>
+      <Text style={styles.hint}>시공품수 {number(billed)}품</Text>
       {lines.some((line) => (line.minimumSupplement ?? 0) > 0) && <Text style={styles.warning}>전체 합산 인건비가 0.5품 미만이므로 총 125,000원으로 보정했습니다.</Text>}
-      <Text style={styles.hint}>선택 부위 {number(length)}m · 평균 {number(length > 0 ? units / length : 0)}품/m · 전체 청구 {number(estimate.materialLengthM > 0 ? billed / estimate.materialLengthM : 0)}품/m</Text>
-      <Text style={styles.hint}>저장된 단가·배치 원본은 변경하지 않고 이 견적에서 평균 품수로 재계산합니다. 미선택 부위는 기존 단가를 유지하며 품수 합계에서 제외합니다.</Text>
       {lines.map((line) => <View key={line.id} style={styles.line}>
-        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName}</Text><Text style={styles.hint}>{majorGroupEstimateLabel(line.groupId)} · 원단 {number(line.lengthM)}m</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
+        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
+        <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(materialCosts.get(line.id) ?? 0).toLocaleString('ko-KR')}원</Text>
+        <Text style={styles.hint}>시공품수 {number(line.constructionCost / 250_000)}품</Text>
         {line.calculation ? <>
-          <Text style={styles.hint}>{line.calculation.reference ?? '직접 입력 단가를 품수로 환산'}</Text>
-          <Text style={styles.hint}>전체시공 단가 {number(line.calculation.costPerM)}원/m · {number(line.calculation.unitsPerM)}품/m</Text>
-          <Text style={styles.formula}>{line.calculation.formula} = {line.constructionCost.toLocaleString('ko-KR')}원</Text>
-          {line.calculation.minimumApplied && <Text style={styles.hint}>할당 {number(line.calculation.allocatedUnits)}품 · 합산 최소금액 배분 후 청구 {number(line.calculation.billedUnits)}품</Text>}
           {line.calculation.unavailable && <Text style={styles.warning}>표에서는 드레스룸 단독시공을 권장하지 않습니다. 다른 공정과 병행 여부를 확인해 주세요.</Text>}
           {line.part === '샷시 (내부)' && <Text style={styles.warning}>유리 실리콘 재코킹 인건비 별도</Text>}
-        </> : <Text style={styles.hint}>기존 인건비 {line.constructionCost.toLocaleString('ko-KR')}원 · 부위를 선택하면 평균 품수 계산 적용</Text>}
+        </> : null}
       </View>)}
       <Text style={styles.hint}>표의 현장 변수 예비 0.5~1품은 별도이며 자동 가산하지 않습니다.</Text>
     </>}
