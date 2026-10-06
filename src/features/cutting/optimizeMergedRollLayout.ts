@@ -10,6 +10,9 @@ export type MergedPlacement = {
   id: number;
   sourceId: string;
   instanceIndex: number;
+  /** Display metadata only; sourceId and instanceIndex remain the saved identity. */
+  siteName?: string;
+  pieceName?: string;
   x: number;
   y: number;
   width: number;

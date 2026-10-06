@@ -8,6 +8,23 @@ const form = (pieceWidth: string, pieceLength: string, quantity = '1') => ({
 });
 
 describe('current group estimate', () => {
+  it('charges two locations once and preserves their count in estimate details', () => {
+    const snapshot = createCurrentEstimateSnapshot([{ id: 'g1', name: '그룹 1',
+      subgroups: [{ id: 'sg1', name: '입구방문', pieceIds: ['p1'], siteCount: 2, difficulty: 'low' }],
+      pieces: [{ id: 'p1', name: 'p1', form: form('500', '1000', '3') }],
+    }]);
+    const { jobs, mergedJobs } = calculateCurrentGroupEstimate(snapshot);
+    const estimate = calculateProjectEstimate(jobs, 10000, 15000, 0, mergedJobs);
+    const baseline = calculateCurrentGroupEstimate(createCurrentEstimateSnapshot([{ ...snapshot.pieces[0]!,
+      subgroups: [{ ...snapshot.pieces[0]!.subgroups![0]!, siteCount: 1 }],
+      pieces: [{ ...snapshot.pieces[0]!.pieces[0]!, form: form('500', '1000', '6') }],
+    }]));
+    const singleSiteEstimate = calculateProjectEstimate(baseline.jobs, 10000, 15000, 0, baseline.mergedJobs);
+    expect(estimate.inputPieceCount).toBe(6);
+    expect(estimate.constructionCost).toBe(singleSiteEstimate.constructionCost);
+    expect(estimate.materialCost).toBe(singleSiteEstimate.materialCost);
+    expect(jobs[0]?.siteCount).toBe(2);
+  });
   it('retains a subgroup part and rate through snapshots and multiplies quantities by sites only once', () => {
     const snapshot = createCurrentEstimateSnapshot([{ id: 'g1', name: '그룹 1', subgroups: [
       { id: 'sg1', name: '주방', pieceIds: ['p1'], siteCount: 2, installationPart: '싱크대 하부장', constructionCostPerM: 20160 },

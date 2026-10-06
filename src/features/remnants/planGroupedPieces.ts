@@ -118,7 +118,7 @@ export function planMergedGroups(
     buckets.set(key, bucket);
   }
   let working = inventory.map((item) => ({ ...item }));
-  return [...buckets.values()].filter((entries) => entries.length > 1).map((entries) => {
+  return [...buckets.values()].filter((entries) => entries.length > 1 || entries.some((entry) => (entry.siteCount ?? 1) > 1)).map((entries) => {
     const planned = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants ? working : []);
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
@@ -269,12 +269,28 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     rollResults.push(roll);
   }
   const sourceInstanceCounts = new Map<string, number>();
+  const sourceSiteOffsets = new Map<string, number>();
+  const entryBySource = new Map(entries.map((entry) => [sourceId(entry), entry]));
   let nextPlacementId = 1;
-  rollResults = rollResults.map((roll) => ({ ...roll, placements: roll.placements.map((placement) => {
+  const identifyPlacement = (placement: MergedPlacement, preserveId = false): MergedPlacement => {
     const instanceIndex = sourceInstanceCounts.get(placement.sourceId) ?? 0;
     sourceInstanceCounts.set(placement.sourceId, instanceIndex + 1);
-    return { ...placement, id: nextPlacementId++, instanceIndex };
-  }) }));
+    const entry = entryBySource.get(placement.sourceId);
+    const siteCount = Math.max(1, Math.floor(entry?.siteCount ?? 1));
+    const perSiteQuantity = entry ? Math.max(1, entry.request.quantity / siteCount) : 1;
+    const displayIndex = instanceIndex + (preserveId ? 0 : sourceSiteOffsets.get(placement.sourceId) ?? 0);
+    const siteName = entry?.subgroupName && siteCount > 1 ? `${entry.subgroupName}${Math.floor(displayIndex / perSiteQuantity) + 1}` : undefined;
+    const pieceName = siteName && entry ? (entry.pieceName.startsWith(`${entry.subgroupName}_`) ? `${siteName}${entry.pieceName.slice(entry.subgroupName!.length)}` : `${siteName} · ${entry.pieceName}`) : undefined;
+    return { ...placement, id: preserveId ? placement.id : nextPlacementId++, instanceIndex: preserveId ? placement.instanceIndex : instanceIndex, ...(siteName ? { siteName, pieceName } : {}) };
+  };
+  // Count remnants first so location assignments stay unique across all physical rolls.
+  remnantUses.forEach((use) => {
+    use.placements = use.placements.map((placement) => identifyPlacement(placement, true));
+    use.result = { ...use.result, placements: use.placements };
+  });
+  sourceInstanceCounts.forEach((count, source) => sourceSiteOffsets.set(source, count));
+  sourceInstanceCounts.clear();
+  rollResults = rollResults.map((roll) => ({ ...roll, placements: roll.placements.map((placement) => identifyPlacement(placement)) }));
   let lengthOffset = 0;
   const combinedPlacements = rollResults.flatMap((roll) => {
     const placements = roll.placements.map((placement) => ({ ...placement, y: placement.y + lengthOffset }));

@@ -4,6 +4,28 @@ import { planGroupedPieces, planMergedGroups, type GroupedPieceRequest } from '.
 const base = { rollWidthMm: 1220, pieceWidthMm: 100, pieceLengthMm: 100, quantity: 1, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true };
 
 describe('planGroupedPieces', () => {
+  it('labels each location independently without multiplying quantities again', () => {
+    const requests: GroupedPieceRequest[] = [
+      { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '입구방문_01', subgroupName: '입구방문', siteCount: 2, request: { brand: '영림', productNumber: '', remnants: [], ...base, quantity: 4 } },
+      { groupId: 'g1', groupName: '그룹 1', pieceId: 'p2', pieceName: '입구방문_02', subgroupName: '입구방문', siteCount: 2, request: { brand: '영림', productNumber: '', remnants: [], ...base, quantity: 2 } },
+    ];
+    const [plan] = planMergedGroups(requests, 1220, [], false);
+    expect(plan!.result.placements).toHaveLength(6);
+    expect(new Set(plan!.result.placements.map((p) => p.id)).size).toBe(6);
+    expect(plan!.result.placements.filter((p) => p.siteName === '입구방문1')).toHaveLength(3);
+    expect(plan!.result.placements.filter((p) => p.siteName === '입구방문2')).toHaveLength(3);
+    expect(plan!.result.placements.map((p) => p.pieceName)).toEqual(expect.arrayContaining(['입구방문1_01', '입구방문2_01', '입구방문1_02', '입구방문2_02']));
+    const [oldPlan] = planMergedGroups(requests.map((entry) => ({ ...entry, siteCount: 1 })), 1220, [], false);
+    const identities = (placements: NonNullable<typeof plan>['result']['placements']) => placements.map(({ id, sourceId, instanceIndex }) => ({ id, sourceId, instanceIndex }));
+    expect(identities(plan!.result.placements)).toEqual(identities(oldPlan!.result.placements));
+  });
+
+  it('keeps a single source with multiple locations in the merged preview', () => {
+    const [plan] = planMergedGroups([{ groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '방문_01', subgroupName: '방문', siteCount: 2, request: { brand: '영림', productNumber: '', remnants: [], ...base, quantity: 2, pieceWidthMm: 1000, pieceLengthMm: 20000 } }], 1220, [], false);
+    expect(plan!.rollResults).toHaveLength(2);
+    expect(plan!.result.placements.map((p) => p.pieceName)).toEqual(expect.arrayContaining(['방문1_01', '방문2_01']));
+    expect(plan!.result.placements.map((p) => p.instanceIndex).sort()).toEqual([0, 1]);
+  });
   it('carries inventory forward between pieces in group order', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '조각 1', request: { brand: '영림', productNumber: '', remnants: [], ...base } },

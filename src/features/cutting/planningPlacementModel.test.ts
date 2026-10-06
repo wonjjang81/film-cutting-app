@@ -4,6 +4,13 @@ import { areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob,
 const placement = (id: number, sourceId: string) => ({ id, sourceId, instanceIndex: 0, x: 0, y: id * 10, width: 100, height: 200, rotated: false });
 
 describe('planning placement model', () => {
+  it('separates installation locations under the same subgroup', () => {
+    const groups = groupPlacementsBySubgroup([
+      { ...placement(1, 'g1-p1'), siteName: '입구방문1' },
+      { ...placement(2, 'g1-p1'), siteName: '입구방문2' },
+    ], { 'g1-p1': '입구방문' });
+    expect(groups.map((group) => group.title)).toEqual(['입구방문1', '입구방문2']);
+  });
   it('finds an ID in its physical roll and prefers the selected major group when IDs repeat', () => {
     const plans = [
       { key: 'group-1', rolls: [{ placements: [{ id: 7, y: 100, height: 200 }] }] },

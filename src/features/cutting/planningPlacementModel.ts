@@ -1,4 +1,4 @@
-export type PlacementSource = { id: number; sourceId: string };
+export type PlacementSource = { id: number; sourceId: string; siteName?: string };
 
 export type MergedPlanSource = { mergeGroupId: string; sourceIds: readonly string[] };
 export type SavedMergedJobSource = { mergeGroupId: string; sourceIds?: readonly string[]; updatedAt: string };
@@ -89,7 +89,7 @@ export function groupPlacementsBySubgroup<T extends PlacementSource>(
 ): PlacementSubgroup<T>[] {
   const grouped = new Map<string, PlacementSubgroup<T>>();
   placements.forEach((placement) => {
-    const subgroup = subgroupNamesBySourceId[placement.sourceId]?.trim() || fallback;
+    const subgroup = placement.siteName || subgroupNamesBySourceId[placement.sourceId]?.trim() || fallback;
     const majorGroup = majorGroupNamesBySourceId?.[placement.sourceId]?.trim();
     const title = majorGroup ? `${majorGroup} · ${subgroup}` : subgroup;
     const current = grouped.get(title);

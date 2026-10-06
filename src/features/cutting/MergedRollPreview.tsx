@@ -252,7 +252,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       {!compact && <Modal visible={selected !== null} transparent animationType="fade" onRequestClose={() => setSelectedId(null)}>
         <View style={styles.modalBackdrop}>
           {selected && (() => {
-            const info = formatPlacementInfo(labelBySource.get(selected.sourceId) ?? selected.sourceId, selected.width, selected.height, selected.rotated, selected.x, selected.y);
+            const info = formatPlacementInfo(selected.pieceName ?? labelBySource.get(selected.sourceId) ?? selected.sourceId, selected.width, selected.height, selected.rotated, selected.x, selected.y);
             const completion = placementCompletionControl(completedPlacementIds.has(selected.id), busy, Boolean(onTogglePlacementComplete));
             return <View style={styles.modalCard} accessibilityViewIsModal accessibilityLabel="병합 조각 정보 팝업">
               <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
@@ -336,7 +336,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           {!collapsed && group.items.map((placement) => {
             const completed = completedPlacementIds.has(placement.id);
             return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 도면에서 보기`} onPress={() => { setSelectedId(placement.id); onSelectPlacement?.(placement.id); }} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 도면에서 보기`} onPress={() => { setSelectedId(placement.id); onSelectPlacement?.(placement.id); }} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {placement.pieceName ?? labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 조각 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
             </View>;
           })}
