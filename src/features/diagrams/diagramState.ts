@@ -3,6 +3,8 @@ import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
 export const DIAGRAM_PARTS = { upper: '싱크대 상부장', lower: '싱크대 하부장', fridge: '냉장고장', vanity: '화장대', shelf: '책장', sash: '샷시 (내부)', bathdoor: '화장실문/문틀', shoe: '신발장', door: '방문/문틀', island: '아일랜드식탁', wardrobe: '붙박이장', dress: '드레스룸' } as const;
 export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
 export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string };
+export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: 'V', shelf: 'B', sash: 'S', bathdoor: 'T', shoe: 'H', door: 'D', island: 'I', wardrobe: 'W', dress: 'C' } as const;
+export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
 type Size = { cols: number; rows: number };
 type Shape = { id: number; role: string; name: string; cells: number[] };
 export type DiagramState = { version: 1 | 2; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; shapes: Shape[] }[] };
@@ -34,6 +36,11 @@ export function parseDiagramState(value: unknown): DiagramState | null {
 }
 
 export function parseDiagramSelection(v: unknown): DiagramSelection | null {
+  if (object(v) && typeof v.id === 'string' && typeof v.shapeKey === 'string' && v.shapeKey === `cabinet:${v.id}` && text(v.name)) {
+    const id = v.id;
+    const section = Object.entries(CABINET_PREFIXES).find(([, prefix]) => prefix === id[0])?.[0];
+    if (section && /^(?:[A-Z](?:[1-9]\d*|0[1-9])(?:-(?:SL|SR|TOP|BASE|ML|MR|MT))?|[UL]-(?:SL|SR|MT|KB))$/.test(id) && DIAGRAM_PARTS[section as keyof typeof DIAGRAM_PARTS] === v.part) return v as DiagramSelection;
+  }
   if (!object(v) || typeof v.id !== 'string' || !/^G\d{2,}$/.test(v.id) || typeof v.shapeKey !== 'string' || !/^[a-z]+:[1-9]\d*$/.test(v.shapeKey) || !text(v.name) || typeof v.part !== 'string' || !INSTALLATION_LABOR_REFERENCES.some(p => p.name === v.part)) return null;
   const [key, id] = v.shapeKey.split(':');
   if (!part(key) || DIAGRAM_PARTS[key as keyof typeof DIAGRAM_PARTS] !== v.part || Number(v.id.slice(1)) !== Number(id)) return null;
@@ -42,4 +49,19 @@ export function parseDiagramSelection(v: unknown): DiagramSelection | null {
 
 export function diagramStorageKey(userId: string): string {
   return `film-cutting-diagrams-v1:${encodeURIComponent(userId)}`;
+}
+
+export function parseCabinetState(v: unknown): CabinetState | null {
+  if (!object(v) || v.version !== 4 || !part(v.view) || !Array.isArray(v.parts) || !Array.isArray(v.surfaces) || v.parts.length > 30 || v.surfaces.length > 60 || !object(v.next) || JSON.stringify(v).length > 250000) return null;
+  const ids = new Set<string>();
+  for (const p of [...v.parts, ...v.surfaces]) {
+    if (!object(p) || typeof p.id !== 'string' || !/^[A-Z][A-Z0-9-]{1,39}$/.test(p.id) || ids.has(p.id) || !part(p.section) || typeof p.name !== 'string' || p.name.length > 120 || !['double', 'single', 'hood', 'empty', 'surface'].includes(String(p.kind))) return null;
+    if (p.id[0] !== CABINET_PREFIXES[p.section as keyof typeof CABINET_PREFIXES]) return null;
+    if (!['width', 'height', 'qty', 'a', 'b', 'allowance', 'sites'].every(k => typeof p[k] === 'number' && Number.isFinite(p[k]) && Number(p[k]) >= 0)) return null;
+    if (p.hoodDoorKind !== undefined && !['double','single'].includes(String(p.hoodDoorKind))) return null;
+    if (p.owner !== undefined && p.owner !== null && typeof p.owner !== 'string') return null;
+    ids.add(p.id);
+  }
+  if (!Object.entries(v.next).every(([p, n]) => part(p) && Number.isSafeInteger(n) && Number(n) > 0)) return null;
+  return JSON.parse(JSON.stringify({ ...v, screen: 'diagram', query: '', queue: [] })) as CabinetState;
 }

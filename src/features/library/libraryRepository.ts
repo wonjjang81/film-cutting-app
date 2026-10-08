@@ -269,7 +269,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
   if (value.subgroupOverallDimensions !== undefined && subgroupOverallDimensions === undefined) return undefined;
   if (value.materialCostPerM !== undefined && !finiteNonnegative(value.materialCostPerM)) return undefined;
   if (value.constructionCostPerM2 !== undefined && !finiteNonnegative(value.constructionCostPerM2)) return undefined;
-  if (value.diagramShapeKey !== undefined && (typeof value.diagramShapeKey !== 'string' || !/^[a-z]+:[1-9]\d*$/.test(value.diagramShapeKey))) return undefined;
+  if (value.diagramShapeKey !== undefined && (typeof value.diagramShapeKey !== 'string' || !/^(?:[a-z]+:[1-9]\d*|cabinet:[A-Z][A-Z0-9-]{1,39})$/.test(value.diagramShapeKey))) return undefined;
   if (value.installationPart !== undefined && (typeof value.installationPart !== 'string' || !value.installationPart.trim())) return undefined;
   if (value.constructionCostPerM !== undefined && !finiteNonnegative(value.constructionCostPerM)) return undefined;
   if (value.cuttingCompletedAt !== undefined && cuttingCompletedAt === undefined) return undefined;
