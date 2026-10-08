@@ -3,6 +3,7 @@ import { ActivityIndicator, View } from 'react-native';
 import { useAuthSession } from '../../src/features/auth/AuthSession';
 import {
   CircleHelp,
+  Grid2X2,
   ClipboardList,
   FolderOpen,
   ReceiptText,
@@ -65,6 +66,7 @@ export default function TabsLayout() {
           tabBarIcon: ({ color, size }) => <TabIcon Icon={Scissors} color={color} size={size} />,
         }}
       />
+      <Tabs.Screen name="diagrams" options={{ title: '모눈 제작', href: '/diagrams' as any, tabBarIcon: ({ color, size }) => <TabIcon Icon={Grid2X2} color={color} size={size} /> }} />
       <Tabs.Screen
         name="planning"
         options={{

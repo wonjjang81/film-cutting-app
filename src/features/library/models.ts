@@ -79,6 +79,7 @@ export type SavedCuttingJob = {
   difficulty?: ConstructionDifficulty;
   /** Optional overall measurements used only for the non-binding rough estimate. */
   subgroupOverallDimensions?: SubgroupOverallDimensions;
+  diagramShapeKey?: string;
   installationPart?: string;
   constructionCostPerM?: number;
   materialCostPerM?: number;
