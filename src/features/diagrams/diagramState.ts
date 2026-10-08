@@ -1,0 +1,45 @@
+import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
+
+export const DIAGRAM_PARTS = { upper: '싱크대 상부장', lower: '싱크대 하부장', fridge: '냉장고장', vanity: '화장대', shelf: '책장', sash: '샷시 (내부)', bathdoor: '화장실문/문틀', shoe: '신발장', door: '방문/문틀', island: '아일랜드식탁', wardrobe: '붙박이장', dress: '드레스룸' } as const;
+export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
+export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string };
+type Size = { cols: number; rows: number };
+type Shape = { id: number; role: string; name: string; cells: number[] };
+export type DiagramState = { version: 1 | 2; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; shapes: Shape[] }[] };
+const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
+const size = (v: unknown): v is Size => object(v) && Number.isInteger(v.cols) && Number(v.cols) >= 24 && Number(v.cols) <= 64 && Number.isInteger(v.rows) && Number(v.rows) >= 16 && Number(v.rows) <= 64;
+const part = (v: unknown): v is string => typeof v === 'string' && Object.hasOwn(DIAGRAM_PARTS, v);
+const text = (v: unknown) => typeof v === 'string' && v.length <= 40;
+function shapes(v: unknown, grid: Size): boolean {
+  if (!Array.isArray(v) || v.length > 40) return false;
+  const occupied = new Set<number>(), ids = new Set<number>();
+  for (const s of v) {
+    if (!object(s) || !Number.isSafeInteger(s.id) || Number(s.id) < 1 || ids.has(Number(s.id)) || !DIAGRAM_ROLES.includes(s.role as typeof DIAGRAM_ROLES[number]) || !text(s.name) || !Array.isArray(s.cells) || !s.cells.length || s.cells.length > grid.cols * grid.rows) return false;
+    ids.add(Number(s.id));
+    for (const i of s.cells) { if (!Number.isInteger(i) || i < 0 || i >= grid.cols * grid.rows || occupied.has(i)) return false; occupied.add(i); }
+  }
+  return true;
+}
+/** Reject malformed state rather than silently overwriting an existing drawing. */
+export function parseDiagramState(value: unknown): DiagramState | null {
+  if (!object(value) || ![1, 2].includes(Number(value.version)) || !part(value.part) || !object(value.drawings) || !Array.isArray(value.presets) || value.presets.length > 8) return null;
+  if (!Number.isSafeInteger(value.next) || Number(value.next) < 1 || !Number.isSafeInteger(value.nextPreset) || Number(value.nextPreset) < 1 || !(value.selected === null || Number.isSafeInteger(value.selected))) return null;
+  if (value.sizes !== undefined && (!object(value.sizes) || !Object.entries(value.sizes).every(([p, s]) => part(p) && size(s)))) return null;
+  const sizes = value.sizes as Record<string, Size> | undefined;
+  if (!Object.entries(value.drawings).every(([p, s]) => part(p) && shapes(s, sizes?.[p] ?? { cols: 24, rows: 16 }))) return null;
+  if (!value.presets.every(p => object(p) && typeof p.id === 'string' && /^P[1-9]\d*$/.test(p.id) && part(p.part) && text(p.name) && (p.size === undefined || size(p.size)) && shapes(p.shapes, p.size as Size ?? { cols: 24, rows: 16 }))) return null;
+  if (new Set(value.presets.map(p => p.id)).size !== value.presets.length) return null;
+  if (JSON.stringify(value).length > 250000) return null;
+  return JSON.parse(JSON.stringify(value)) as DiagramState;
+}
+
+export function parseDiagramSelection(v: unknown): DiagramSelection | null {
+  if (!object(v) || typeof v.id !== 'string' || !/^G\d{2,}$/.test(v.id) || typeof v.shapeKey !== 'string' || !/^[a-z]+:[1-9]\d*$/.test(v.shapeKey) || !text(v.name) || typeof v.part !== 'string' || !INSTALLATION_LABOR_REFERENCES.some(p => p.name === v.part)) return null;
+  const [key, id] = v.shapeKey.split(':');
+  if (!part(key) || DIAGRAM_PARTS[key as keyof typeof DIAGRAM_PARTS] !== v.part || Number(v.id.slice(1)) !== Number(id)) return null;
+  return v as DiagramSelection;
+}
+
+export function diagramStorageKey(userId: string): string {
+  return `film-cutting-diagrams-v1:${encodeURIComponent(userId)}`;
+}

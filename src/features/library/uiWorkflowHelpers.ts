@@ -89,6 +89,7 @@ export type BuildSavedCuttingJobOptions = {
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
   subgroupOverallDimensions?: SubgroupOverallDimensions;
+  diagramShapeKey?: string;
   installationPart?: string;
   constructionCostPerM?: number;
 };
@@ -109,6 +110,7 @@ export function buildSavedCuttingJob({
   siteCount,
   difficulty,
   subgroupOverallDimensions,
+  diagramShapeKey,
   installationPart,
   constructionCostPerM,
 }: BuildSavedCuttingJobOptions): SavedCuttingJob {
@@ -157,6 +159,7 @@ export function buildSavedCuttingJob({
     ...(siteCount === undefined ? {} : { siteCount }),
     ...(difficulty === undefined ? {} : { difficulty }),
     ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions: { ...subgroupOverallDimensions } }),
+    ...(diagramShapeKey ? { diagramShapeKey } : {}),
     ...(installationPart?.trim() ? { installationPart: installationPart.trim() } : {}),
     ...(constructionCostPerM === undefined ? {} : { constructionCostPerM }),
     createdAt,

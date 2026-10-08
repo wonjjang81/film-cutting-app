@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConstructionDiagram } from '../../src/features/diagrams/ConstructionDiagram';
+import type { DiagramSelection } from '../../src/features/diagrams/diagramState';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -42,7 +44,7 @@ const initialForm: CuttingFormState = {
 };
 type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
 type EditableSubgroupOverallDimensions = { widthMm: string; heightMm: string; depthMm: string; doorCount: string };
-type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; installationPart?: string; constructionCostPerM?: number };
+type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number };
 type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string; patternFixed: boolean };
 type PendingBatchSave = { jobs: SavedCuttingJob[]; mergedJobs: SavedMergedCuttingJob[] };
 type SavedPiecePlanView = {
@@ -96,6 +98,13 @@ const statusCopy = {
 } as const;
 
 export default function FilmCutInputScreen() {
+  const pageScroll = useRef<ScrollView>(null);
+  const pageViewport = useRef<View>(null);
+  const subgroupAnchor = useRef<View>(null);
+  const pageScrollY = useRef(0);
+  const showSubgroupInputs = () => requestAnimationFrame(() => subgroupAnchor.current?.measureInWindow((_x, y) => {
+    pageViewport.current?.measureInWindow((_sx, top) => pageScroll.current?.scrollTo({ y: Math.max(0, pageScrollY.current + y - top - 16), animated: true }));
+  }));
   const { jobId: routeJobId, projectId: routeProjectId, newProject: routeNewProject } = useLocalSearchParams<{ jobId?: string; projectId?: string; newProject?: string }>();
   const routedJobRef = useRef<string | null>(null);
   const routedProjectRef = useRef<string | null>(null);
@@ -199,7 +208,7 @@ export default function FilmCutInputScreen() {
     });
     const restoredGroups: CuttingGroupDraft[] = [];
     const groupsByName = new Map<string, CuttingGroupDraft>();
-    const subgroupByGroupName = new Map<string, Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; installationPart?: string; constructionCostPerM?: number }>>();
+    const subgroupByGroupName = new Map<string, Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number }>>();
     savedJobs.forEach((job, index) => {
       const [groupLabel, ...pieceLabel] = job.name.split(' · ');
       const groupName = groupLabel?.trim() || `그룹 ${index + 1}`;
@@ -218,8 +227,8 @@ export default function FilmCutInputScreen() {
         : restoredPieceId;
       group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
       const subgroupName = job.subgroupName?.trim() || 'A';
-      const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; installationPart?: string; constructionCostPerM?: number }>();
-      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)), overallDimensions: editableSubgroupOverallDimensions(job.subgroupOverallDimensions), installationPart: job.installationPart, constructionCostPerM: job.constructionCostPerM };
+      const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number }>();
+      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)), overallDimensions: editableSubgroupOverallDimensions(job.subgroupOverallDimensions), diagramShapeKey: job.diagramShapeKey, installationPart: job.installationPart, constructionCostPerM: job.constructionCostPerM };
       subgroup.pieceIds.push(uniquePieceId);
       subgroup.difficulty = normalizeDifficulty(job.difficulty ?? subgroup.difficulty);
       subgroups.set(subgroupName, subgroup);
@@ -230,7 +239,7 @@ export default function FilmCutInputScreen() {
       group.patternFixed = group.pieces.length > 0 && group.pieces.every((piece) => !piece.form.allowRotation);
       const savedSubgroups = subgroupByGroupName.get(group.name);
       group.subgroups = savedSubgroups
-        ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty, siteCount: value.siteCount, overallDimensions: value.overallDimensions, installationPart: value.installationPart, constructionCostPerM: value.constructionCostPerM }))
+        ? [...savedSubgroups.entries()].map(([name, value]) => ({ id: `${group.id}-subgroup-${name}`, name, pieceIds: value.pieceIds, expanded: true, difficulty: value.difficulty, siteCount: value.siteCount, overallDimensions: value.overallDimensions, diagramShapeKey: value.diagramShapeKey, installationPart: value.installationPart, constructionCostPerM: value.constructionCostPerM }))
         : [{ id: `${group.id}-subgroup-A`, name: 'A', pieceIds: group.pieces.map((piece) => piece.id), expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }];
     });
     const firstGroup = restoredGroups[0]!;
@@ -355,6 +364,30 @@ export default function FilmCutInputScreen() {
     next.name = next.id;
     setGroups((items) => items.map((item) => item.id === groupId ? { ...item, form: next.form, pieces: [...item.pieces, next], subgroups: item.subgroups.map((subgroup) => subgroup.id === targetSubgroup.id ? { ...subgroup, pieceIds: [...subgroup.pieceIds, next.id], expanded: true } : subgroup) } : item));
     setActiveGroupId(groupId); setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
+  };
+  const selectDiagramShape = (selection: DiagramSelection) => {
+    const existing = groups.flatMap(group => group.subgroups.map(subgroup => ({ group, subgroup }))).find(({ subgroup }) => subgroup.diagramShapeKey === selection.shapeKey);
+    if (existing) {
+      const piece = existing.group.pieces.find(p => existing.subgroup.pieceIds.includes(p.id));
+      if (piece) selectPiece(piece, existing.group.id);
+      showSubgroupInputs();
+      setNotice(`도면 ${selection.id}: 기존 소그룹 ${existing.subgroup.name}을 선택했습니다.`);
+      return;
+    }
+    const group = groups.find(g => g.id === activeGroupId);
+    if (!group) return;
+    const name = `${selection.part} ${selection.id} · ${selection.name}`;
+    const subgroupId = createUniqueUiId('diagram-subgroup', Date.now(), group.subgroups.map(s => s.id));
+    const pieces = [1, 2, 3].map(index => {
+      const piece = newPieceDraft(`${group.name}_${name}`, index);
+      return { ...piece, form: { ...inheritCutAllowance(piece.form, form.cutAllowance), sideMargin: form.sideMargin, startEndMargin: form.startEndMargin, allowRotation: !group.patternFixed } };
+    });
+    if (group.pieces.some(p => pieces.some(next => next.id === p.id))) { setError('같은 도면 이름의 조각이 있습니다. 도면 이름을 변경해 주세요.'); return; }
+    setGroups(items => items.map(g => g.id === group.id ? { ...g, pieces: [...g.pieces, ...pieces], subgroups: [...g.subgroups, { id: subgroupId, name, pieceIds: pieces.map(p => p.id), diagramShapeKey: selection.shapeKey, installationPart: selection.part, expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : g));
+    setActivePieceId(pieces[0]!.id); setForm(pieces[0]!.form);
+    clearCalculatedAllowanceResults();
+    setNotice(`도면 ${selection.id}를 소그룹에 연결했습니다. 실제 폭·길이를 아래에서 입력해 주세요.`);
+    showSubgroupInputs();
   };
   const addSubgroup = (overallAllowance: unknown = DEFAULT_CUT_ALLOWANCE_MM) => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
@@ -640,7 +673,7 @@ export default function FilmCutInputScreen() {
       subgroupName: activeSubgroup?.name,
       siteCount: normalizeSubgroupSiteCount(activeSubgroup?.siteCount),
       difficulty: activeSubgroup?.difficulty,
-      installationPart: activeSubgroup?.installationPart,
+      diagramShapeKey: activeSubgroup?.diagramShapeKey, installationPart: activeSubgroup?.installationPart,
       constructionCostPerM: activeSubgroup?.constructionCostPerM,
       subgroupOverallDimensions: activeSubgroup ? storedSubgroupOverallDimensions(activeSubgroup.overallDimensions) : undefined,
       materialCostPerM: optionalCost(activeGroup?.materialCostPerM),
@@ -681,7 +714,7 @@ export default function FilmCutInputScreen() {
         const normalized = withProductionDefaults({ ...piece.form, allowRotation: group.patternFixed ? false : piece.form.allowRotation });
         const subgroup = group.subgroups.find((item) => item.pieceIds.includes(piece.id));
         const baseRequest = toRemnantPlanRequest(normalized, []);
-        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount), difficulty: subgroup?.difficulty, installationPart: subgroup?.installationPart, constructionCostPerM: subgroup?.constructionCostPerM, subgroupOverallDimensions: subgroup ? storedSubgroupOverallDimensions(subgroup.overallDimensions) : undefined, request: { ...baseRequest, quantity: multiplyPieceQuantityBySiteCount(baseRequest.quantity, subgroup?.siteCount) }, filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
+        return { groupId: group.id, groupName: group.name, pieceId: piece.id, pieceName: piece.id, mergeGroupId: group.mergeGroupId, subgroupName: subgroup?.name, siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount), difficulty: subgroup?.difficulty, diagramShapeKey: subgroup?.diagramShapeKey, installationPart: subgroup?.installationPart, constructionCostPerM: subgroup?.constructionCostPerM, subgroupOverallDimensions: subgroup ? storedSubgroupOverallDimensions(subgroup.overallDimensions) : undefined, request: { ...baseRequest, quantity: multiplyPieceQuantityBySiteCount(baseRequest.quantity, subgroup?.siteCount) }, filmName: group.filmName, materialCostPerM: optionalCost(group.materialCostPerM), constructionCostPerM2: optionalCost(group.constructionCostPerM2) };
       })).filter(({ request }) => Number.isFinite(request.pieceWidthMm) && request.pieceWidthMm > 0
         && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
         && Number.isInteger(request.quantity) && request.quantity > 0);
@@ -715,7 +748,7 @@ export default function FilmCutInputScreen() {
         generatedIds.push(id);
         savedJobIds.push(id);
         sourceJobIds.set(`${entry.groupId}-${entry.pieceId}`, id);
-        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, installationPart: entry.installationPart, constructionCostPerM: entry.constructionCostPerM, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+        const job = buildSavedCuttingJob({ id, name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt: new Date(timestamp + index).toISOString(), request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, diagramShapeKey: entry.diagramShapeKey, installationPart: entry.installationPart, constructionCostPerM: entry.constructionCostPerM, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
         jobsToSave.push(job);
       }
       const plannedWithIds = planned.map((entry, index) => ({ ...entry, savedJobId: savedJobIds[index] }));
@@ -783,7 +816,7 @@ export default function FilmCutInputScreen() {
   const activateBatchPlan = (entry: GroupedPiecePlan) => {
     const nextForm = formFromRequest(entry.request, entry.siteCount);
     const createdAt = new Date().toISOString();
-    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, installationPart: entry.installationPart, constructionCostPerM: entry.constructionCostPerM, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
+    const nextJob = buildSavedCuttingJob({ id: entry.savedJobId ?? createUniqueUiId('job', Date.now(), library.jobs.map((job) => job.id)), name: `${entry.groupName} · ${entry.pieceName} 작업`, groupId: entry.groupId, createdAt, request: entry.request, plan: entry.plan, inventory: entry.inventoryBefore, filmName: entry.filmName, subgroupName: entry.subgroupName, siteCount: entry.siteCount, difficulty: entry.difficulty, diagramShapeKey: entry.diagramShapeKey, installationPart: entry.installationPart, constructionCostPerM: entry.constructionCostPerM, subgroupOverallDimensions: entry.subgroupOverallDimensions, materialCostPerM: entry.materialCostPerM, constructionCostPerM2: entry.constructionCostPerM2 });
     setCandidateComparison(entry.plan.newRollResult?.optimizationStatus === 'approximate' ? compareContinuousRollCandidates(entry.request) : []);
     setActiveGroupId(entry.groupId); setActivePieceId(entry.pieceId); setForm(nextForm); setPlanRequest(entry.request); setPlan(entry.plan); setDraftJob(nextJob); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
   };
@@ -1102,7 +1135,7 @@ export default function FilmCutInputScreen() {
 
   const plannedUses: PlannedRemnantSummary[] = plan?.remnantUses.map((use) => ({ remnantId: use.remnantId, producedQuantity: use.producedQuantity, savedNewRollLengthMm: use.savedNewRollLengthMm, optimizationStatus: use.result.optimizationStatus })) ?? [];
   return (
-    <ScrollView style={styles.page} contentContainerStyle={[styles.pageContent, width < 420 && styles.pageContentSmall]} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+    <View ref={pageViewport} style={{ flex: 1 }} collapsable={false}><ScrollView ref={pageScroll} onScroll={e => { pageScrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={16} style={styles.page} contentContainerStyle={[styles.pageContent, width < 420 && styles.pageContentSmall]} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
       <View style={styles.header}>
         <View style={styles.headerCopy}><Text style={styles.eyebrow}>CONTINUOUS ROLL WORKSPACE</Text><Text style={styles.title} accessibilityRole="header">필름 재단 생산 계획</Text><Text style={styles.description}>자투리를 먼저 사용하고 부족한 수량만 새 연속 롤에서 계산합니다.</Text></View>
         <View style={styles.headerActions}><View style={styles.modeBadge}><Text style={styles.modeText}>원단 절약 우선</Text></View><TouchableOpacity accessibilityRole="button" onPress={reset} disabled={busy} style={[styles.resetButton, busy && styles.disabled]}><Text style={styles.resetText}>입력 초기화</Text></TouchableOpacity></View>
@@ -1114,7 +1147,8 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onPatternFixedChange={updateGroupPatternFixed} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-<PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId, overallAllowance) => addPiece(subgroupId, groupId, overallAllowance)} onAddSubgroup={(overallAllowance) => addSubgroup(overallAllowance)} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeInstallationPart={updateSubgroupInstallationPart} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} />
+<ConstructionDiagram mode="picker" onSelect={selectDiagramShape} />
+<View ref={subgroupAnchor} collapsable={false}><PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId, overallAllowance) => addPiece(subgroupId, groupId, overallAllowance)} onAddSubgroup={(overallAllowance) => addSubgroup(overallAllowance)} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeInstallationPart={updateSubgroupInstallationPart} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} /></View>
           <ProductionSettingsCard sideMargin={form.sideMargin} startEndMargin={form.startEndMargin} useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onChangeSideMargin={(value) => updateProductionMargin('sideMargin', value)} onChangeStartEndMargin={(value) => updateProductionMargin('startEndMargin', value)} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
@@ -1127,7 +1161,7 @@ export default function FilmCutInputScreen() {
         <RemnantInventoryPanel brand={form.brand} productNumber={form.productNumber} remnants={library.remnants} plannedUses={plannedUses} identifiersReady={identifiersReady} busy={busy} onSave={saveRemnant} onDelete={deleteRemnant} />
         <LibraryDrawer presets={library.presets} identifiersReady={identifiersReady} busy={busy} onSavePreset={() => void savePreset()} onLoadPreset={loadPreset} onDeletePreset={(id) => void deletePreset(id)} />
       </View>
-    </ScrollView>
+    </ScrollView></View>
   );
 }
 

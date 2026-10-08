@@ -17,6 +17,7 @@ export type GroupedPieceRequest = {
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
   subgroupOverallDimensions?: SubgroupOverallDimensions;
+  diagramShapeKey?: string;
   installationPart?: string;
   constructionCostPerM?: number;
   materialCostPerM?: number;
