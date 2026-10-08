@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'"><style>html,body{margin:0;background:transparent}</style></head><body>
+<div id="kitchen-cabinet-input" >
+<style>
+#kitchen-cabinet-input{color-scheme:light dark;padding:12px;font:14px system-ui,sans-serif;color:light-dark(#183047,#e4edf6)}
+#kitchen-cabinet-input *{box-sizing:border-box}
+#kitchen-cabinet-input [hidden]{display:none!important}
+#kitchen-cabinet-input .app{background:light-dark(#f2f6fb,#101927);padding:20px;border-radius:16px}
+#kitchen-cabinet-input h2{font-size:20px;font-weight:600;margin:0 95px 8px 0}
+#kitchen-cabinet-input h3{font-size:15px;font-weight:600;margin:10px 0}
+#kitchen-cabinet-input .hint{font-size:12px;line-height:1.6;color:light-dark(#52687b,#acbed0);margin:8px 0}
+#kitchen-cabinet-input button,#kitchen-cabinet-input input,#kitchen-cabinet-input select{font:inherit;max-width:100%;padding:9px 10px;border:1px solid light-dark(#cad8e7,#485970);border-radius:7px;background:light-dark(#fff,#1d2b3f);color:inherit;min-height:40px}
+#kitchen-cabinet-input input,#kitchen-cabinet-input select{font-size:16px;min-width:0}
+#kitchen-cabinet-input .primary{background:light-dark(#235ce8,#4c7feb);color:#fff;border-color:transparent}
+#kitchen-cabinet-input .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:14px 0}
+#kitchen-cabinet-input .bar input{flex:1;min-width:150px}
+#kitchen-cabinet-input .legend{display:flex;gap:16px;flex-wrap:wrap;font-size:12px;margin:14px 0}
+#kitchen-cabinet-input .legend span{display:flex;gap:6px;align-items:center}
+#kitchen-cabinet-input .swatch{display:inline-block;width:13px;height:13px;border-radius:2px;background:var(--cab-fill)}
+#kitchen-cabinet-input .upper{--cab-fill:light-dark(#42bca1,#246a5d);--cab-text:light-dark(#083e32,#e6fff8)}
+#kitchen-cabinet-input .lower{--cab-fill:light-dark(#3eacc4,#235b72);--cab-text:light-dark(#08343e,#def6ff)}
+#kitchen-cabinet-input .fridge{--cab-fill:light-dark(#d0c532,#777025);--cab-text:light-dark(#34310a,#fffbd2)}
+#kitchen-cabinet-input .panel{border:1px solid light-dark(#d9e4f0,#34465e);border-radius:12px;background:light-dark(#fff,#192537);padding:16px;margin-top:12px}
+#kitchen-cabinet-input .drawing{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:8px;margin:24px 0 14px;min-width:0}
+#kitchen-cabinet-input .kitchen{display:flex;flex-direction:column;gap:72px;min-width:0}
+#kitchen-cabinet-input .cab-row{display:flex;flex-wrap:wrap;gap:3px;align-items:flex-start;min-width:0;border-top:7px solid var(--cab-fill);padding-top:3px}
+#kitchen-cabinet-input .cab-row.lower{border-top:0;border-bottom:7px solid var(--cab-fill);padding:0 0 3px}
+#kitchen-cabinet-input .cab{position:relative;flex:1 1 50px;min-width:44px;height:110px;border:1px solid light-dark(#fff,#192537);border-radius:0;padding:0;overflow:hidden;background:var(--cab-fill);color:var(--cab-text)}
+#kitchen-cabinet-input .cab[data-kind="double"]:after{content:'';position:absolute;left:50%;top:0;bottom:0;border-left:1px solid light-dark(#fff,#c1ced6);pointer-events:none}
+#kitchen-cabinet-input .cab[data-kind="hood"]{height:58px}
+#kitchen-cabinet-input .cab[data-kind="hood"]:after{content:'';position:absolute;left:6px;right:6px;bottom:5px;border-bottom:4px solid var(--cab-text);opacity:.6}
+#kitchen-cabinet-input .cab[data-kind="empty"]{background:transparent;border:1px dashed light-dark(#889cac,#94a9bc);color:light-dark(#52687b,#c9d8e6)}
+#kitchen-cabinet-input .cab[aria-pressed="true"]{outline:3px solid light-dark(#18304d,#dbeaff);outline-offset:-4px}
+#kitchen-cabinet-input .cab.dim{opacity:.3}
+#kitchen-cabinet-input .cab span{position:relative;z-index:1;padding:4px;background:var(--cab-fill);border-radius:4px;font-size:12px}
+#kitchen-cabinet-input .cab[data-kind="empty"] span{background:light-dark(#fff,#192537)}
+#kitchen-cabinet-input .fridge-column{border-left:6px solid var(--cab-fill);border-right:6px solid var(--cab-fill);border-top:7px solid var(--cab-fill);min-height:294px;padding:3px 3px 0;display:flex;flex-direction:column;gap:3px}
+#kitchen-cabinet-input .fridge-column .cab{height:72px;flex:none;width:100%}
+#kitchen-cabinet-input .section-labels{display:flex;justify-content:space-between;gap:10px;margin:10px 0;font-size:12px;color:light-dark(#52687b,#acbed0)}
+#kitchen-cabinet-input .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+#kitchen-cabinet-input label{display:flex;flex-direction:column;gap:6px;font-size:12px}
+#kitchen-cabinet-input label input,#kitchen-cabinet-input label select{width:100%}
+#kitchen-cabinet-input .full{grid-column:1/-1}
+#kitchen-cabinet-input input[readonly]{background:light-dark(#eaf0f8,#27394f)}
+#kitchen-cabinet-input .result{background:light-dark(#e6f5ee,#203e34);padding:12px;border-radius:8px;line-height:1.6}
+#kitchen-cabinet-input .error{color:light-dark(#ac2014,#ffafa3);font-size:12px;min-height:18px;margin:8px 0}
+#kitchen-cabinet-input .row{display:flex;gap:8px;justify-content:space-between;align-items:center;flex-wrap:wrap;border-bottom:1px solid light-dark(#e0e8f1,#35455a);padding:10px 0;font-size:12px}
+#kitchen-cabinet-input .editor-title{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+#kitchen-cabinet-input .cab-frame{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;gap:3px;align-items:stretch;min-width:0}
+#kitchen-cabinet-input .cab-frame>.trim{grid-column:1/-1;height:44px}
+#kitchen-cabinet-input .struct{min-width:44px;min-height:44px;padding:4px;border-radius:2px;background:var(--cab-fill);color:var(--cab-text);overflow-wrap:anywhere;font-size:12px}
+#kitchen-cabinet-input .struct[aria-pressed="true"]{outline:3px solid light-dark(#18304d,#dbeaff);outline-offset:-4px}
+#kitchen-cabinet-input .struct.dim{opacity:.3}
+#kitchen-cabinet-input .struct.side{writing-mode:vertical-rl;min-height:110px}
+#kitchen-cabinet-input .struct.base{grid-column:1/-1;min-height:44px}
+#kitchen-cabinet-input .fridge-column{border:0;padding:0;min-height:0;gap:18px}
+#kitchen-cabinet-input .fridge-frame{display:grid;grid-template-columns:44px minmax(44px,1fr) 44px;gap:3px;min-width:0}
+#kitchen-cabinet-input .fridge-frame>.trim{grid-column:1/-1}
+#kitchen-cabinet-input .fridge-frame .side{grid-row:2/5;min-height:200px}
+#kitchen-cabinet-input .fridge-frame .right-side{grid-column:3}
+#kitchen-cabinet-input .fridge-front{grid-column:2;grid-row:2}
+#kitchen-cabinet-input .fridge-gap{grid-column:2;grid-row:3;min-height:90px;display:flex;align-items:center;justify-content:center;font-size:12px;color:light-dark(#52687b,#acbed0)}
+#kitchen-cabinet-input .fridge-base{grid-column:2;grid-row:4}
+#kitchen-cabinet-input .surface-list{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+#kitchen-cabinet-input .surface-list button{min-width:44px;font-size:12px}
+#kitchen-cabinet-input .hood-details{display:grid;grid-template-columns:44px minmax(44px,1fr) 44px;gap:3px;max-width:260px;margin:10px 0}
+#kitchen-cabinet-input .hood-details .trim{grid-column:1/-1}
+#kitchen-cabinet-input .hood-gap{min-height:70px;display:flex;align-items:center;justify-content:center;font-size:12px}
+#kitchen-cabinet-input .drawing{grid-template-columns:minmax(0,1fr) 150px}
+@media(max-width:660px){#kitchen-cabinet-input .drawing{grid-template-columns:minmax(0,1fr)}#kitchen-cabinet-input .fridge-column{max-width:220px}#kitchen-cabinet-input .grid{grid-template-columns:minmax(0,1fr)}#kitchen-cabinet-input .full{grid-column:auto}}
+@media(max-width:520px){#kitchen-cabinet-input{padding:4px}#kitchen-cabinet-input .app{padding:12px}#kitchen-cabinet-input .drawing{grid-template-columns:minmax(0,1fr)}#kitchen-cabinet-input .fridge-column{min-height:145px;max-width:180px;margin-top:10px}#kitchen-cabinet-input .kitchen{gap:48px}#kitchen-cabinet-input .panel{padding:10px}}
+@media(pointer:coarse){#kitchen-cabinet-input button{min-height:44px}}
+/* Illustration proportions are visual only, never measurement defaults. */
+#kitchen-cabinet-input .drawing{position:relative;grid-template-columns:minmax(0,3.6fr) minmax(0,1fr);gap:3px}
+#kitchen-cabinet-input .kitchen{gap:70px}
+#kitchen-cabinet-input .cab-frame{grid-template-columns:5px minmax(0,1fr) 5px;gap:3px}
+#kitchen-cabinet-input .cab-frame>.trim{height:6px;min-height:6px}
+#kitchen-cabinet-input .cab-row{flex-wrap:nowrap;border:0;padding:0;gap:3px}
+#kitchen-cabinet-input .cab-row.lower{border:0;padding:0}
+#kitchen-cabinet-input .cab{min-width:0;flex:1 1 0;height:110px;container-type:inline-size}
+@container(max-width:44px){#kitchen-cabinet-input .cab span{display:none}}
+#kitchen-cabinet-input .struct{position:relative;min-width:0;min-height:0;padding:0;border:0;border-radius:0;font-size:0}
+#kitchen-cabinet-input .struct span{display:none}
+#kitchen-cabinet-input .struct.side{min-height:110px;writing-mode:initial}
+#kitchen-cabinet-input .struct.base{height:17px;min-height:17px}
+#kitchen-cabinet-input .struct[aria-pressed="true"]{outline:2px solid light-dark(#18304d,#dbeaff);outline-offset:0}
+#kitchen-cabinet-input .missing{background:transparent!important}
+#kitchen-cabinet-input .hood-module{position:relative;display:grid;grid-template-columns:4px minmax(0,1fr) 4px;grid-template-rows:55px 5px 50px;gap:0 2px;flex:1 1 0;min-width:0}
+#kitchen-cabinet-input .hood-module .cab{grid-column:2;grid-row:1;height:55px;width:100%}
+#kitchen-cabinet-input .hood-module .cab:after{display:none}
+#kitchen-cabinet-input .hood-module .side{grid-row:1/4;min-height:0}
+#kitchen-cabinet-input .hood-module .hood-right{grid-column:3}
+#kitchen-cabinet-input .hood-module .hood-top{grid-column:2;grid-row:2;height:5px}
+#kitchen-cabinet-input .fridge-column{max-width:none;min-height:0;margin:0;gap:10px}
+#kitchen-cabinet-input .fridge-frame{grid-template-columns:3px 3px minmax(0,1fr) 3px 3px;grid-template-rows:6px 60px 4px minmax(0,1fr);gap:3px 1px;min-height:310px}
+#kitchen-cabinet-input .fridge-frame>.trim{height:6px;min-height:6px}
+#kitchen-cabinet-input .fridge-frame .side{grid-row:2/5;min-height:0}
+#kitchen-cabinet-input .fridge-frame .fridge-left{grid-column:1}
+#kitchen-cabinet-input .fridge-frame .mold-left{grid-column:2}
+#kitchen-cabinet-input .fridge-frame .mold-right{grid-column:4}
+#kitchen-cabinet-input .fridge-frame .right-side{grid-column:5}
+#kitchen-cabinet-input .fridge-front{grid-column:3;grid-row:2}
+#kitchen-cabinet-input .fridge-column .cab{height:60px}
+#kitchen-cabinet-input .fridge-gap{grid-column:3;grid-row:4;min-height:0}
+#kitchen-cabinet-input .fridge-base{grid-column:3;grid-row:3;height:4px}
+#kitchen-cabinet-input .part-popup{position:absolute;z-index:5;left:50%;top:70px;transform:translateX(-50%);width:260px;max-width:calc(100% - 12px);padding:12px;border:1px solid light-dark(#8da5bf,#8099b7);border-radius:10px;background:light-dark(#fff,#1d2b3f);box-shadow:0 6px 24px #0003;font-size:13px}
+#kitchen-cabinet-input .part-popup .bar{margin:10px 0 0;justify-content:space-between}
+@media(max-width:520px){#kitchen-cabinet-input .cab span{font-size:10px;padding:2px}#kitchen-cabinet-input .kitchen{gap:70px}}
+#kitchen-cabinet-input .drawing{display:block;--cab-fill:light-dark(#3eacc4,#235b72);--cab-text:light-dark(#08343e,#def6ff)}
+#kitchen-cabinet-input .kitchen{gap:0}
+#kitchen-cabinet-input .fridge-column{max-width:220px;margin:auto}
+#kitchen-cabinet-input .part-picker{margin:14px 0;max-width:360px}
+#kitchen-cabinet-input .section-labels>span:first-child{display:none}
+#kitchen-cabinet-input .hood-module.converted{grid-template-rows:105px 5px 0}
+#kitchen-cabinet-input .hood-module.converted .cab{height:105px}
+#kitchen-cabinet-input .part-popup{position:relative;top:auto;left:auto;transform:none;margin:12px auto 0;width:320px}
+#kitchen-cabinet-input .actionbar{position:sticky;top:0;z-index:6;padding:10px 0;background:light-dark(#f2f6fb,#101927);border-bottom:1px solid light-dark(#cad8e7,#485970)}
+#kitchen-cabinet-input .actionbar .bar{margin:8px 0}
+#kitchen-cabinet-input .actionbar .actions{display:flex;gap:8px;flex-wrap:wrap}
+#kitchen-cabinet-input .actionbar .actions button{flex:1;min-width:80px}
+#kitchen-cabinet-input .hood-module .cab[data-door="double"]:after{display:block;content:'';position:absolute;left:50%;top:0;bottom:0;right:auto;border:0;border-left:1px solid light-dark(#fff,#c1ced6);opacity:1;pointer-events:none}
+#kitchen-cabinet-input .cab[data-kind="empty"] span{display:inline;font-size:11px;padding:1px}
+</style>
+<div class="app" aria-label="주방 장 선택 및 소그룹 입력 샘플">
+<h2>시공부위 · 도면 선택</h2><div class="hint">위치·형태 확인용 · 실제 치수는 소그룹에서 입력</div>
+<section data-diagram>
+<label class="part-picker">시공부위 · 인건비 설정 기준<select data-view></select></label>
+<div data-actionbar class="actionbar" aria-label="선택한 장 편집 도구"><label>장 ID / 검색 · 선택 정보<input data-search type="search" aria-label="장 ID 검색 및 선택 정보" placeholder="장 ID 또는 이름 검색"></label><div class="bar actions"><button data-popup-input class="primary cursor-interaction" disabled>치수 입력</button><button data-popup-shape class="cursor-interaction" disabled>형태 변경</button><button data-popup-delete class="cursor-interaction" disabled>삭제</button></div><div data-shape-panel hidden><label>장 형태<select data-new-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="hood">후드장</option></select></label><div class="bar"><button data-shape-apply class="primary cursor-interaction">변경 적용</button><button data-shape-cancel class="cursor-interaction">취소</button></div></div><section data-confirm-panel aria-label="변경 확인" hidden><div data-confirm-message></div><div class="bar"><button data-confirm-yes class="primary cursor-interaction">확인 · 실행</button><button data-confirm-no class="cursor-interaction">취소</button></div></section></div>
+<div class="bar"><button data-plus class="cursor-interaction" aria-label="현재 부위 장 추가">＋ 추가</button></div>
+<section data-add-panel hidden class="panel" aria-label="장 추가 설정"><h3>장 추가</h3><div class="grid"><label>위치<select data-section><option value="upper">상부장</option><option value="lower">하부장</option><option value="fridge">냉장고장</option></select></label><label>형태<select data-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="empty">Empty · 빈 공간</option><option value="hood">후드장</option></select></label></div><div class="bar"><button data-confirm-add class="primary cursor-interaction">추가</button><button data-cancel-add class="cursor-interaction">취소</button></div></section>
+<div class="panel"><div class="section-labels"><span>시공부위 도면</span><span>장 선택 → 상단 편집 버튼</span></div><div class="drawing" aria-label="선택한 시공부위 입면"><div class="kitchen"><div data-upper class="cab-frame upper"></div><div data-lower class="cab-frame lower"></div></div><div data-fridge class="fridge-column fridge"></div></div><div data-search-status class="hint" aria-live="polite"></div><div data-selection class="hint" aria-live="polite"></div></div>
+</section>
+<section data-editor hidden class="panel" aria-label="소그룹 입력"><div class="editor-title"><button data-back class="cursor-interaction">← 구조로</button><h3>소그룹 입력</h3></div>
+<div class="grid"><label>장/구조부 ID · 자동 적용<input data-cabinet-id readonly></label><label>장/구조부 종류<input data-cabinet-kind readonly></label><label class="full">소그룹 이름<input data-name></label><label>대그룹 ID<select data-major><option>1</option><option>2</option><option>3</option></select></label><label>개소<input data-sites type="number" min="1" max="99" step="1"></label><label class="full">전개 형태<select data-shape><option value="flat">평면</option><option value="l">ㄱ자 감싸기</option><option value="u">서라운드 단면 (ㄷ)</option></select></label><label>조각 실측 폭 (mm)<input data-width type="number" min="1" step="0.5" placeholder="직접 입력"></label><label>조각 실측 길이 (mm)<input data-height type="number" min="1" step="0.5" placeholder="직접 입력"></label><label data-return-a>리턴 A (mm)<input data-a type="number" min="0"></label><label data-return-b>리턴 B (mm)<input data-b type="number" min="0"></label><label>동일 치수 조각 수량 / 개소<input data-qty type="number" min="1" max="99" step="1"></label><label>재단 여유치 / 각 축 (mm)<input data-allowance type="number" min="0"></label></div>
+<div data-result class="result" aria-live="polite"></div><div data-error class="error" role="alert"></div><div class="bar"><button data-apply class="primary cursor-interaction">샘플 입력 반영</button><button data-delete-editor class="cursor-interaction">− 이 장 삭제</button></div><div class="hint">장 ID는 이름 수정 후에도 유지됩니다. 양문 수량은 예시 2개이며 실측 후 변경하세요. Empty는 시공 조각을 생성하지 않습니다.</div></section>
+<div data-queue hidden></div><div data-status class="hint" role="status" aria-live="polite"></div>
+</div>
+<script>
+(()=>{
+ const root=document.getElementById('kitchen-cabinet-input'),el=k=>root.querySelector('[data-'+k+']');
+ let pendingAction=null;
+ function cancelAction(){pendingAction=null;el('confirm-panel').hidden=true;}
+ function ask(message,action){pendingAction=action;const p=selected();el('confirm-message').textContent=p?.kind==='empty'?message.replaceAll(p.id,'Empty'):message;if(state.screen==='editor')el('editor').appendChild(el('confirm-panel'));else el('actionbar').appendChild(el('confirm-panel'));el('confirm-panel').hidden=false;}
+ el('confirm-no').onclick=cancelAction;
+ el('confirm-yes').onclick=()=>{const action=pendingAction;cancelAction();action?.();};
+ const categories={upper:'싱크대 상부장',lower:'싱크대 하부장',fridge:'냉장고장',vanity:'화장대',shelf:'책장',sash:'샷시 (내부)',bathdoor:'화장실문/문틀',shoe:'신발장',door:'방문/문틀',island:'아일랜드식탁',wardrobe:'붙박이장',dress:'드레스룸'},kinds={double:'양문장',single:'싱글장',empty:'Empty',hood:'후드장',surface:'구조부'},prefix={upper:'U',lower:'L',fridge:'R',vanity:'V',shelf:'B',sash:'S',bathdoor:'T',shoe:'H',door:'D',island:'I',wardrobe:'W',dress:'C'};
+ el('view').innerHTML=Object.entries(categories).map(([key,label])=>'<option value="'+key+'">'+label+'</option>').join('');
+ el('section').innerHTML=el('view').innerHTML;
+ const create=(section,n,kind)=>({id:prefix[section]+String(n).padStart(2,'0'),section,kind,name:categories[section]+n,major:'1',sites:1,width:0,height:0,qty:kind==='double'?2:1,shape:'flat',a:0,b:0,allowance:0});
+ let state={parts:[create('upper',1,'double'),create('upper',2,'single'),create('upper',3,'hood'),create('upper',4,'double'),create('lower',1,'double'),create('lower',2,'double'),create('lower',3,'empty'),create('lower',4,'single'),create('fridge',1,'double')],next:{upper:5,lower:5,fridge:2},selected:null,screen:'diagram',query:'',queue:[]};
+ const surface=(id,section,name,owner=null)=>({...create(section,1,'surface'),id,name,owner});
+ const owned=p=>p.kind==='hood'?[surface(p.id+'-SL',p.section,p.name+' 왼쪽 옆판',p.id),surface(p.id+'-SR',p.section,p.name+' 오른쪽 옆판',p.id),surface(p.id+'-TOP',p.section,p.name+' 윗판',p.id)]:p.section==='fridge'&&p.kind!=='empty'?[surface(p.id+'-SL',p.section,p.name+' 왼쪽 옆판',p.id),surface(p.id+'-SR',p.section,p.name+' 오른쪽 옆판',p.id),surface(p.id+'-BASE',p.section,p.name+' 밑판',p.id),surface(p.id+'-ML',p.section,p.name+' 좌 서라운드 몰딩',p.id),surface(p.id+'-MR',p.section,p.name+' 우 서라운드 몰딩',p.id),surface(p.id+'-MT',p.section,p.name+' 상 서라운드 몰딩',p.id)]:[];
+ const defaultSurfaces=parts=>[surface('U-SL','upper','상부장 왼쪽 끝판'),surface('U-SR','upper','상부장 오른쪽 끝판'),surface('U-MT','upper','상부 서라운드 몰딩'),surface('L-SL','lower','하부장 왼쪽 끝판'),surface('L-SR','lower','하부장 오른쪽 끝판'),surface('L-KB','lower','하부 걸레받이'),...parts.flatMap(owned)];
+ state.surfaces=defaultSurfaces(state.parts);state.view='upper';for(const section of Object.keys(prefix))state.next[section]??=1;
+ const fmt=n=>Number(n).toLocaleString('ko-KR',{maximumFractionDigits:2}),escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const all=()=>[...state.parts,...state.surfaces];
+ const kindLabel=p=>p.kind==='hood'?'후드장 · '+(p.hoodDoorKind==='double'?'양문형':'싱글형'):kinds[p.kind];
+ const selectionLabel=p=>p.kind==='empty'?'Empty · 시공안함':p.id+' · '+p.name+' · '+kindLabel(p);
+ function restore(saved){const s=saved?.privateContent,valid=p=>typeof p.id==='string'&&typeof p.name==='string'&&Object.hasOwn(categories,p.section)&&Object.hasOwn(kinds,p.kind)&&['width','height','qty','a','b','allowance','sites'].every(k=>Number.isFinite(p[k]));if(![3,4].includes(s?.version)||!Array.isArray(s.parts)||s.parts.length>30||!s.parts.every(valid))return;const surfaces=s.version===4&&Array.isArray(s.surfaces)?s.surfaces:defaultSurfaces(s.parts);if(surfaces.length>60||!surfaces.every(valid))return;state={...state,...s,surfaces,next:{...state.next,...s.next},query:'',queue:Array.isArray(s.queue)?s.queue:[]};if(!all().some(p=>p.id===state.selected)){state.selected=null;state.screen='diagram';}for(const section of Object.keys(prefix))state.next[section]=Math.max(state.next[section]||1,...state.parts.filter(p=>p.section===section).map(p=>Number(p.id.slice(1))+1));}
+ let initialized=false,canSelect=false;
+ function save(){if(initialized)parent.postMessage({type:'diagram-save',state:{...state,version:4,queue:[],screen:'diagram'}},'*');}
+ const selected=()=>all().find(p=>p.id===state.selected),matches=p=>p.section===state.view&&(!state.query||(p.id+' '+p.name+' '+categories[p.section]+' '+kinds[p.kind]).toLowerCase().includes(state.query.toLowerCase())),cut=p=>({width:p.width+(p.shape!=='flat'?p.a:0)+(p.shape==='u'?p.b:0)+p.allowance,height:p.height+p.allowance});
+ function open(id){const p=all().find(p=>p.id===id);if(!p||p.kind==='empty')return;cancelAction();state.selected=id;state.view=p.section;state.screen='editor';render();save();}
+ function pick(id){const p=all().find(p=>p.id===id);if(!p)return;cancelAction();state.selected=id;state.query='';state.screen='diagram';el('shape-panel').hidden=true;drawing();el('search').value=selectionLabel(p);save();}
+ function button(p,style='cab'){const b=document.createElement('button');b.className=style+' '+p.section+' cursor-interaction'+(!matches(p)?' dim':'');b.dataset.kind=p.kind;b.dataset.door=p.kind==='hood'?(p.hoodDoorKind??'single'):p.kind;b.dataset.id=p.id;b.setAttribute('aria-pressed',String(p.id===state.selected));b.setAttribute('aria-label',selectionLabel(p)+' 선택');b.setAttribute('data-tooltip',p.kind==='empty'?'Empty · 시공안함':p.name);b.innerHTML='<span>'+escape(p.kind==='empty'?'Empty':p.id)+'</span>';b.onclick=()=>pick(p.id);return b;}
+ function structural(id,container,style){const p=state.surfaces.find(p=>p.id===id);if(p)container.appendChild(button(p,style));else{const spacer=document.createElement('div');spacer.className=style+' missing';container.appendChild(spacer);}}
+ function drawing(){for(const section of ['upper','lower']){const c=el(section);c.innerHTML='';if(section==='upper')structural('U-MT',c,'struct trim');structural(prefix[section]+'-SL',c,'struct side');const row=document.createElement('div');row.className='cab-row '+section;for(const p of state.parts.filter(p=>p.section===section)){if(p.kind==='hood'||state.surfaces.some(s=>s.owner===p.id&&s.id===p.id+'-TOP')){const hood=document.createElement('div');hood.className='hood-module '+section+(p.kind==='hood'?'':' converted');structural(p.id+'-SL',hood,'struct side');hood.appendChild(button(p));structural(p.id+'-TOP',hood,'struct hood-top');structural(p.id+'-SR',hood,'struct side hood-right');row.appendChild(hood);}else row.appendChild(button(p));}c.appendChild(row);structural(prefix[section]+'-SR',c,'struct side');if(section==='lower')structural('L-KB',c,'struct base');}
+ el('fridge').innerHTML='';for(const p of state.parts.filter(p=>p.section==='fridge')){const c=document.createElement('div');c.className='fridge-frame fridge';structural(p.id+'-MT',c,'struct trim');structural(p.id+'-SL',c,'struct side fridge-left');structural(p.id+'-ML',c,'struct side mold-left');c.appendChild(button(p,'cab fridge-front'));const gap=document.createElement('div');gap.className='fridge-gap';c.appendChild(gap);structural(p.id+'-BASE',c,'struct fridge-base');structural(p.id+'-MR',c,'struct side mold-right');structural(p.id+'-SR',c,'struct side right-side');el('fridge').appendChild(c);}
+ if(!['upper','lower','fridge'].includes(state.view)){const c=el('upper');c.innerHTML='';c.className='cab-frame lower';structural(prefix[state.view]+'-MT',c,'struct trim');structural(prefix[state.view]+'-SL',c,'struct side');const row=document.createElement('div');row.className='cab-row lower';for(const p of state.parts.filter(p=>p.section===state.view))row.appendChild(button(p));c.appendChild(row);structural(prefix[state.view]+'-SR',c,'struct side');}else el('upper').className='cab-frame upper';
+ el('upper').hidden=state.view==='lower'||state.view==='fridge';el('lower').hidden=state.view!=='lower';el('fridge').hidden=state.view!=='fridge';el('view').value=state.view;
+ el('search-status').textContent=state.query?'현재 부위 검색 결과 '+all().filter(matches).length+'개':'';const chosen=selected();el('search').value=state.query||(chosen?selectionLabel(chosen):'');el('selection').textContent=chosen?'선택 '+selectionLabel(chosen):categories[state.view]+(state.parts.some(p=>p.section===state.view)?' · 장 또는 얇은 판·몰딩 선택':' · ＋ 추가로 장·형태를 만들어 주세요.');el('popup-input').disabled=!canSelect||!chosen||chosen.kind==='empty';el('popup-delete').disabled=!chosen;el('popup-shape').disabled=!chosen||chosen.kind==='surface';}
+ function summary(){const p=selected();if(!p)return;const c=cut(p),empty=p.kind==='empty';let error='';if(empty)error='Empty는 빈 공간입니다. 입력·견적 대상에서 제외합니다.';else if(!p.name.trim()||p.width<=0||p.height<=0||p.a<0||p.b<0||p.allowance<0||!Number.isInteger(p.qty)||p.qty<1||!Number.isInteger(p.sites)||p.sites<1)error='실측 치수와 정수 수량·개소를 입력하세요.';else if((p.shape!=='flat'&&p.a<=0)||(p.shape==='u'&&p.b<=0))error='감싸기 리턴 치수를 입력하세요.';else if(c.width>1220)error='재단폭이 1,220mm를 초과합니다. 분할 검토가 필요합니다.';el('return-a').hidden=p.shape==='flat';el('return-b').hidden=p.shape!=='u';el('apply').disabled=!!error;el('error').textContent=error;el('result').textContent=empty?'빈 공간 · 조각 없음':p.width<=0||p.height<=0?p.id+' 연결됨 · 재단 치수 미입력':'재단 '+fmt(c.width)+' × '+fmt(c.height)+'mm · '+p.qty+'개 × '+p.sites+'개소 = '+p.qty*p.sites+'개';for(const k of ['width','height','qty','a','b','allowance','shape'])el(k).disabled=empty;}
+ function render(){drawing();const p=selected();el('diagram').hidden=state.screen==='editor'&&!!p;el('editor').hidden=state.screen!=='editor'||!p;if(p){el('cabinet-id').value=p.id;el('cabinet-kind').value=categories[p.section]+' · '+kinds[p.kind];for(const k of ['name','major','sites','width','height','qty','shape','a','b','allowance'])el(k).value=['width','height'].includes(k)&&p[k]===0?'':p[k];summary();}el('queue').innerHTML=state.queue.length?state.queue.map(q=>'<div class="row"><span>'+escape(q.id)+' · '+escape(q.name)+' · 대그룹 '+escape(q.major)+'</span><span>'+fmt(q.width)+' × '+fmt(q.height)+'mm · '+q.qty+'개 × '+q.sites+'개소</span><button class="cursor-interaction" data-edit-id="'+escape(q.id)+'">입력 보기</button></div>').join(''):'<div class="hint">입력 내역 없음</div>';root.querySelectorAll('[data-edit-id]').forEach(b=>b.onclick=()=>open(b.dataset.editId));}
+ for(const k of ['name','major','sites','width','height','qty','shape','a','b','allowance'])el(k).addEventListener(['major','shape'].includes(k)?'change':'input',e=>{const p=selected();if(!p)return;p[k]=['name','major','shape'].includes(k)?e.target.value:Number(e.target.value);summary();save();});
+ el('back').onclick=()=>{state.screen='diagram';render();save();};
+ el('popup-input').onclick=()=>{const p=selected();if(canSelect&&p&&p.kind!=='empty')parent.postMessage({type:'diagram-select',selection:{id:p.id,shapeKey:'cabinet:'+p.id,part:categories[p.section],name:p.name}},'*');};
+ el('popup-delete').onclick=()=>remove();
+ el('popup-shape').onclick=()=>{const p=selected();if(!p||p.kind==='surface')return;el('new-kind').innerHTML=p.kind==='hood'?'<option value="double">후드장 · 양문형</option><option value="single">후드장 · 싱글형</option>':'<option value="double">양문장</option><option value="single">싱글장</option><option value="hood">후드장</option>';el('new-kind').value=p.kind==='hood'?(p.hoodDoorKind??'single'):p.kind==='empty'?'single':p.kind;el('shape-panel').hidden=false;};
+ el('shape-cancel').onclick=()=>el('shape-panel').hidden=true;
+ el('shape-apply').onclick=()=>{const p=selected(),kind=el('new-kind').value;if(!p||p.kind==='surface'||!['double','single','hood'].includes(kind))return;if(kind===p.kind){el('shape-panel').hidden=true;return;}ask(p.id+'을 '+kinds[kind]+'으로 변경할까요? 기존 ID·실측치수·수량·구조부 입력은 유지됩니다.',()=>{if(selected()?.id!==p.id)return;const added=owned({...p,kind}).filter(s=>!state.surfaces.some(x=>x.id===s.id));if(all().length+added.length>36){el('status').textContent='샘플 최대 36개 장·구조부';return;}p.kind=kind;state.surfaces.push(...added);render();pick(p.id);el('status').textContent=p.id+' '+kinds[kind]+'으로 변경 · 조각 수량은 치수 입력에서 별도 확인';});};
+ el('search').onfocus=e=>e.target.select?.();el('search').oninput=e=>{cancelAction();state.selected=null;state.query=e.target.value.trim();el('shape-panel').hidden=true;drawing();};el('search').onkeydown=e=>{if(e.key==='Enter'){const p=all().find(matches);if(p)pick(p.id);}};
+ el('view').onchange=e=>{cancelAction();state.view=e.target.value;state.selected=null;state.query='';el('search').value='';el('shape-panel').hidden=true;el('add-panel').hidden=true;render();save();};
+ el('plus').onclick=()=>{el('add-panel').hidden=false;el('section').value=state.view;el('section').disabled=true;};el('cancel-add').onclick=()=>el('add-panel').hidden=true;
+ el('confirm-add').onclick=()=>{const section=el('section').value,kind=el('kind').value,p=create(section,state.next[section],kind),children=owned(p);if(all().length+1+children.length>36){el('status').textContent='샘플 최대 36개 장·구조부';return;}state.next[section]++;const index=state.parts.findIndex(x=>x.id===state.selected&&x.section===section);if(index>=0)state.parts.splice(index+1,0,p);else state.parts.push(p);state.surfaces.push(...children);state.selected=p.id;el('add-panel').hidden=true;render();el('status').textContent=p.id+' 및 구조부 추가됨';save();};
+ function remove(){const p=selected();if(!p)return;const label=p.kind==='empty'?'Empty':p.id;ask(label+' 및 연결된 도면 구조부를 삭제할까요? 기존 소그룹 입력은 유지됩니다.',()=>{if(selected()?.id!==p.id)return;const removed=new Set([p.id,...state.surfaces.filter(s=>s.owner===p.id).map(s=>s.id)]);state.parts=state.parts.filter(x=>!removed.has(x.id));state.surfaces=state.surfaces.filter(x=>!removed.has(x.id));state.queue=state.queue.filter(x=>!removed.has(x.id));state.selected=null;state.screen='diagram';el('shape-panel').hidden=true;render();el('status').textContent=label+' 및 연결 데이터 삭제됨';save();});}
+ el('delete-editor').onclick=remove;
+ el('apply').onclick=()=>{const p=selected();if(!p||p.kind==='empty'||el('apply').disabled)return;const c=cut(p);state.queue=state.queue.filter(q=>q.id!==p.id);state.queue.push({id:p.id,name:p.name,major:p.major,sites:p.sites,qty:p.qty,...c});render();el('status').textContent=p.id+' 소그룹 입력 반영 · 실제 앱 데이터 변경 없음';save();};
+
+ const changeCabinet=el('shape-apply').onclick;
+ el('shape-apply').onclick=()=>{const p=selected(),door=el('new-kind').value;if(p?.kind!=='hood'){changeCabinet();return;}if(!['double','single'].includes(door))return;ask(p.id+' 후드장 문을 '+(door==='double'?'양문형':'싱글형')+'으로 변경할까요? 후드 구조·ID·치수·수량은 유지됩니다.',()=>{if(selected()?.id!==p.id)return;p.hoodDoorKind=door;render();pick(p.id);el('status').textContent=kindLabel(p)+'으로 변경됨';});};
+ root.inert=true;
+ const height=()=>parent.postMessage({type:'diagram-height',height:Math.ceil(root.getBoundingClientRect().height)+4},'*');
+ window.addEventListener('message',e=>{if(e.source!==parent||e.data?.type!=='diagram-init')return;cancelAction();if(e.data.state)restore({privateContent:e.data.state});state.screen='diagram';canSelect=!!e.data.canSelect;initialized=true;root.inert=false;render();height();});
+ new ResizeObserver(height).observe(root);
+ parent.postMessage({type:'diagram-ready'},'*');
+ render();
+})();
+</script>
+</div>
+</body></html>

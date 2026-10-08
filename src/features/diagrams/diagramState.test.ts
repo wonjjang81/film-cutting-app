@@ -1,10 +1,23 @@
 import { describe, expect, it } from 'vitest';
-import { diagramStorageKey, parseDiagramSelection, parseDiagramState } from './diagramState';
+import { diagramStorageKey, parseDiagramSelection, parseDiagramState, parseCabinetState } from './diagramState';
 import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
 import { DIAGRAM_PARTS } from './diagramState';
 
 const state = () => ({ version: 2, part: 'upper', next: 2, nextPreset: 1, selected: 1, sizes: { upper: { cols: 25, rows: 17 } }, drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [26, 27] }] }, presets: [] });
 describe('construction diagram state boundary', () => {
+  it('accepts legacy cabinet and thin structural IDs independently of grid IDs', () => {
+    expect(parseDiagramSelection({ id: 'U01', shapeKey: 'cabinet:U01', part: '싱크대 상부장', name: '양문장' })).not.toBeNull();
+    expect(parseDiagramSelection({ id: 'U-MT', shapeKey: 'cabinet:U-MT', part: '싱크대 상부장', name: '몰딩' })).not.toBeNull();
+    expect(parseDiagramSelection({ id: 'R01-BASE', shapeKey: 'cabinet:R01-BASE', part: '냉장고장', name: '밑판' })).not.toBeNull();
+    expect(parseDiagramSelection({ id: 'R01', shapeKey: 'cabinet:R01', part: '싱크대 상부장', name: 'wrong' })).toBeNull();
+  });
+  it('validates cabinet save state and prevents duplicated IDs', () => {
+    const cabinet = { id: 'U01', section: 'upper', kind: 'double', name: '상부장', width: 0, height: 0, qty: 2, a: 0, b: 0, allowance: 0, sites: 1 };
+    const doc = { version: 4, parts: [cabinet], surfaces: [], view: 'upper', next: { upper: 2 }, selected: null, screen: 'diagram', query: '', queue: [] };
+    expect(parseCabinetState(doc)).not.toBeNull();
+    expect(parseCabinetState({ ...doc, parts: [cabinet, cabinet] })).toBeNull();
+    expect(parseCabinetState({ ...doc, parts: [{ ...cabinet, qty: NaN }] })).toBeNull();
+  });
   it('round-trips expanded grids and new board roles', () => { expect(parseDiagramState(state())).toEqual(state()); });
   it('rejects overlaps, out-of-bounds cells and unsafe role/name/state inputs', () => {
     expect(parseDiagramState({ ...state(), drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [5000] }] } })).toBeNull();

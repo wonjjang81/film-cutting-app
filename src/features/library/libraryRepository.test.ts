@@ -160,10 +160,10 @@ function mergedJob(index = 1, overrides: Partial<SavedMergedCuttingJob> = {}): S
 describe('library repository', () => {
   it('preserves diagram identity through project job save and backup import', async () => {
     const source = createLibraryRepository(memoryAdapter());
-    await source.saveJob(job(1, { subgroupName: '이름변경', diagramShapeKey: 'upper:1', installationPart: '싱크대 상부장' }));
+    await source.saveJob(job(1, { subgroupName: '이름변경', diagramShapeKey: 'cabinet:U01', installationPart: '싱크대 상부장' }));
     const target = createLibraryRepository(memoryAdapter());
     await target.importDocument(await source.exportDocument());
-    expect((await target.load()).document.jobs[0]).toMatchObject({ subgroupName: '이름변경', diagramShapeKey: 'upper:1', installationPart: '싱크대 상부장' });
+    expect((await target.load()).document.jobs[0]).toMatchObject({ subgroupName: '이름변경', diagramShapeKey: 'cabinet:U01', installationPart: '싱크대 상부장' });
   });
   it('preserves part pricing including zero through save, backup export and import', async () => {
     const source = createLibraryRepository(memoryAdapter());
