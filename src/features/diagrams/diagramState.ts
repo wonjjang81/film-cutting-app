@@ -7,29 +7,32 @@ export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: '
 export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
 type Size = { cols: number; rows: number };
 type Shape = { id: number; role: string; name: string; cells: number[] };
-export type DiagramState = { version: 1 | 2; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; shapes: Shape[] }[] };
+export type DiagramState = { version: 1 | 2 | 3; roles?: Record<string, string>; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; roles?: Record<string, string>; shapes: Shape[] }[] };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const size = (v: unknown): v is Size => object(v) && Number.isInteger(v.cols) && Number(v.cols) >= 24 && Number(v.cols) <= 128 && Number.isInteger(v.rows) && Number(v.rows) >= 16 && Number(v.rows) <= 128;
 const part = (v: unknown): v is string => typeof v === 'string' && Object.hasOwn(DIAGRAM_PARTS, v);
 const text = (v: unknown) => typeof v === 'string' && v.length <= 40;
-function shapes(v: unknown, grid: Size): boolean {
+const roleCatalog = (v: unknown): v is Record<string, string> => object(v) && Object.keys(v).length > 0 && Object.keys(v).length <= 30 && Object.entries(v).every(([key, label]) => (DIAGRAM_ROLES.includes(key as typeof DIAGRAM_ROLES[number]) || /^custom[1-9]\d*$/.test(key)) && text(label) && String(label).trim().length > 0);
+function shapes(v: unknown, grid: Size, roles?: Record<string, string>): boolean {
   if (!Array.isArray(v) || v.length > 40) return false;
-  const occupied = new Set<number>(), ids = new Set<number>();
+  const ids = new Set<number>();
   for (const s of v) {
-    if (!object(s) || !Number.isSafeInteger(s.id) || Number(s.id) < 1 || ids.has(Number(s.id)) || !DIAGRAM_ROLES.includes(s.role as typeof DIAGRAM_ROLES[number]) || !text(s.name) || !Array.isArray(s.cells) || !s.cells.length || s.cells.length > grid.cols * grid.rows) return false;
+    if (!object(s) || !Number.isSafeInteger(s.id) || Number(s.id) < 1 || ids.has(Number(s.id)) || !(roles ? typeof s.role === 'string' && Object.hasOwn(roles, s.role) : DIAGRAM_ROLES.includes(s.role as typeof DIAGRAM_ROLES[number])) || !text(s.name) || !Array.isArray(s.cells) || !s.cells.length || s.cells.length > grid.cols * grid.rows) return false;
     ids.add(Number(s.id));
+    const occupied = new Set<number>(); // Different members may overlap; duplicates within one member may not.
     for (const i of s.cells) { if (!Number.isInteger(i) || i < 0 || i >= grid.cols * grid.rows || occupied.has(i)) return false; occupied.add(i); }
   }
   return true;
 }
 /** Reject malformed state rather than silently overwriting an existing drawing. */
 export function parseDiagramState(value: unknown): DiagramState | null {
-  if (!object(value) || ![1, 2].includes(Number(value.version)) || !part(value.part) || !object(value.drawings) || !Array.isArray(value.presets) || value.presets.length > 8) return null;
+  if (!object(value) || ![1, 2, 3].includes(Number(value.version)) || !part(value.part) || !object(value.drawings) || !Array.isArray(value.presets) || value.presets.length > 8) return null;
+  if (value.roles !== undefined && !roleCatalog(value.roles)) return null;
   if (!Number.isSafeInteger(value.next) || Number(value.next) < 1 || !Number.isSafeInteger(value.nextPreset) || Number(value.nextPreset) < 1 || !(value.selected === null || Number.isSafeInteger(value.selected))) return null;
   if (value.sizes !== undefined && (!object(value.sizes) || !Object.entries(value.sizes).every(([p, s]) => part(p) && size(s)))) return null;
   const sizes = value.sizes as Record<string, Size> | undefined;
-  if (!Object.entries(value.drawings).every(([p, s]) => part(p) && shapes(s, sizes?.[p] ?? { cols: 24, rows: 16 }))) return null;
-  if (!value.presets.every(p => object(p) && typeof p.id === 'string' && /^P[1-9]\d*$/.test(p.id) && part(p.part) && text(p.name) && (p.size === undefined || size(p.size)) && shapes(p.shapes, p.size as Size ?? { cols: 24, rows: 16 }))) return null;
+  if (!Object.entries(value.drawings).every(([p, s]) => part(p) && shapes(s, sizes?.[p] ?? { cols: 24, rows: 16 }, value.roles as Record<string, string> | undefined))) return null;
+  if (!value.presets.every(p => object(p) && typeof p.id === 'string' && /^P[1-9]\d*$/.test(p.id) && part(p.part) && text(p.name) && (p.size === undefined || size(p.size)) && (p.roles === undefined || roleCatalog(p.roles)) && shapes(p.shapes, p.size as Size ?? { cols: 24, rows: 16 }, p.roles as Record<string,string> | undefined))) return null;
   if (new Set(value.presets.map(p => p.id)).size !== value.presets.length) return null;
   if (JSON.stringify(value).length > 250000) return null;
   return JSON.parse(JSON.stringify(value)) as DiagramState;

@@ -1,0 +1,36 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:390,height:900}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('https://diagram-test.invalid/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.resolve(__dirname,'../public/construction-diagram.html'),'utf8')}));
+ await page.goto('https://diagram-test.invalid/?mode=editor');
+ await page.evaluate(()=>{window.saved=null;window.addEventListener('message',e=>{if(e.data.type==='diagram-save')window.saved=e.data.state;});window.postMessage({type:'diagram-init',state:{version:2,part:'upper',next:8,nextPreset:1,selected:1,sizes:{upper:{cols:48,rows:32}},drawings:{upper:[{id:1,role:'single',name:'장',cells:[0,1,2]}]},presets:[]}},'*');});
+ const board=page.locator('[data-board]');await page.locator('[data-info]').waitFor();
+ for(let i=0;i<10;i++)await board.press('ArrowRight');await board.press(' ');
+ assert.match(await page.locator('[data-status]').innerText(),/경고/,'disconnected addition rejected');
+ assert.equal(await page.locator('[data-svg] .cell').count(),3);
+ for(let i=0;i<10;i++)await board.press('ArrowLeft');
+ await page.locator('[data-new]').click();await board.press(' ');
+ assert.equal(await page.locator('[data-svg] .cell').count(),4,'another member may overlap same cell');
+ assert.equal(await page.locator('[data-svg] [data-overlap="2"]').count(),1);
+ await board.press('Enter');const first=await page.locator('[data-info]').inputValue();await board.press('Enter');assert.notEqual(await page.locator('[data-info]').inputValue(),first,'repeat select cycles overlapped members');
+ // Select the long member and reject erasing its middle cell.
+ if(!(await page.locator('[data-info]').inputValue()).startsWith('G01'))await board.press('Enter');
+ await board.press('ArrowRight');await page.locator('[data-tool]').selectOption('erase');await board.press(' ');
+ assert.match(await page.locator('[data-status]').innerText(),/분리/);
+ assert.deepEqual(await page.evaluate(()=>window.saved.drawings.upper.find(s=>s.id===1).cells),[0,1,2]);
+ await page.locator('[data-role-name]').fill('선반');await page.locator('[data-add-role]').click();
+ assert.equal(await page.locator('select[data-role]').inputValue(),'custom1');
+ await page.locator('[data-role-name]').fill('선반A');await page.locator('[data-rename-role]').click();
+ assert.equal(await page.locator('select[data-role] option[value="custom1"]').innerText(),'선반A');
+ await page.locator('[data-remove-role]').click();await page.locator('[data-yes]').click();
+ assert.equal(await page.locator('select[data-role] option[value="custom1"]').count(),0);
+ await page.locator('[data-part]').selectOption('shelf');await page.locator('[data-role-name]').fill('선반');await page.locator('[data-add-role]').click();await page.locator('[data-new]').click();await board.press(' ');
+ await page.locator('[data-remove-role]').click();assert.match(await page.locator('[data-status]').innerText(),/사용 중/);
+ await page.locator('[data-preset-name]').fill('책장A');await page.locator('[data-save-preset]').click();
+ await page.waitForFunction(()=>window.saved?.presets.length===1);
+ const stored=await page.evaluate(()=>window.saved);assert.equal(stored.presets[0].part,'shelf');assert.equal(stored.presets[0].roles.custom1,'선반');
+ await page.reload();await page.evaluate(s=>window.postMessage({type:'diagram-init',state:s},'*'),stored);
+ await page.locator('[data-preset] option[value="P1"]').waitFor({state:'attached'});assert.equal(await page.locator('select[data-role] option[value="custom1"]').innerText(),'선반');
+ assert.deepEqual(errors,[]);console.log('PASS: contiguous members; overlaps and cycling; role add/rename/delete; in-use guard; part-specific role presets persist');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

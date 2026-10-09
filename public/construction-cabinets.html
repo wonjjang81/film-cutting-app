@@ -164,9 +164,11 @@
  let customPresets=[],customPreset=null,customShape=null;
  const customRoles={side:'옆판',bottom:'밑판',top:'윗판',front:'앞판',molding:'몰딩',double:'양문장',single:'싱글장',plinth:'걸레받이',drawer:'서랍장',hood:'후드장',empty:'Empty · 시공안함'};
  const customId=s=>customPreset.id+'-G'+String(s.id).padStart(2,'0');
+ const customRole=s=>customPreset?.roles?.[s.role]??customRoles[s.role]??s.name;
  function renderCustom(){
    root.querySelector('.drawing').hidden=!!customPreset;el('custom-illustration').hidden=!customPreset;
    el('gap-control').hidden=!customPreset;el('illustration-gap').value=String(state.illustrationGap??2);
+   el('custom-preset').innerHTML='<option value="">기본 장 일러스트</option>'+customPresets.filter(p=>p.part===state.view).map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name)+'</option>').join('');
    el('custom-preset').value=customPreset?.id??'';el('plus').disabled=!!customPreset;
    el('custom-hint').textContent=customPreset?'모눈선 없는 일러스트 · 형태 선택 후 치수 입력 · 형태 편집은 모눈 제작에서 진행':'';
    if(!customPreset)return;
@@ -177,16 +179,13 @@
      const xs=s.cells.map(i=>i%cols),ys=s.cells.map(i=>Math.floor(i/cols));
      const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
      const cw=maxX-minX+1,ch=maxY-minY+1,rectangular=new Set(s.cells).size===cw*ch;
-     const panel=['side','bottom','top'].includes(s.role),trim=['molding','plinth'].includes(s.role);
-     const vertical=s.role==='side'||(trim&&ch>cw);
-     const thin=rectangular&&(panel||trim)&&(vertical?cw:ch)===1;
-     return [s.id,{minX,maxX,minY,maxY,rectangular,vertical,thin,target:trim?12:6}];
+     return [s.id,{minX,maxX,minY,maxY,rectangular}];
    }));
    const displayAxis=(count,axis)=>{
      const sizes=Array(count).fill(0),positions=Array(count+1).fill(4);
      for(const b of bounds.values()){
        const first=axis==='x'?b.minX:b.minY,last=axis==='x'?b.maxX:b.maxY;
-       const size=b.thin&&(axis==='x')===b.vertical?b.target:unit;
+       const size=unit; // Every occupied grid cell keeps its original thickness.
        for(let i=first;i<=last;i++)sizes[i]=Math.max(sizes[i],size);
      }
      const first=sizes.findIndex(n=>n>0),last=sizes.findLastIndex(n=>n>0);
@@ -195,16 +194,12 @@
    };
    const dx=displayAxis(cols,'x'),dy=displayAxis(rows,'y');
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
-   let svg='';
+   let svg='<defs><pattern id="overlap-illustration" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8l8-8" stroke="#b45309" stroke-width="1.2"/></pattern></defs>';
    for(const s of customPreset.shapes){
      const cells=new Set(s.cells),chosen=customShape?.id===s.id;
      let pixels='',edges='';
-     const {minX,maxX,minY,maxY,rectangular,thin:shouldThin,vertical,target}=bounds.get(s.id);
-     let x=dx.positions[minX],y=dy.positions[minY],w=dx.positions[maxX+1]-x,h=dy.positions[maxY+1]-y;
-     if(shouldThin){
-       if(vertical){const thin=Math.min(w,target);x+=(w-thin)/2;w=thin;}
-       else {const thin=Math.min(h,target);y+=(h-thin)/2;h=thin;}
-     }
+     const {minX,maxX,minY,maxY,rectangular}=bounds.get(s.id);
+     const x=dx.positions[minX],y=dy.positions[minY],w=dx.positions[maxX+1]-x,h=dy.positions[maxY+1]-y;
      for(const i of cells){const x=i%cols,y=Math.floor(i/cols),px=dx.positions[x],py=dy.positions[y],cw=dx.sizes[x],ch=dy.sizes[y];
        pixels+=`M${px} ${py}h${cw}v${ch}h${-cw}z`;
        if(y===0||!cells.has(i-cols))edges+=`M${px} ${py}h${cw}`;
@@ -213,21 +208,27 @@
        if(x===cols-1||!cells.has(i+1))edges+=`M${px+cw} ${py}v${ch}`;
      }
      const tx=x+w/2,ty=y+h/2;
-     const label=s.role==='empty'?'Empty':customId(s)+' '+customRoles[s.role];
+     const label=s.role==='empty'?'Empty':customId(s)+' '+customRole(s);
      const stroke=chosen?'#2563eb':'#278c9a';
      const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
      const divider=rectangular&&s.role==='double'?`<path data-door-divider d="M${tx} ${y}v${h}" stroke="#eaffff" stroke-width="1"/>`:'';
      const font=Math.min(12,Math.max(7,w/customId(s).length*1.4)),rotate=h>w*2;
      const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
-     svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${divider}${text}</g>`;
+     svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${divider}${text}</g>`;
    }
+   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells)occupied.set(i,(occupied.get(i)??0)+1);for(const [i,count] of occupied)if(count>1)svg+=`<rect data-overlap="${count}" x="${dx.positions[i%cols]}" y="${dy.positions[Math.floor(i/cols)]}" width="20" height="20" fill="url(#overlap-illustration)" pointer-events="none"/>`;
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${dx.total} ${dy.total}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
-   el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{const choose=()=>{customShape=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));state.query='';renderCustom();};node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};});
-   el('search').value=customShape?customId(customShape)+' '+customRoles[customShape.role]:'';
-   el('selection').textContent=customShape?customId(customShape)+' '+customRoles[customShape.role]:customPreset.name+' · 형태를 선택하세요.';
+   el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{
+     const choose=e=>{let hit=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));
+       if(e?.type==='click'){const svg=node.ownerSVGElement,point=svg.createSVGPoint();point.x=e.clientX;point.y=e.clientY;const local=point.matrixTransform(svg.getScreenCTM().inverse());const x=dx.positions.findIndex((p,i)=>i<cols&&local.x>=p&&local.x<p+dx.sizes[i]),y=dy.positions.findIndex((p,i)=>i<rows&&local.y>=p&&local.y<p+dy.sizes[i]);const hits=customPreset.shapes.filter(s=>s.cells.includes(y*cols+x)).reverse();if(hits.length>1){const current=hits.findIndex(s=>s.id===customShape?.id);hit=hits[(current+1)%hits.length];}}
+       customShape=hit;state.query='';renderCustom();
+     };node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};
+   });
+   el('search').value=customShape?customId(customShape)+' '+customRole(customShape):'';
+   el('selection').textContent=customShape?customId(customShape)+' '+customRole(customShape):customPreset.name+' · 형태를 선택하세요.';
    el('popup-input').disabled=!canSelect||!customShape||customShape.role==='empty';el('popup-shape').disabled=true;el('popup-delete').disabled=true;
  }
- function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id)??null;customShape=null;el('custom-preset').innerHTML='<option value="">기본 장 일러스트</option>'+customPresets.map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name.trim()===categories[p.part]?p.name:categories[p.part]+' · '+p.name)+'</option>').join('');}
+ function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id&&p.part===state.view)??null;customShape=null;}
  el('illustration-gap').oninput=e=>{state.illustrationGap=Math.max(0,Math.min(8,Number(e.target.value)||0));renderCustom();save();};
  el('custom-preset').onchange=e=>{cancelAction();customPreset=customPresets.find(p=>p.id===e.target.value)??null;customShape=null;state.selected=null;state.query='';if(customPreset)state.view=customPreset.part;el('shape-panel').hidden=true;el('add-panel').hidden=true;render();save();};
  function save(){if(initialized)parent.postMessage({type:'diagram-save',state:{...state,version:4,queue:[],screen:'diagram'}},'*');}
@@ -251,7 +252,7 @@
  el('shape-cancel').onclick=()=>el('shape-panel').hidden=true;
  el('shape-apply').onclick=()=>{const p=selected(),kind=el('new-kind').value;if(!p||p.kind==='surface'||!['double','single','hood'].includes(kind))return;if(kind===p.kind){el('shape-panel').hidden=true;return;}ask(p.id+'을 '+kinds[kind]+'으로 변경할까요? 기존 ID·실측치수·수량·구조부 입력은 유지됩니다.',()=>{if(selected()?.id!==p.id)return;const added=owned({...p,kind}).filter(s=>!state.surfaces.some(x=>x.id===s.id));if(all().length+added.length>36){el('status').textContent='샘플 최대 36개 장·구조부';return;}p.kind=kind;state.surfaces.push(...added);render();pick(p.id);el('status').textContent=p.id+' '+kinds[kind]+'으로 변경 · 조각 수량은 치수 입력에서 별도 확인';});};
  el('search').onfocus=e=>e.target.select?.();el('search').oninput=e=>{cancelAction();state.selected=null;state.query=e.target.value.trim();el('shape-panel').hidden=true;drawing();};el('search').onkeydown=e=>{if(e.key==='Enter'){const p=all().find(matches);if(p)pick(p.id);}};
- el('view').onchange=e=>{cancelAction();customPreset=null;customShape=null;state.view=e.target.value;state.selected=null;state.query='';el('search').value='';el('shape-panel').hidden=true;el('add-panel').hidden=true;render();save();};
+ el('view').onchange=e=>{cancelAction();state.view=e.target.value;customPreset=customPresets.find(p=>p.part===state.view)??null;customShape=null;state.selected=null;state.query='';el('search').value='';el('shape-panel').hidden=true;el('add-panel').hidden=true;render();save();};
  el('plus').onclick=()=>{el('add-panel').hidden=false;el('section').value=state.view;el('section').disabled=true;};el('cancel-add').onclick=()=>el('add-panel').hidden=true;
  el('confirm-add').onclick=()=>{const section=el('section').value,kind=el('kind').value,p=create(section,state.next[section],kind),children=owned(p);if(all().length+1+children.length>36){el('status').textContent='샘플 최대 36개 장·구조부';return;}state.next[section]++;const index=state.parts.findIndex(x=>x.id===state.selected&&x.section===section);if(index>=0)state.parts.splice(index+1,0,p);else state.parts.push(p);state.surfaces.push(...children);state.selected=p.id;el('add-panel').hidden=true;render();el('status').textContent=p.id+' 및 구조부 추가됨';save();};
  function remove(){const p=selected();if(!p)return;const label=p.kind==='empty'?'Empty':p.id;ask(label+' 및 연결된 도면 구조부를 삭제할까요? 기존 소그룹 입력은 유지됩니다.',()=>{if(selected()?.id!==p.id)return;const removed=new Set([p.id,...state.surfaces.filter(s=>s.owner===p.id).map(s=>s.id)]);state.parts=state.parts.filter(x=>!removed.has(x.id));state.surfaces=state.surfaces.filter(x=>!removed.has(x.id));state.queue=state.queue.filter(x=>!removed.has(x.id));state.selected=null;state.screen='diagram';el('shape-panel').hidden=true;render();el('status').textContent=label+' 및 연결 데이터 삭제됨';save();});}
