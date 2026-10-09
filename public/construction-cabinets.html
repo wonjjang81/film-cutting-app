@@ -171,27 +171,46 @@
    el('custom-hint').textContent=customPreset?'모눈선 없는 일러스트 · 형태 선택 후 치수 입력 · 형태 편집은 모눈 제작에서 진행':'';
    if(!customPreset)return;
    const {cols,rows}=customPreset.size??{cols:24,rows:16},unit=20,gap=state.illustrationGap??2;
+   // Display coordinates only: keep occupied cells (including Empty and holes
+   // inside a shape) at their original scale, compact unused runs into one gap.
+   const bounds=new Map(customPreset.shapes.map(s=>{
+     const xs=s.cells.map(i=>i%cols),ys=s.cells.map(i=>Math.floor(i/cols));
+     const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+     const cw=maxX-minX+1,ch=maxY-minY+1,rectangular=new Set(s.cells).size===cw*ch;
+     const panel=['side','bottom','top'].includes(s.role),trim=['molding','plinth'].includes(s.role);
+     const vertical=s.role==='side'||(trim&&ch>cw);
+     const thin=rectangular&&(panel||trim)&&(vertical?cw:ch)===1;
+     return [s.id,{minX,maxX,minY,maxY,rectangular,vertical,thin,target:trim?12:6}];
+   }));
+   const displayAxis=(count,axis)=>{
+     const sizes=Array(count).fill(0),positions=Array(count+1).fill(4);
+     for(const b of bounds.values()){
+       const first=axis==='x'?b.minX:b.minY,last=axis==='x'?b.maxX:b.maxY;
+       const size=b.thin&&(axis==='x')===b.vertical?b.target:unit;
+       for(let i=first;i<=last;i++)sizes[i]=Math.max(sizes[i],size);
+     }
+     const first=sizes.findIndex(n=>n>0),last=sizes.findLastIndex(n=>n>0);
+     for(let i=0;i<count;i++)positions[i+1]=positions[i]+(sizes[i]||((i>first&&i<last&&sizes[i-1]>0)?gap:0));
+     return {positions,sizes,total:positions[count]+4};
+   };
+   const dx=displayAxis(cols,'x'),dy=displayAxis(rows,'y');
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='';
    for(const s of customPreset.shapes){
      const cells=new Set(s.cells),chosen=customShape?.id===s.id;
      let pixels='',edges='';
-     const xs=s.cells.map(i=>i%cols),ys=s.cells.map(i=>Math.floor(i/cols));
-     const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-     let x=minX*unit+gap/2,y=minY*unit+gap/2,w=(maxX-minX+1)*unit-gap,h=(maxY-minY+1)*unit-gap;
-     const rectangular=cells.size===(maxX-minX+1)*(maxY-minY+1);
-     const panel=['side','bottom','top'].includes(s.role),trim=['molding','plinth'].includes(s.role);
-     if(rectangular&&(panel||trim)){
-       const vertical=s.role==='side'||(trim&&h>w),target=trim?12:6;
+     const {minX,maxX,minY,maxY,rectangular,thin:shouldThin,vertical,target}=bounds.get(s.id);
+     let x=dx.positions[minX],y=dy.positions[minY],w=dx.positions[maxX+1]-x,h=dy.positions[maxY+1]-y;
+     if(shouldThin){
        if(vertical){const thin=Math.min(w,target);x+=(w-thin)/2;w=thin;}
        else {const thin=Math.min(h,target);y+=(h-thin)/2;h=thin;}
      }
-     for(const i of cells){const x=i%cols,y=Math.floor(i/cols),px=x*unit,py=y*unit;
-       pixels+=`M${px} ${py}h20v20h-20z`;
-       if(y===0||!cells.has(i-cols))edges+=`M${px} ${py}h20`;
-       if(y===rows-1||!cells.has(i+cols))edges+=`M${px} ${py+20}h20`;
-       if(x===0||!cells.has(i-1))edges+=`M${px} ${py}v20`;
-       if(x===cols-1||!cells.has(i+1))edges+=`M${px+20} ${py}v20`;
+     for(const i of cells){const x=i%cols,y=Math.floor(i/cols),px=dx.positions[x],py=dy.positions[y],cw=dx.sizes[x],ch=dy.sizes[y];
+       pixels+=`M${px} ${py}h${cw}v${ch}h${-cw}z`;
+       if(y===0||!cells.has(i-cols))edges+=`M${px} ${py}h${cw}`;
+       if(y===rows-1||!cells.has(i+cols))edges+=`M${px} ${py+ch}h${cw}`;
+       if(x===0||!cells.has(i-1))edges+=`M${px} ${py}v${ch}`;
+       if(x===cols-1||!cells.has(i+1))edges+=`M${px+cw} ${py}v${ch}`;
      }
      const tx=x+w/2,ty=y+h/2;
      const label=s.role==='empty'?'Empty':customId(s)+' '+customRoles[s.role];
@@ -202,7 +221,7 @@
      const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${divider}${text}</g>`;
    }
-   el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${cols*20} ${rows*20}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
+   el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${dx.total} ${dy.total}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{const choose=()=>{customShape=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));state.query='';renderCustom();};node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};});
    el('search').value=customShape?customId(customShape)+' '+customRoles[customShape.role]:'';
    el('selection').textContent=customShape?customId(customShape)+' '+customRoles[customShape.role]:customPreset.name+' · 형태를 선택하세요.';
