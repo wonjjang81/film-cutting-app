@@ -16,12 +16,12 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  assert.equal(await page.locator('[data-custom-preset] option[value="P2"]').innerText(),'책장A');
  assert.equal(await page.locator('[data-preset-shape="2"] rect').getAttribute('width'),'20','one-cell side/member width is never forced thin');
  const a=Number(await page.locator('[data-preset-shape="3"] rect').getAttribute('x')),b=Number(await page.locator('[data-preset-shape="4"] rect').getAttribute('x'));
- assert.equal(b-a-20,2,'unused gap is visually minimal');
+ assert.equal(b-a-20,60,'internal grid spacing is preserved');
  assert.equal(await page.locator('[data-overlap="2"]').count(),1);
  await page.locator('[data-preset-shape="3"]').click();const first=await page.locator('[data-search]').inputValue();
  await page.locator('[data-preset-shape="3"]').click();const second=await page.locator('[data-search]').inputValue();
  assert.notEqual(first,second,'illustration clicks cycle overlapping members');assert([first,second].some(s=>s.includes('선반')),'custom role shown in selection');
  await page.locator('[data-view]').selectOption('upper');
  assert.equal(await page.locator('[data-custom-preset]').inputValue(),'P1');assert.equal(await page.locator('[data-custom-preset] option[value="P1"]').innerText(),'상부장A');
- assert.deepEqual(errors,[]);console.log('PASS: part-specific preset filtering, exact names, drawn thickness, minimal gaps, custom roles and layered selection');
+ assert.deepEqual(errors,[]);console.log('PASS: part-specific preset filtering, exact names, drawn thickness, source geometry, custom roles and layered selection');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

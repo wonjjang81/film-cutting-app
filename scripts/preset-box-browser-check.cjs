@@ -20,7 +20,7 @@ const assert = require('node:assert/strict');
     assert.equal(Number(await page.locator('[data-preset-shape="11"] rect').getAttribute('height')), 20, 'bottom panel preserves drawn thickness');
     assert.equal(Number(await page.locator('[data-preset-shape="10"] rect').getAttribute('height')), 20, 'molding has no forced thickness');
     assert.equal(await page.locator('[data-preset-shape="9"] title').count(), 1, 'member details remain available');
-    // Preserve intentionally thick parts and collapse only unused grid space.
+    // Preserve intentionally thick parts and all internal grid space.
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P2', part: 'vanity', name: '간격 테스트', size: { cols: 24, rows: 16 }, shapes: [
       { id: 1, role: 'side', name: '옆판', cells: [0,1,24,25] },
       { id: 2, role: 'bottom', name: '밑판', cells: [168,169,192,193] },
@@ -33,12 +33,11 @@ const assert = require('node:assert/strict');
     assert.equal(boxes[0][2], 40, 'two-cell side thickness is preserved');
     assert.equal(boxes[1][3], 40, 'two-cell bottom thickness is preserved');
     assert.equal(boxes[2][3], 40, 'two-cell molding thickness is preserved');
-    assert.equal(boxes[2][0] - (boxes[0][0] + boxes[0][2]), 2, 'unused columns also collapse to a small gap');
+    assert.equal(boxes[2][0] - (boxes[0][0] + boxes[0][2]), 100, 'five unused columns retain their original scale');
     const before = boxes[1][1] - (boxes[0][1] + boxes[0][3]);
-    assert.equal(before, 2, 'five unused rows collapse to one small illustration gap');
-    assert.equal(await page.locator('[data-illustration-gap]').count(),0,'uniform minimum gap is not overridden by a per-view setting');
-    // A tall side panel used to prevent empty rows being compacted for doors.
-    // Touching doors and widely separated doors must use the very same gap.
+    assert.equal(before, 100, 'five unused rows keep the original member relationships');
+    assert.equal(await page.locator('[data-illustration-gap]').inputValue(),'1','gap control restored with default 1');
+    // A tall side panel and doors must stay in the same source coordinate system.
     const fixture = { id: 'P4', part: 'vanity', name: '일정 간격', size: { cols: 24, rows: 16 }, shapes: [
       { id: 1, role: 'side', name: '옆판', cells: Array.from({length:12},(_,i)=>i*24) },
       { id: 2, role: 'single', name: '장1', cells: [1,2,25,26] },
@@ -49,9 +48,9 @@ const assert = require('node:assert/strict');
     await page.locator('[data-custom-preset] option[value="P4"]').waitFor({state:'attached'});
     await page.locator('[data-custom-preset]').selectOption('P4');
     boxes = await page.evaluate(()=>[1,2,3,4].map(id=>{const r=document.querySelector(`[data-preset-shape="${id}"] rect`);return ['x','y','width','height'].map(k=>Number(r.getAttribute(k)));}));
-    assert.equal(boxes[1][0]-boxes[0][0]-boxes[0][2],2,'side-to-door separation is minimal');
-    assert.equal(boxes[2][1]-boxes[1][1]-boxes[1][3],2,'large gap compacts even beside a spanning side panel');
-    assert.equal(boxes[3][0]-boxes[1][0]-boxes[1][2],2,'originally touching members also get the same gap');
+    assert.equal(boxes[1][0]-boxes[0][0]-boxes[0][2],0,'touching source members retain aligned boundaries');
+    assert.equal(boxes[2][1]-boxes[1][1]-boxes[1][3],120,'internal empty space is not independently packed');
+    assert.equal(boxes[3][0]-boxes[1][0]-boxes[1][2],0,'adjacent members retain their exact original positions');
     assert.equal(boxes[0][3],240,'spanning panel retains its entire original size');
     if(process.env.DIAGRAM_SCREENSHOT)await page.screenshot({path:process.env.DIAGRAM_SCREENSHOT,fullPage:true});
     await page.locator('[data-preset-shape="3"]').click();
@@ -84,6 +83,6 @@ const assert = require('node:assert/strict');
     assert.equal(await page.locator('[data-search]').inputValue(), 'P1-G07 양문장');
     assert.equal(await page.locator('[data-popup-input]').isDisabled(), false);
     assert.deepEqual(errors, []);
-    console.log('PASS: compact illustration gaps; two-cell sizes; one-cell thin panels; irregular/Empty spaces; stable selection ID');
+    console.log('PASS: source illustration geometry; adjustable gap; two-cell sizes; irregular/Empty spaces; stable selection ID');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error); process.exitCode = 1; });
