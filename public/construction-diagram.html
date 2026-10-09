@@ -81,7 +81,7 @@
  const size=()=>state.sizes?.[state.part]??defaultSize(),cols=()=>size().cols,rows=()=>size().rows;
  const shapes=()=>state.drawings[state.part]??[];
  const selected=()=>shapes().find(s=>s.id===state.selected);
- const label=s=>s.role==='empty'?'Empty · 시공안함':'G'+String(s.id).padStart(2,'0')+' · '+s.name+' · '+roles[s.role];
+ const label=s=>s.role==='empty'?'Empty · 시공안함':'G'+String(s.id).padStart(2,'0')+' '+roles[s.role];
  function save(){state.version=2;const snapshot={modelContent:{sample:'모눈 도면 편집',part:parts[state.part],shapeCount:shapes().length,selectedShape:selected()?label(selected()):null,presetCount:state.presets.length},privateContent:state};if(new TextEncoder().encode(JSON.stringify(snapshot)).length>250000){status('도면 저장 한도입니다. 사용하지 않는 프리셋을 삭제해 주세요.');return false;}if(initialized&&mode==='editor')parent.postMessage({type:'diagram-save',state:clone(state)},'*');return true;}
  const status=t=>el('status').textContent=t;
  function cancel(){pending=null;el('confirm').hidden=true;}
