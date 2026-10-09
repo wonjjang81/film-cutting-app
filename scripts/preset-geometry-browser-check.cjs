@@ -24,9 +24,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  assert.equal(original[0].y+original[0].height,original[1].y+original[1].height,'equal side lengths have equal endpoints');
  assert.equal(original[3].height,140,'seven-cell front keeps all seven cells');
  assert.equal(await page.locator('[data-illustration-gap]').inputValue(),'1','default gap is 1');
+ assert.equal(Number(await page.locator('[data-member-separator]').first().getAttribute('stroke-width')),1/3,'default separator is one third of its previous width');
  await page.locator('[data-illustration-gap]').fill('4');await page.locator('[data-illustration-gap]').dispatchEvent('input');
  assert.deepEqual(await Promise.all([1,2,3,4].map(box)),original,'gap adjustment never resizes or relocates source members');
- assert.equal(await page.locator('[data-member-separator]').first().getAttribute('stroke-width'),'4','gap controls visible member separation');
+ assert.equal(Number(await page.locator('[data-member-separator]').first().getAttribute('stroke-width')),4/3,'gap control uses one-third display scale');
  await page.locator('[data-preset-shape="4"]').click();assert.equal(await page.locator('[data-search]').inputValue(),'P1-G04 앞판');
  if(process.env.DIAGRAM_SCREENSHOT)await page.screenshot({path:process.env.DIAGRAM_SCREENSHOT,fullPage:true});
  const saved=await page.evaluate(()=>window.lastSaved);assert.equal(saved.illustrationGap,4);
