@@ -106,11 +106,11 @@ const server = http.createServer((req, res) => {
     await editor.locator('[data-grow-x]').click(); await editor.locator('[data-grow-y]').click();
     await editor.locator('select[data-role]').selectOption('top');
     const grid = await editor.locator('[data-board]').boundingBox();
-    await page.mouse.move(grid.x + grid.width * 2.5 / 25, grid.y + grid.height * 2.5 / 17);
+    await page.mouse.move(grid.x + grid.width * 2.5 / 49, grid.y + grid.height * 2.5 / 33);
     await page.mouse.down();
-    await page.mouse.move(grid.x + grid.width * 7.5 / 25, grid.y + grid.height * 6.5 / 17, { steps: 6 });
+    await page.mouse.move(grid.x + grid.width * 7.5 / 49, grid.y + grid.height * 6.5 / 33, { steps: 6 });
     await page.mouse.up();
-    assert.equal(await editor.locator('[data-svg] .cell[data-role="top"]').count(), 30);
+    assert.equal(await editor.locator('[data-svg] .cell[data-role="top"]').count(), 12, 'top panel uses two-cell thickness');
     await editor.locator('[data-preset-name]').fill('화장대 윗판'); await editor.locator('[data-save-preset]').click();
     await page.waitForFunction(() => Object.keys(localStorage).some(k => k.includes('diagrams-v1') && localStorage.getItem(k).includes('화장대 윗판')));
     await page.getByRole('tab', { name: /재단 계산/ }).click();
@@ -136,8 +136,8 @@ const server = http.createServer((req, res) => {
     await page.goto(base + '/diagrams');
     await page.getByRole('tab', { name: '새 프리셋 제작 · 모눈', exact: true }).click();
     await editor.locator('[data-svg] .cell[data-role="top"]').first().waitFor();
-    assert.equal(await editor.locator('[data-svg]').getAttribute('viewBox'), '0 0 500 340');
-    assert.equal(await editor.locator('[data-svg] .cell[data-role="top"]').count(),30);
+    assert.equal(await editor.locator('[data-svg]').getAttribute('viewBox'), '0 0 980 660');
+    assert.equal(await editor.locator('[data-svg] .cell[data-role="top"]').count(),12);
     await editor.locator('[data-new-preset]').click(); await editor.locator('[data-yes]').click();
     assert.equal(await editor.locator('[data-svg] .cell').count(),0);
     assert((await editor.locator('[data-preset]').innerText()).includes('화장대 윗판'), 'saved presets survive new preset creation');

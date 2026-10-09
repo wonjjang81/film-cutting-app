@@ -43,13 +43,18 @@ const assert = require('node:assert/strict');
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P3', part: 'upper', name: '형태 보존', size: { cols: 24, rows: 16 }, shapes: [
       { id: 1, role: 'single', name: 'ㄱ자', cells: [0,24,48,49,50] },
       { id: 2, role: 'empty', name: 'Empty', cells: [3,4,27,28,51,52] },
-      { id: 3, role: 'single', name: '장', cells: [5,6,29,30,53,54] }
+      { id: 3, role: 'drawer', name: '서랍장', cells: [5,6,29,30,53,54] },
+      { id: 4, role: 'front', name: '앞판', cells: [8,9,32,33] }
     ] }] }, '*'));
     await page.locator('[data-custom-preset] option[value="P3"]').waitFor({ state: 'attached' });
     await page.locator('[data-custom-preset]').selectOption('P3');
     assert.equal(await page.locator('[data-preset-shape="1"] rect').count(), 0, 'irregular silhouette is not replaced with a box');
     assert.equal(await page.locator('[data-preset-shape="1"] path').first().getAttribute('d'), 'M4 4h20v20h-20zM4 24h20v20h-20zM4 44h20v20h-20zM24 44h20v20h-20zM44 44h20v20h-20z', 'occupied L shape keeps scale and internal opening');
     assert.equal(Number(await page.locator('[data-preset-shape="2"] rect').getAttribute('width')), 40, 'explicit Empty space is preserved');
+    assert.equal(await page.locator('[data-preset-shape="3"] [data-door-divider]').count(), 0, 'drawer illustration has no horizontal divider');
+    await page.locator('[data-preset-shape="4"]').click();
+    assert.equal(await page.locator('[data-search]').inputValue(),'P3-G04 앞판');
+    assert.equal(await page.locator('[data-popup-input]').isDisabled(),false,'front panel connects to cutting input');
     await page.locator('[data-preset-shape="2"]').click();
     assert.equal(await page.locator('[data-popup-input]').isDisabled(), true, 'Empty is still non-cuttable');
     // Restore the cabinet fixture to verify ID selection still works.
