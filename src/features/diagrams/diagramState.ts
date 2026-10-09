@@ -57,6 +57,7 @@ export function diagramStorageKey(userId: string): string {
 }
 
 export function parseCabinetState(v: unknown): CabinetState | null {
+  if (object(v) && v.illustrationGap !== undefined && (typeof v.illustrationGap !== 'number' || !Number.isFinite(v.illustrationGap) || v.illustrationGap < 0 || v.illustrationGap > 8)) return null;
   if (!object(v) || v.version !== 4 || !part(v.view) || !Array.isArray(v.parts) || !Array.isArray(v.surfaces) || v.parts.length > 30 || v.surfaces.length > 60 || !object(v.next) || JSON.stringify(v).length > 250000) return null;
   const ids = new Set<string>();
   for (const p of [...v.parts, ...v.surfaces]) {

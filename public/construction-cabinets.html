@@ -127,6 +127,7 @@
 <label class="part-picker">시공부위 · 인건비 설정 기준<select data-view></select></label>
 <label class="part-picker">저장된 시공부위 프리셋<select data-custom-preset><option value="">기본 장 일러스트</option></select></label>
 <div data-custom-hint class="hint"></div><div data-custom-illustration hidden></div>
+<label data-gap-control hidden class="part-picker">일러스트 간격 (표시용)<input data-illustration-gap type="number" min="0" max="8" step="1" value="2" aria-label="일러스트 형태 간격"><span class="hint">실측치수와 모눈 원본에는 영향을 주지 않습니다.</span></label>
 <div data-actionbar class="actionbar" aria-label="선택한 장 편집 도구"><label>장 ID / 검색 · 선택 정보<input data-search type="search" aria-label="장 ID 검색 및 선택 정보" placeholder="장 ID 또는 이름 검색"></label><div class="bar actions"><button data-popup-input class="primary cursor-interaction" disabled>치수 입력</button><button data-popup-shape class="cursor-interaction" disabled>형태 변경</button><button data-popup-delete class="cursor-interaction" disabled>삭제</button></div><div data-shape-panel hidden><label>장 형태<select data-new-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="hood">후드장</option></select></label><div class="bar"><button data-shape-apply class="primary cursor-interaction">변경 적용</button><button data-shape-cancel class="cursor-interaction">취소</button></div></div><section data-confirm-panel aria-label="변경 확인" hidden><div data-confirm-message></div><div class="bar"><button data-confirm-yes class="primary cursor-interaction">확인 · 실행</button><button data-confirm-no class="cursor-interaction">취소</button></div></section></div>
 <div class="bar"><button data-plus class="cursor-interaction" aria-label="현재 부위 장 추가">＋ 추가</button></div>
 <section data-add-panel hidden class="panel" aria-label="장 추가 설정"><h3>장 추가</h3><div class="grid"><label>위치<select data-section><option value="upper">상부장</option><option value="lower">하부장</option><option value="fridge">냉장고장</option></select></label><label>형태<select data-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="empty">Empty · 빈 공간</option><option value="hood">후드장</option></select></label></div><div class="bar"><button data-confirm-add class="primary cursor-interaction">추가</button><button data-cancel-add class="cursor-interaction">취소</button></div></section>
@@ -165,25 +166,41 @@
  const customId=s=>customPreset.id+'-G'+String(s.id).padStart(2,'0');
  function renderCustom(){
    root.querySelector('.drawing').hidden=!!customPreset;el('custom-illustration').hidden=!customPreset;
+   el('gap-control').hidden=!customPreset;el('illustration-gap').value=String(state.illustrationGap??2);
    el('custom-preset').value=customPreset?.id??'';el('plus').disabled=!!customPreset;
    el('custom-hint').textContent=customPreset?'모눈선 없는 일러스트 · 형태 선택 후 치수 입력 · 형태 편집은 모눈 제작에서 진행':'';
    if(!customPreset)return;
-   const {cols,rows}=customPreset.size??{cols:24,rows:16},unit=20;
+   const {cols,rows}=customPreset.size??{cols:24,rows:16},unit=20,gap=state.illustrationGap??2;
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='';
    for(const s of customPreset.shapes){
      const cells=new Set(s.cells),chosen=customShape?.id===s.id;
      let pixels='',edges='';
+     const xs=s.cells.map(i=>i%cols),ys=s.cells.map(i=>Math.floor(i/cols));
+     const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
+     let x=minX*unit+gap/2,y=minY*unit+gap/2,w=(maxX-minX+1)*unit-gap,h=(maxY-minY+1)*unit-gap;
+     const rectangular=cells.size===(maxX-minX+1)*(maxY-minY+1);
+     const panel=['side','bottom','top'].includes(s.role),trim=['molding','plinth'].includes(s.role);
+     if(rectangular&&(panel||trim)){
+       const vertical=s.role==='side'||(trim&&h>w),target=trim?12:6;
+       if(vertical){const thin=Math.min(w,target);x+=(w-thin)/2;w=thin;}
+       else {const thin=Math.min(h,target);y+=(h-thin)/2;h=thin;}
+     }
      for(const i of cells){const x=i%cols,y=Math.floor(i/cols),px=x*unit,py=y*unit;
-       pixels+=`<rect x="${px}" y="${py}" width="20" height="20" stroke="none"/>`;
+       pixels+=`M${px} ${py}h20v20h-20z`;
        if(y===0||!cells.has(i-cols))edges+=`M${px} ${py}h20`;
        if(y===rows-1||!cells.has(i+cols))edges+=`M${px} ${py+20}h20`;
        if(x===0||!cells.has(i-1))edges+=`M${px} ${py}v20`;
        if(x===cols-1||!cells.has(i+1))edges+=`M${px+20} ${py}v20`;
      }
-     const first=s.cells[Math.floor(s.cells.length/2)],tx=(first%cols)*20+10,ty=Math.floor(first/cols)*20+10;
+     const tx=x+w/2,ty=y+h/2;
      const label=s.role==='empty'?'Empty':customId(s)+' '+customRoles[s.role];
-     svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${pixels}<path d="${edges}" fill="none" stroke="${chosen?'#2563eb':'#fff'}" stroke-width="${chosen?3:2}"/><text x="${tx}" y="${ty}" fill="#153d47" font-size="10" text-anchor="middle" pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text></g>`;
+     const stroke=chosen?'#2563eb':'#278c9a';
+     const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
+     const divider=rectangular&&s.role==='double'?`<path data-door-divider d="M${tx} ${y}v${h}" stroke="#eaffff" stroke-width="1"/>`:rectangular&&s.role==='drawer'?`<path data-door-divider d="M${x} ${ty}h${w}" stroke="#eaffff" stroke-width="1"/>`:'';
+     const font=Math.min(12,Math.max(7,w/customId(s).length*1.4)),rotate=h>w*2;
+     const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
+     svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${divider}${text}</g>`;
    }
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${cols*20} ${rows*20}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{const choose=()=>{customShape=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));state.query='';renderCustom();};node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};});
@@ -191,7 +208,8 @@
    el('selection').textContent=customShape?customId(customShape)+' '+customRoles[customShape.role]:customPreset.name+' · 형태를 선택하세요.';
    el('popup-input').disabled=!canSelect||!customShape||customShape.role==='empty';el('popup-shape').disabled=true;el('popup-delete').disabled=true;
  }
- function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id)??null;customShape=null;el('custom-preset').innerHTML='<option value="">기본 장 일러스트</option>'+customPresets.map(p=>'<option value="'+escape(p.id)+'">'+escape(categories[p.part]+' · '+p.name)+'</option>').join('');}
+ function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id)??null;customShape=null;el('custom-preset').innerHTML='<option value="">기본 장 일러스트</option>'+customPresets.map(p=>'<option value="'+escape(p.id)+'">'+escape(p.name.trim()===categories[p.part]?p.name:categories[p.part]+' · '+p.name)+'</option>').join('');}
+ el('illustration-gap').oninput=e=>{state.illustrationGap=Math.max(0,Math.min(8,Number(e.target.value)||0));renderCustom();save();};
  el('custom-preset').onchange=e=>{cancelAction();customPreset=customPresets.find(p=>p.id===e.target.value)??null;customShape=null;state.selected=null;state.query='';if(customPreset)state.view=customPreset.part;el('shape-panel').hidden=true;el('add-panel').hidden=true;render();save();};
  function save(){if(initialized)parent.postMessage({type:'diagram-save',state:{...state,version:4,queue:[],screen:'diagram'}},'*');}
  const selected=()=>all().find(p=>p.id===state.selected),matches=p=>p.section===state.view&&(!state.query||(p.id+' '+p.name+' '+categories[p.section]+' '+kinds[p.kind]).toLowerCase().includes(state.query.toLowerCase())),cut=p=>({width:p.width+(p.shape!=='flat'?p.a:0)+(p.shape==='u'?p.b:0)+p.allowance,height:p.height+p.allowance});

@@ -28,6 +28,9 @@ describe('construction diagram state boundary', () => {
     const cabinet = { id: 'U01', section: 'upper', kind: 'double', name: '상부장', width: 0, height: 0, qty: 2, a: 0, b: 0, allowance: 0, sites: 1 };
     const doc = { version: 4, parts: [cabinet], surfaces: [], view: 'upper', next: { upper: 2 }, selected: null, screen: 'diagram', query: '', queue: [] };
     expect(parseCabinetState(doc)).not.toBeNull();
+    expect(parseCabinetState({ ...doc, illustrationGap: 8 })).not.toBeNull();
+    expect(parseCabinetState({ ...doc, illustrationGap: -1 })).toBeNull();
+    expect(parseCabinetState({ ...doc, illustrationGap: NaN })).toBeNull();
     expect(parseCabinetState({ ...doc, parts: [cabinet, cabinet] })).toBeNull();
     expect(parseCabinetState({ ...doc, parts: [{ ...cabinet, qty: NaN }] })).toBeNull();
   });
