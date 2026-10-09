@@ -41,11 +41,18 @@ describe('construction diagram state boundary', () => {
     expect(parseDiagramState(fine)).toEqual(fine);
     expect(parseDiagramState({ ...fine, sizes: { upper: { cols: 129, rows: 128 } } })).toBeNull();
   });
-  it('rejects overlaps, out-of-bounds cells and unsafe role/name/state inputs', () => {
+  it('allows overlapping members but rejects duplicate cells and unsafe inputs', () => {
     expect(parseDiagramState({ ...state(), drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [5000] }] } })).toBeNull();
-    expect(parseDiagramState({ ...state(), drawings: { upper: [...state().drawings.upper, { id: 2, role: 'bottom', name: '밑판', cells: [26] }] } })).toBeNull();
+    expect(parseDiagramState({ ...state(), drawings: { upper: [...state().drawings.upper, { id: 2, role: 'bottom', name: '밑판', cells: [26] }] } })).not.toBeNull();
+    expect(parseDiagramState({ ...state(), drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [26,26] }] } })).toBeNull();
     expect(parseDiagramState({ ...state(), part: '__proto__' })).toBeNull();
     expect(parseDiagramState({ ...state(), sizes: { upper: { cols: 1000, rows: 16 } } })).toBeNull();
+  });
+  it('round-trips editable role catalogs and keeps preset roles independent', () => {
+    const custom = { ...state(), version: 3, roles: { custom1: '선반' }, drawings: { upper: [{ id: 1, role: 'custom1', name: '선반', cells: [26,27] }] }, presets: [{ id: 'P1', part: 'shelf', name: '책장A', roles: { custom2: '앞판' }, shapes: [{ id: 9, role: 'custom2', name: '앞판', cells: [0] }] }] };
+    expect(parseDiagramState(custom)).toEqual(custom);
+    expect(parseDiagramState({ ...custom, roles: { custom1: '' } })).toBeNull();
+    expect(parseDiagramState({ ...custom, roles: { '__proto__': 'unsafe' } })).toBeNull();
   });
   it('accepts legacy dimensions and validates each preset independently', () => {
     expect(parseDiagramState({ ...state(), version: 1, sizes: undefined })).not.toBeNull();

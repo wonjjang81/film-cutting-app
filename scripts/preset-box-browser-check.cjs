@@ -10,15 +10,16 @@ const assert = require('node:assert/strict');
     await page.route('https://diagram-test.invalid/**', route => route.fulfill({ contentType: 'text/html', body: fs.readFileSync(path.resolve(__dirname, '../public/construction-cabinets.html'), 'utf8') }));
     await page.goto('https://diagram-test.invalid/');
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P1', part: 'vanity', name: '화장대', size: { cols: 24, rows: 16 }, shapes: [{ id: 7, role: 'double', name: '양문', cells: [25,26,27,49,50,51] }, { id: 8, role: 'single', name: '싱글', cells: [28,29,52,53] }, { id: 9, role: 'side', name: '옆판', cells: [24,48,72] }, { id: 10, role: 'molding', name: '몰딩', cells: [1,2,3,4,5] }, { id: 11, role: 'bottom', name: '밑판', cells: [73,74,75,76,77] }] }] }, '*'));
+    await page.locator('[data-view]').selectOption('vanity');
     await page.locator('[data-custom-preset] option[value="P1"]').waitFor({ state: 'attached' });
     assert.equal(await page.locator('[data-custom-preset] option[value="P1"]').innerText(), '화장대');
     await page.locator('[data-custom-preset]').selectOption('P1');
     assert.equal(await page.locator('[data-preset-shape="7"] rect').count(), 1, 'one smooth box, not six cell rectangles');
     assert.equal(await page.locator('[data-preset-shape="7"] [data-door-divider]').count(), 1, 'double cabinet door divider');
-    assert.equal(Number(await page.locator('[data-preset-shape="9"] rect').getAttribute('width')), 6, 'side panel is thin');
-    assert.equal(Number(await page.locator('[data-preset-shape="11"] rect').getAttribute('height')), 6, 'bottom panel is thin');
-    assert.equal(Number(await page.locator('[data-preset-shape="10"] rect').getAttribute('height')), 12, 'molding is thicker than panels');
-    assert.equal(await page.locator('[data-preset-shape="9"] text').count(), 0, 'narrow panel uses selection info instead of overflowing text');
+    assert.equal(Number(await page.locator('[data-preset-shape="9"] rect').getAttribute('width')), 20, 'side panel preserves one grid cell thickness');
+    assert.equal(Number(await page.locator('[data-preset-shape="11"] rect').getAttribute('height')), 20, 'bottom panel preserves drawn thickness');
+    assert.equal(Number(await page.locator('[data-preset-shape="10"] rect').getAttribute('height')), 20, 'molding has no forced thickness');
+    assert.equal(await page.locator('[data-preset-shape="9"] title').count(), 1, 'member details remain available');
     // Preserve intentionally thick parts and collapse only unused grid space.
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P2', part: 'vanity', name: '간격 테스트', size: { cols: 24, rows: 16 }, shapes: [
       { id: 1, role: 'side', name: '옆판', cells: [0,1,24,25] },
@@ -46,6 +47,7 @@ const assert = require('node:assert/strict');
       { id: 3, role: 'drawer', name: '서랍장', cells: [5,6,29,30,53,54] },
       { id: 4, role: 'front', name: '앞판', cells: [8,9,32,33] }
     ] }] }, '*'));
+    await page.locator('[data-view]').selectOption('upper');
     await page.locator('[data-custom-preset] option[value="P3"]').waitFor({ state: 'attached' });
     await page.locator('[data-custom-preset]').selectOption('P3');
     assert.equal(await page.locator('[data-preset-shape="1"] rect').count(), 0, 'irregular silhouette is not replaced with a box');
@@ -60,6 +62,7 @@ const assert = require('node:assert/strict');
     // Restore the cabinet fixture to verify ID selection still works.
     await page.reload();
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P1', part: 'vanity', name: '화장대', size: { cols: 24, rows: 16 }, shapes: [{ id: 7, role: 'double', name: '양문', cells: [25,26,27,49,50,51] }] }] }, '*'));
+    await page.locator('[data-view]').selectOption('vanity');
     await page.locator('[data-custom-preset] option[value="P1"]').waitFor({ state: 'attached' });
     await page.locator('[data-custom-preset]').selectOption('P1');
     await page.locator('[data-preset-shape="7"]').click();
