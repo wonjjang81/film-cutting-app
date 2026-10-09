@@ -36,11 +36,26 @@ const assert = require('node:assert/strict');
     assert.equal(boxes[2][0] - (boxes[0][0] + boxes[0][2]), 2, 'unused columns also collapse to a small gap');
     const before = boxes[1][1] - (boxes[0][1] + boxes[0][3]);
     assert.equal(before, 2, 'five unused rows collapse to one small illustration gap');
-    await page.locator('[data-illustration-gap]').fill('8');
-    await page.locator('[data-illustration-gap]').dispatchEvent('input');
-    boxes = await geometry();
-    assert.equal(boxes[1][1] - (boxes[0][1] + boxes[0][3]), 8, 'gap control adjusts unused space, not part size');
-    assert.equal(boxes[0][2], 40, 'gap control preserves part size');
+    assert.equal(await page.locator('[data-illustration-gap]').count(),0,'uniform minimum gap is not overridden by a per-view setting');
+    // A tall side panel used to prevent empty rows being compacted for doors.
+    // Touching doors and widely separated doors must use the very same gap.
+    const fixture = { id: 'P4', part: 'vanity', name: '일정 간격', size: { cols: 24, rows: 16 }, shapes: [
+      { id: 1, role: 'side', name: '옆판', cells: Array.from({length:12},(_,i)=>i*24) },
+      { id: 2, role: 'single', name: '장1', cells: [1,2,25,26] },
+      { id: 3, role: 'single', name: '장2', cells: [193,194,217,218] },
+      { id: 4, role: 'single', name: '장3', cells: [3,4,27,28] }
+    ] };
+    await page.evaluate(p=>window.postMessage({type:'diagram-init',canSelect:true,presets:[p]},'*'),fixture);
+    await page.locator('[data-custom-preset] option[value="P4"]').waitFor({state:'attached'});
+    await page.locator('[data-custom-preset]').selectOption('P4');
+    boxes = await page.evaluate(()=>[1,2,3,4].map(id=>{const r=document.querySelector(`[data-preset-shape="${id}"] rect`);return ['x','y','width','height'].map(k=>Number(r.getAttribute(k)));}));
+    assert.equal(boxes[1][0]-boxes[0][0]-boxes[0][2],2,'side-to-door separation is minimal');
+    assert.equal(boxes[2][1]-boxes[1][1]-boxes[1][3],2,'large gap compacts even beside a spanning side panel');
+    assert.equal(boxes[3][0]-boxes[1][0]-boxes[1][2],2,'originally touching members also get the same gap');
+    assert.equal(boxes[0][3],240,'spanning panel retains its entire original size');
+    if(process.env.DIAGRAM_SCREENSHOT)await page.screenshot({path:process.env.DIAGRAM_SCREENSHOT,fullPage:true});
+    await page.locator('[data-preset-shape="3"]').click();
+    assert.equal(await page.locator('[data-search]').inputValue(),'P4-G03 싱글장','moved illustration retains selection ID');
     await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [{ id: 'P3', part: 'upper', name: '형태 보존', size: { cols: 24, rows: 16 }, shapes: [
       { id: 1, role: 'single', name: 'ㄱ자', cells: [0,24,48,49,50] },
       { id: 2, role: 'empty', name: 'Empty', cells: [3,4,27,28,51,52] },
