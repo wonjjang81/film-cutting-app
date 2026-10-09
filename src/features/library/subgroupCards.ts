@@ -116,7 +116,9 @@ export function subgroupPieceNamePart(groupName: string, subgroupName: string, p
     ? normalizedPieceId.slice(groupPrefix.index + groupPrefix.prefix.length)
     : pieceNamePart(groupName, pieceId);
   const subgroupSuffix = suffix.startsWith(subgroupPrefix) ? suffix.slice(subgroupPrefix.length) : suffix;
-  const normalizedSuffix = subgroupSuffix.replace(/^[A-Z](?:_|-)/, '');
+  // U-SL / L-KB are cabinet structure IDs, not obsolete A/B subgroup prefixes.
+  const normalizedSuffix = /^[UL]-(?:SL|SR|MT|KB)_\d+$/.test(subgroupSuffix)
+    ? subgroupSuffix : subgroupSuffix.replace(/^[A-Z](?:_|-)/, '');
   return normalizedSuffix || '01';
 }
 
