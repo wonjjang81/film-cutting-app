@@ -17,6 +17,7 @@ export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'p
   const callback = useRef(onSelect); callback.current = onSelect;
   const partCallback = useRef(onPartChange); partCallback.current = onPartChange;
   const current = useRef<DiagramState | CabinetState | null>(null);
+  const presets = useRef<DiagramState['presets']>([]);
   const [ready, setReady] = useState(false);
   const [loadedKey, setLoadedKey] = useState('');
   const [error, setError] = useState('');
@@ -29,20 +30,28 @@ export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'p
         const raw = await AsyncStorage.getItem(key);
         const parsed = raw ? validate(JSON.parse(raw)) : null;
         if (raw && !parsed) throw new Error('도면 저장 데이터가 손상되었습니다. 원본은 보존했습니다.');
+        if (mode === 'cabinet') {
+          const gridKey = diagramStorageKey(auth.user?.id ?? 'local');
+          await queues.get(gridKey);
+          const gridRaw = await AsyncStorage.getItem(gridKey);
+          const grid = gridRaw ? parseDiagramState(JSON.parse(gridRaw)) : null;
+          if (gridRaw && !grid) throw new Error('프리셋 저장 데이터를 읽지 못했습니다. 원본은 보존했습니다.');
+          presets.current = grid?.presets ?? [];
+        }
         if (!active) return;
         current.current = parsed; setError(''); setLoadedKey(key); setReady(true);
         if (mode === 'cabinet' && parsed && 'view' in parsed) partCallback.current?.(DIAGRAM_PARTS[parsed.view as keyof typeof DIAGRAM_PARTS]);
-        frame.current?.contentWindow?.postMessage({ type: 'diagram-init', state: parsed, canSelect: !!callback.current }, '*');
+        frame.current?.contentWindow?.postMessage({ type: 'diagram-init', state: parsed, presets: presets.current, canSelect: !!callback.current }, '*');
       } catch (e) { if (active) { setReady(false); setError(e instanceof Error ? e.message : '도면 데이터를 읽지 못했습니다.'); } }
     })();
     return () => { active = false; };
-  }, [key, validate, mode]);
+  }, [key, validate, mode, auth.user?.id]);
   useFocusEffect(load);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
     const receive = (event: MessageEvent) => {
       if (loadedKey !== key || !frame.current || event.source !== frame.current.contentWindow || !event.data || typeof event.data !== 'object') return;
-      if (event.data.type === 'diagram-ready' && ready) frame.current.contentWindow?.postMessage({ type: 'diagram-init', state: current.current, canSelect: !!callback.current }, '*');
+      if (event.data.type === 'diagram-ready' && ready) frame.current.contentWindow?.postMessage({ type: 'diagram-init', state: current.current, presets: presets.current, canSelect: !!callback.current }, '*');
       if (event.data.type === 'diagram-height' && Number.isFinite(event.data.height)) setHeight(Math.max(180, Math.min(6000, event.data.height)));
       if (event.data.type === 'diagram-select' && mode !== 'editor' && ready) {
         const selection = parseDiagramSelection(event.data.selection);
@@ -73,7 +82,7 @@ export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'p
       key, ref: frame, title: mode === 'editor' ? '모눈 도면제작' : '시공부위 도면선택',
       src: mode === 'cabinet' ? '/construction-cabinets.html' : `/construction-diagram.html?mode=${mode}`, sandbox: 'allow-scripts',
       style: { width: '100%', height, border: 0, display: 'block' },
-      onLoad: () => frame.current?.contentWindow?.postMessage({ type: 'diagram-init', state: current.current, canSelect: !!callback.current }, '*'),
+      onLoad: () => frame.current?.contentWindow?.postMessage({ type: 'diagram-init', state: current.current, presets: presets.current, canSelect: !!callback.current }, '*'),
     })}
   </View>;
 }

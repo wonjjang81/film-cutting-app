@@ -37,6 +37,10 @@ export function parseDiagramState(value: unknown): DiagramState | null {
 
 export function parseDiagramSelection(v: unknown): DiagramSelection | null {
   if (object(v) && v.quantity !== undefined && v.quantity !== 1 && v.quantity !== 2) return null;
+  if (object(v) && typeof v.shapeKey === 'string' && /^preset:P[1-9]\d*:[1-9]\d*$/.test(v.shapeKey) && text(v.name) && typeof v.part === 'string' && INSTALLATION_LABOR_REFERENCES.some(p => p.name === v.part)) {
+    const [, preset, id] = v.shapeKey.split(':');
+    if (v.id === `${preset}-G${String(Number(id)).padStart(2, '0')}`) return v as DiagramSelection;
+  }
   if (object(v) && typeof v.id === 'string' && typeof v.shapeKey === 'string' && v.shapeKey === `cabinet:${v.id}` && text(v.name)) {
     const id = v.id;
     const section = Object.entries(CABINET_PREFIXES).find(([, prefix]) => prefix === id[0])?.[0];
