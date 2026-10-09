@@ -36,6 +36,8 @@
 #construction-grid-editor .cursor-cell{fill:none;stroke:light-dark(#18364e,#ecf5ff);stroke-width:2;pointer-events:none}
 #construction-grid-editor svg text{fill:light-dark(#153348,#e9f4ff);pointer-events:none}
 #construction-grid-editor .status{min-height:22px;margin:10px 0;font-size:12px;line-height:1.6}
+#construction-grid-editor dialog{width:min(420px,calc(100% - 24px));max-height:80vh;overflow:auto;border:1px solid #b6c8d9;border-radius:12px;padding:18px;color:inherit;background:light-dark(#fff,#19273a)}
+#construction-grid-editor dialog::backdrop{background:#0f172a66}
 @media(max-width:460px){#construction-grid-editor{padding:4px}#construction-grid-editor .app{padding:12px}#construction-grid-editor .fields{grid-template-columns:1fr}#construction-grid-editor .toolbar .fields{grid-template-columns:1fr 1fr}#construction-grid-editor .bar button{min-width:72px}}
 </style>
 <div class="app">
@@ -45,14 +47,13 @@
 </section>
 <section data-editor-screen id="cg-editor" role="tabpanel" aria-labelledby="cg-tab-editor" hidden>
 <h3>모눈 도면제작</h3>
-<div class="bar"><button data-new-preset class="primary cursor-interaction">＋ 새 프리셋 제작</button></div>
+<div class="bar"><button data-new-preset class="primary cursor-interaction">＋ 새 프리셋 제작</button><button data-reset-grid>모눈 초기화</button></div>
 <label>시공부위 · 인건비 설정 기준<select data-part></select></label>
 <div class="toolbar">
 <div data-grid-size class="hint" aria-live="polite"></div>
 <div class="bar"><button data-grow-x class="cursor-interaction">＋ 가로 한 칸</button><button data-grow-y class="cursor-interaction">＋ 세로 한 칸</button><button data-refine class="cursor-interaction">눈금 2배 세분화</button></div>
 <div class="hint">두께는 그린 모눈 그대로 표시합니다. 부재는 상하좌우로 이어져야 합니다. 다른 부재와 겹칠 수 있으며 사선 영역을 반복 선택하면 겹친 부재를 차례로 선택합니다.</div>
 <div class="fields"><label>편집 도구<select data-tool><option value="rect">사각형 채우기</option><option value="brush">칸 채우기</option><option value="select">형태 선택</option><option value="erase">칸 지우기</option></select></label><label>형태 종류<select data-role></select></label></div>
-<div class="fields"><label>형태 종류 이름<input data-role-name maxlength="40" placeholder="예: 앞판"></label><div class="bar"><button data-add-role>종류 추가</button><button data-rename-role>이름 변경</button><button data-remove-role>종류 삭제</button></div></div>
 <div data-selection class="hint" aria-live="polite">선택 없음</div>
 <div class="bar"><button data-new class="cursor-interaction">＋ 새 형태</button><button data-retype class="cursor-interaction" disabled>종류 적용</button><button data-delete-shape class="cursor-interaction" disabled>형태 삭제</button></div>
 <section data-confirm hidden aria-label="작업 확인"><div data-confirm-text class="hint"></div><div class="bar"><button data-yes class="primary cursor-interaction">확인 · 실행</button><button data-no class="cursor-interaction">취소</button></div></section>
@@ -63,6 +64,7 @@
 <section class="panel"><h3>선택 형태</h3><div class="fields"><label>이름<input data-name placeholder="선택 후 입력" disabled maxlength="40"></label><label>선택 정보<input data-info readonly></label></div><div class="hint">양문장은 중앙 분할선을 표시하고 서랍장에는 가로 분할선을 표시하지 않습니다. Empty는 시공안함이며 사용자용 ID를 표시하지 않습니다.</div></section>
 <section class="panel"><h3>시공부위 프리셋</h3><div class="fields"><label>프리셋 이름<input data-preset-name maxlength="40" placeholder="예: 상부장 기본형"></label><label>저장된 프리셋<select data-preset></select></label></div><div class="bar"><button data-save-preset class="primary cursor-interaction">프리셋 저장</button><button data-load-preset class="cursor-interaction">불러오기</button><button data-delete-preset class="cursor-interaction">프리셋 삭제</button></div><div class="hint">도면과 프리셋은 현재 기기·브라우저에 저장됩니다. 모눈은 형태 확인용이며 실측치수를 자동 생성하지 않습니다.</div></section>
 </section>
+<dialog data-role-dialog aria-labelledby="role-editor-title"><h3 id="role-editor-title">형태 종류 편집</h3><label>편집할 종류<select data-edit-role></select></label><label>형태 종류 이름<input data-role-name maxlength="40" placeholder="예: 앞판"></label><div class="bar"><button data-add-role>종류 추가</button><button data-rename-role>이름 변경</button><button data-remove-role>종류 삭제</button></div><div data-role-status class="hint" role="status"></div><div class="bar"><button data-close-role class="primary">닫기</button></div></dialog>
 </div>
 <script>
 (()=>{
@@ -88,8 +90,13 @@
  const selected=()=>shapes().find(s=>s.id===state.selected);
  const label=s=>s.role==='empty'?'Empty · 시공안함':'G'+String(s.id).padStart(2,'0')+' '+roles[s.role];
  function save(){state.version=3;state.roles=clone(roles);const snapshot={modelContent:{sample:'모눈 도면 편집',part:parts[state.part],shapeCount:shapes().length,selectedShape:selected()?label(selected()):null,presetCount:state.presets.length},privateContent:state};if(new TextEncoder().encode(JSON.stringify(snapshot)).length>250000){status('도면 저장 한도입니다. 사용하지 않는 프리셋을 삭제해 주세요.');return false;}if(initialized&&mode==='editor')parent.postMessage({type:'diagram-save',state:clone(state)},'*');return true;}
- const status=t=>el('status').textContent=t;
- function syncRoles(){el('role').innerHTML=Object.entries(roles).map(([k,n])=>'<option value="'+k+'">'+esc(n)+'</option>').join('');if(!Object.hasOwn(roles,role))role=Object.keys(roles)[0];el('role').value=role;el('role-name').value=roles[role];}
+ const status=t=>{el('status').textContent=t;el('role-status').textContent=t;};
+ function syncRoles(){const options=Object.entries(roles).map(([k,n])=>'<option value="'+k+'">'+esc(n)+'</option>').join('');el('role').innerHTML=options+'<option value="__edit">종류 편집…</option>';el('edit-role').innerHTML=options;if(!Object.hasOwn(roles,role))role=Object.keys(roles)[0];el('role').value=role;el('edit-role').value=role;el('role-name').value=roles[role];}
+ function closeRoleEditor(){cancel();el('role-dialog').close();el('role').value=role;el('role').focus();}
+ el('close-role').onclick=closeRoleEditor;
+ el('role-dialog').oncancel=()=>cancel();
+ el('edit-role').onchange=e=>{cancel();role=e.target.value;syncRoles();draw();};
+ el('reset-grid').onclick=()=>ask('현재 시공부위의 모눈에 그린 모든 부재를 지울까요? 눈금 크기와 저장된 프리셋, 다른 시공부위는 유지됩니다.',()=>{if(stroke)finish({pointerId:0},true);const before=clone(state),oldCursor=cursor;state.drawings[state.part]=[];state.selected=null;cursor=0;draw();if(!save()){state=before;cursor=oldCursor;draw();return;}el('preset-name').value='';status('모눈 초기화 완료 · 저장된 프리셋과 다른 시공부위 유지');});
  el('add-role').onclick=()=>{const name=el('role-name').value.trim();if(!name||Object.values(roles).includes(name)){status('종류 이름을 입력하세요. 같은 이름은 추가할 수 없습니다.');return;}if(Object.keys(roles).length>=30){status('형태 종류는 최대 30개입니다.');return;}const before=clone(roles);let id=1;while(Object.hasOwn(roles,'custom'+id))id++;role='custom'+id;roles[role]=name;if(!save()){roles=before;return;}syncRoles();draw();};
  el('rename-role').onclick=()=>{const name=el('role-name').value.trim();if(!name||Object.entries(roles).some(([k,n])=>k!==role&&n===name)){status('비어 있거나 중복된 종류 이름은 사용할 수 없습니다.');return;}roles[role]=name;save();syncRoles();draw();};
  el('remove-role').onclick=()=>{if(Object.values(state.drawings).flat().some(s=>s.role===role)){status('사용 중인 종류입니다. 부재의 종류를 바꾸거나 부재를 삭제한 뒤 삭제하세요.');return;}if(Object.keys(roles).length<=1){status('최소 한 개의 형태 종류가 필요합니다.');return;}const key=role;ask(roles[key]+' 종류를 삭제할까요? 저장된 프리셋은 유지됩니다.',()=>{delete roles[key];syncRoles();save();draw();});};
@@ -164,14 +171,14 @@
    });
  };
  el('preset').onchange=()=>{cancel();draw();};
- el('tool').onchange=e=>{tool=e.target.value;cancel();draw();};el('role').onchange=e=>{role=e.target.value;el('role-name').value=roles[role];draw();};
+ el('tool').onchange=e=>{tool=e.target.value;cancel();draw();};el('role').onchange=e=>{if(e.target.value==='__edit'){cancel();el('role').value=role;syncRoles();el('role-status').textContent='';el('role-dialog').showModal();requestAnimationFrame(()=>el('role-dialog').scrollIntoView({block:'center'}));return;}role=e.target.value;syncRoles();draw();};
  el('new').onclick=()=>{cancel();state.selected=null;if(tool==='select'||tool==='erase')tool='rect';render();status('새 '+roles[role]+' · 모눈을 클릭/드래그하세요.');save();};
  el('name').oninput=e=>{const s=selected();if(!s)return;s.name=e.target.value.slice(0,40);el('selection').textContent=label(s);el('info').value=label(s);save();};
  el('retype').onclick=()=>{const s=selected();if(!s)return;ask(label(s)+'의 종류를 '+roles[role]+'으로 바꿀까요?',()=>{s.role=role;draw();save();status('형태 종류 변경됨 · 위치 유지');});};
  el('delete-shape').onclick=()=>{const s=selected();if(!s)return;ask(label(s)+'을 삭제할까요?',()=>{state.drawings[state.part]=shapes().filter(x=>x.id!==s.id);state.selected=null;draw();save();status('선택 형태 삭제됨');});};
  el('save-preset').onclick=()=>{const name=el('preset-name').value.trim();if(!name||!shapes().length){status('프리셋 이름과 최소 한 개의 형태가 필요합니다.');return;}const existing=state.presets.find(p=>p.part===state.part&&p.name===name);const run=()=>{const before=clone(state),preset={id:existing?.id??'P'+state.nextPreset++,part:state.part,name,size:clone(size()),roles:clone(roles),shapes:clone(shapes())};if(existing)state.presets=state.presets.map(p=>p.id===existing.id?preset:p);else {if(state.presets.length>=8){state=before;status('도면 프리셋 최대 8개 · 불필요한 프리셋을 삭제해 주세요.');return;}state.presets.push(preset);}if(!save()){state=before;return;}presets();el('preset').value=preset.id;status(name+' 프리셋 저장됨');};if(existing)ask('같은 이름의 프리셋을 덮어쓸까요?',run);else run();};
  el('load-preset').onclick=()=>{const p=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part);if(!p){status('현재 부위의 프리셋을 선택하세요.');return;}ask('현재 '+parts[state.part]+' 도면을 '+p.name+' 프리셋으로 바꿀까요?',()=>{const before=clone(state);state.sizes??={};state.sizes[state.part]=clone(p.size??defaultSize());cursor=0;roles={...roles,...(p.roles??defaultRoles)};state.roles=clone(roles);state.drawings[state.part]=clone(p.shapes);state.next=Math.max(state.next,...p.shapes.map(s=>s.id+1));syncRoles();state.selected=null;draw();if(!save()){state=before;draw();return;}status(p.name+' 적용됨 · 다른 부위는 유지');});};
- el('delete-preset').onclick=()=>{const p=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part);if(!p){status('삭제할 프리셋을 선택하세요.');return;}ask(p.name+' 프리셋을 삭제할까요? 현재 도면은 유지됩니다.',()=>{const before=clone(state);state.presets=state.presets.filter(x=>x.id!==p.id);if(!save()){state=before;return;}presets();status('프리셋 삭제됨 · 도면 유지');});};
+ el('delete-preset').onclick=()=>{const p=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part);if(!p){status('삭제할 프리셋을 선택하세요.');return;}ask(p.name+' 프리셋과 현재 '+parts[state.part]+' 모눈의 모든 부재를 삭제할까요? 다른 프리셋과 다른 시공부위는 유지됩니다.',()=>{if(stroke)finish({pointerId:0},true);const before=clone(state),oldCursor=cursor;state.presets=state.presets.filter(x=>x.id!==p.id);state.drawings[state.part]=[];state.selected=null;cursor=0;if(!save()){state=before;cursor=oldCursor;return;}el('preset-name').value='';presets();draw();status('프리셋 및 현재 모눈 삭제됨 · 다른 프리셋과 시공부위 유지');});};
  if(typeof ResizeObserver!=='undefined'){const observer=new ResizeObserver(()=>draw());observer.observe(el('board'));observer.observe(el('input-board'));}
  root.inert=true;
  el('use-selection').onclick=()=>{const s=selected();if(s&&s.role!=='empty')parent.postMessage({type:'diagram-select',selection:{id:'G'+String(s.id).padStart(2,'0'),shapeKey:state.part+':'+s.id,part:parts[state.part],name:s.name}},'*');};
