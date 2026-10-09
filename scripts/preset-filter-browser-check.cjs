@@ -16,7 +16,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  assert.equal(await page.locator('[data-custom-preset] option[value="P2"]').innerText(),'책장A');
  assert.equal(await page.locator('[data-preset-shape="2"] rect').getAttribute('width'),'20','one-cell side/member width is never forced thin');
  const a=Number(await page.locator('[data-preset-shape="3"] rect').getAttribute('x')),b=Number(await page.locator('[data-preset-shape="4"] rect').getAttribute('x'));
- assert.equal(b-a-20,60,'internal grid spacing is preserved');
+ assert.equal(b-a-20,20,'internal grid spacing shrinks to one third');
  assert.equal(await page.locator('[data-overlap="2"]').count(),1);
  await page.locator('[data-preset-shape="3"]').click();const first=await page.locator('[data-search]').inputValue();
  await page.locator('[data-preset-shape="3"]').click();const second=await page.locator('[data-search]').inputValue();
