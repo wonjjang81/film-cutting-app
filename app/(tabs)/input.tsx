@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConstructionDiagram } from '../../src/features/diagrams/ConstructionDiagram';
 import type { DiagramSelection } from '../../src/features/diagrams/diagramState';
+import { diagramInputTarget } from '../../src/features/diagrams/diagramInput';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -366,24 +367,33 @@ export default function FilmCutInputScreen() {
     setActiveGroupId(groupId); setActivePieceId(next.id); setForm(next.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]);
   };
   const selectDiagramShape = (selection: DiagramSelection) => {
-    const existing = groups.flatMap(group => group.subgroups.map(subgroup => ({ group, subgroup }))).find(({ subgroup }) => subgroup.diagramShapeKey === selection.shapeKey);
-    if (existing) {
-      const piece = existing.group.pieces.find(p => existing.subgroup.pieceIds.includes(p.id));
-      if (piece) selectPiece(piece, existing.group.id);
-      showSubgroupInputs();
-      setNotice(`도면 ${selection.id}: 기존 소그룹 ${existing.subgroup.name}을 선택했습니다.`);
-      return;
-    }
     const group = groups.find(g => g.id === activeGroupId);
     if (!group) return;
-    const name = `${selection.part} ${selection.id} · ${selection.name}`;
-    const subgroupId = createUniqueUiId('diagram-subgroup', Date.now(), group.subgroups.map(s => s.id));
-    const pieces = [1, 2, 3].map(index => {
-      const piece = newPieceDraft(`${group.name}_${name}`, index);
-      return { ...piece, form: { ...inheritCutAllowance(piece.form, form.cutAllowance), sideMargin: form.sideMargin, startEndMargin: form.startEndMargin, allowRotation: !group.patternFixed } };
-    });
+    const target = diagramInputTarget(group.name, selection, group.subgroups);
+    // Preserve legacy links without deleting or merging already entered measurements.
+    const existing = !target.subgroupId ? group.subgroups.find(subgroup => subgroup.diagramShapeKey === selection.shapeKey) : undefined;
+    if (existing) {
+      const piece = group.pieces.find(p => existing.pieceIds.includes(p.id));
+      if (piece) selectPiece(piece, group.id);
+      showSubgroupInputs();
+      setNotice(`도면 ${selection.id}: 기존 소그룹 ${existing.name}을 선택했습니다.`);
+      return;
+    }
+    if (target.existingPieceId) {
+      const piece = group.pieces.find(p => p.id === target.existingPieceId);
+      if (piece) selectPiece(piece, group.id);
+      showSubgroupInputs();
+      setNotice(`도면 ${selection.id}: 기존 조각을 선택했습니다.`);
+      return;
+    }
+    const name = target.name;
+    const subgroupId = target.subgroupId ?? createUniqueUiId('diagram-subgroup', Date.now(), group.subgroups.map(s => s.id));
+    const piece = newPieceDraft(`${group.name}_${name}_${selection.id}`, 1);
+    const pieces = [{ ...piece, form: { ...inheritCutAllowance(piece.form, form.cutAllowance), sideMargin: form.sideMargin, startEndMargin: form.startEndMargin, allowRotation: !group.patternFixed } }];
     if (group.pieces.some(p => pieces.some(next => next.id === p.id))) { setError('같은 도면 이름의 조각이 있습니다. 도면 이름을 변경해 주세요.'); return; }
-    setGroups(items => items.map(g => g.id === group.id ? { ...g, pieces: [...g.pieces, ...pieces], subgroups: [...g.subgroups, { id: subgroupId, name, pieceIds: pieces.map(p => p.id), diagramShapeKey: selection.shapeKey, installationPart: selection.part, expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : g));
+    setGroups(items => items.map(g => g.id === group.id ? { ...g, pieces: [...g.pieces, ...pieces], subgroups: target.subgroupId
+      ? g.subgroups.map(s => s.id === subgroupId ? { ...s, pieceIds: [...s.pieceIds, piece.id], installationPart: selection.part, expanded: true } : s)
+      : [...g.subgroups, { id: subgroupId, name, pieceIds: [piece.id], installationPart: selection.part, expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : g));
     setActivePieceId(pieces[0]!.id); setForm(pieces[0]!.form);
     clearCalculatedAllowanceResults();
     setNotice(`도면 ${selection.id}를 소그룹에 연결했습니다. 실제 폭·길이를 아래에서 입력해 주세요.`);
