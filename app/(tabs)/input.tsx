@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConstructionDiagram } from '../../src/features/diagrams/ConstructionDiagram';
 import type { DiagramSelection } from '../../src/features/diagrams/diagramState';
-import { diagramInputTarget } from '../../src/features/diagrams/diagramInput';
+import { diagramInputTarget, nextDiagramSubgroupName } from '../../src/features/diagrams/diagramInput';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
@@ -117,6 +117,8 @@ export default function FilmCutInputScreen() {
   const [projectName, setProjectName] = useState('새 프로젝트');
   const [activeGroupId, setActiveGroupId] = useState('group-1');
   const [activePieceId, setActivePieceId] = useState('piece-1');
+  const [diagramPart, setDiagramPart] = useState('싱크대 상부장');
+  const [diagramTargets, setDiagramTargets] = useState<Record<string, string>>({});
   const [library, setLibrary] = useState<LibraryDocument>(emptyLibrary);
   const [plan, setPlan] = useState<RemnantPlan | null>(null);
   const [planRequest, setPlanRequest] = useState<RemnantPlanRequest | null>(null);
@@ -369,7 +371,8 @@ export default function FilmCutInputScreen() {
   const selectDiagramShape = (selection: DiagramSelection) => {
     const group = groups.find(g => g.id === activeGroupId);
     if (!group) return;
-    const target = diagramInputTarget(group.name, selection, group.subgroups);
+    setDiagramPart(selection.part);
+    const target = diagramInputTarget(group.name, selection, group.subgroups, diagramTargets[`${group.id}:${selection.part}`]);
     // Preserve legacy links without deleting or merging already entered measurements.
     const existing = !target.subgroupId ? group.subgroups.find(subgroup => subgroup.diagramShapeKey === selection.shapeKey) : undefined;
     if (existing) {
@@ -389,15 +392,25 @@ export default function FilmCutInputScreen() {
     const name = target.name;
     const subgroupId = target.subgroupId ?? createUniqueUiId('diagram-subgroup', Date.now(), group.subgroups.map(s => s.id));
     const piece = newPieceDraft(`${group.name}_${name}_${selection.id}`, 1);
-    const pieces = [{ ...piece, form: { ...inheritCutAllowance(piece.form, form.cutAllowance), sideMargin: form.sideMargin, startEndMargin: form.startEndMargin, allowRotation: !group.patternFixed } }];
+    const pieces = [{ ...piece, form: { ...inheritCutAllowance(piece.form, form.cutAllowance), quantity: String(selection.quantity ?? 1), sideMargin: form.sideMargin, startEndMargin: form.startEndMargin, allowRotation: !group.patternFixed } }];
     if (group.pieces.some(p => pieces.some(next => next.id === p.id))) { setError('같은 도면 이름의 조각이 있습니다. 도면 이름을 변경해 주세요.'); return; }
     setGroups(items => items.map(g => g.id === group.id ? { ...g, pieces: [...g.pieces, ...pieces], subgroups: target.subgroupId
       ? g.subgroups.map(s => s.id === subgroupId ? { ...s, pieceIds: [...s.pieceIds, piece.id], installationPart: selection.part, expanded: true } : s)
       : [...g.subgroups, { id: subgroupId, name, pieceIds: [piece.id], installationPart: selection.part, expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : g));
     setActivePieceId(pieces[0]!.id); setForm(pieces[0]!.form);
+    setDiagramTargets(current => ({ ...current, [`${group.id}:${selection.part}`]: subgroupId }));
     clearCalculatedAllowanceResults();
     setNotice(`도면 ${selection.id}를 소그룹에 연결했습니다. 실제 폭·길이를 아래에서 입력해 주세요.`);
     showSubgroupInputs();
+  };
+  const addDiagramPartSubgroup = () => {
+    const group = groups.find(g => g.id === activeGroupId);
+    if (!group) return;
+    const name = nextDiagramSubgroupName(diagramPart, group.subgroups.map(s => s.name));
+    const id = createUniqueUiId('diagram-subgroup', Date.now(), group.subgroups.map(s => s.id));
+    setGroups(items => items.map(g => g.id === group.id ? { ...g, subgroups: [...g.subgroups, { id, name, installationPart: diagramPart, pieceIds: [], expanded: true, difficulty: DEFAULT_DIFFICULTY, siteCount: '1', overallDimensions: emptySubgroupOverallDimensions() }] } : g));
+    setDiagramTargets(current => ({ ...current, [`${group.id}:${diagramPart}`]: id }));
+    setNotice(`${name}을 추가했습니다. 도면에서 장을 선택하고 치수 입력을 누르세요.`);
   };
   const addSubgroup = (overallAllowance: unknown = DEFAULT_CUT_ALLOWANCE_MM) => {
     const group = groups.find((item) => item.id === activeGroupId); if (!group) return;
@@ -1157,7 +1170,8 @@ export default function FilmCutInputScreen() {
           <PanelHeading step="01" title="생산 조건" subtitle="모든 치수 단위는 mm입니다." />
           <View style={styles.projectContext}><Text style={styles.projectContextLabel}>현재 프로젝트</Text><Text style={styles.projectContextName}>{projectName}</Text><Text style={styles.projectContextHint}>프로젝트 생성과 이름 변경은 프로젝트 탭에서 진행합니다.</Text></View>
           <GroupInputPanel groups={groups} activeGroupId={activeGroupId} onSelect={selectGroup} onAdd={addGroup} onRenameId={renameGroupDisplayId} onDelete={deleteGroup} onPatternFixedChange={updateGroupPatternFixed} onGroupBrandChange={(id, brand) => updateGroupIdentityFor(id, { brand })} onGroupProductNumberChange={(id, productNumber) => updateGroupIdentityFor(id, { productNumber })} />
-<ConstructionDiagram mode="cabinet" onSelect={selectDiagramShape} />
+<View style={{ marginTop: 14 }}><Text style={styles.projectContextLabel}>도면 입력 대상 소그룹</Text><View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 }}>{groups.find(g => g.id === activeGroupId)?.subgroups.filter(s => s.installationPart === diagramPart).map(s => <TouchableOpacity key={s.id} accessibilityRole="button" accessibilityLabel={`도면 입력 대상 ${s.name}`} accessibilityState={{ selected: diagramTargets[`${activeGroupId}:${diagramPart}`] === s.id }} onPress={() => setDiagramTargets(current => ({ ...current, [`${activeGroupId}:${diagramPart}`]: s.id }))} style={[styles.secondaryButton, diagramTargets[`${activeGroupId}:${diagramPart}`] === s.id && { borderColor: '#0f766e', backgroundColor: '#ccfbf1' }]}><Text style={styles.secondaryButtonText}>{s.name}</Text></TouchableOpacity>)}<TouchableOpacity accessibilityRole="button" accessibilityLabel="시공부위 소그룹 추가" onPress={addDiagramPartSubgroup} style={styles.secondaryButton}><Text style={styles.secondaryButtonText}>＋ 시공부위 추가</Text></TouchableOpacity></View><Text style={styles.projectContextHint}>선택 부위: {diagramPart} · 다른 위치는 소그룹을 추가한 뒤 선택해 입력하세요.</Text></View>
+<ConstructionDiagram mode="cabinet" onSelect={selectDiagramShape} onPartChange={setDiagramPart} />
 <View ref={subgroupAnchor} collapsable={false}><PieceInputPanel groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId, overallAllowance) => addPiece(subgroupId, groupId, overallAllowance)} onAddSubgroup={(overallAllowance) => addSubgroup(overallAllowance)} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeInstallationPart={updateSubgroupInstallationPart} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} /></View>
           <ProductionSettingsCard sideMargin={form.sideMargin} startEndMargin={form.startEndMargin} useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onChangeSideMargin={(value) => updateProductionMargin('sideMargin', value)} onChangeStartEndMargin={(value) => updateProductionMargin('startEndMargin', value)} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>

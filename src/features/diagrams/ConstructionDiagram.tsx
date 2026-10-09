@@ -4,17 +4,18 @@ import { useFocusEffect } from 'expo-router';
 import { useCallback } from 'react';
 import { Platform, Text, View } from 'react-native';
 import { useAuthSession } from '../auth/AuthSession';
-import { diagramStorageKey, parseDiagramSelection, parseDiagramState, parseCabinetState, type CabinetState, type DiagramSelection, type DiagramState } from './diagramState';
+import { DIAGRAM_PARTS, diagramStorageKey, parseDiagramSelection, parseDiagramState, parseCabinetState, type CabinetState, type DiagramSelection, type DiagramState } from './diagramState';
 
 const queues = new Map<string, Promise<void>>();
 
 /** Sandboxed, network-disabled canvas. Only this host can read/write local state. */
-export function ConstructionDiagram({ mode, onSelect }: { mode: 'picker' | 'editor' | 'cabinet'; onSelect?(selection: DiagramSelection): void }) {
+export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'picker' | 'editor' | 'cabinet'; onSelect?(selection: DiagramSelection): void; onPartChange?(part: string): void }) {
   const auth = useAuthSession();
   const key = diagramStorageKey(auth.user?.id ?? 'local') + (mode === 'cabinet' ? ':cabinets' : '');
   const validate = mode === 'cabinet' ? parseCabinetState : parseDiagramState;
   const frame = useRef<HTMLIFrameElement>(null);
   const callback = useRef(onSelect); callback.current = onSelect;
+  const partCallback = useRef(onPartChange); partCallback.current = onPartChange;
   const current = useRef<DiagramState | CabinetState | null>(null);
   const [ready, setReady] = useState(false);
   const [loadedKey, setLoadedKey] = useState('');
@@ -30,11 +31,12 @@ export function ConstructionDiagram({ mode, onSelect }: { mode: 'picker' | 'edit
         if (raw && !parsed) throw new Error('도면 저장 데이터가 손상되었습니다. 원본은 보존했습니다.');
         if (!active) return;
         current.current = parsed; setError(''); setLoadedKey(key); setReady(true);
+        if (mode === 'cabinet' && parsed && 'view' in parsed) partCallback.current?.(DIAGRAM_PARTS[parsed.view as keyof typeof DIAGRAM_PARTS]);
         frame.current?.contentWindow?.postMessage({ type: 'diagram-init', state: parsed, canSelect: !!callback.current }, '*');
       } catch (e) { if (active) { setReady(false); setError(e instanceof Error ? e.message : '도면 데이터를 읽지 못했습니다.'); } }
     })();
     return () => { active = false; };
-  }, [key, validate]);
+  }, [key, validate, mode]);
   useFocusEffect(load);
   useEffect(() => {
     if (Platform.OS !== 'web') return;
@@ -50,6 +52,7 @@ export function ConstructionDiagram({ mode, onSelect }: { mode: 'picker' | 'edit
         const next = validate(event.data.state);
         if (!next) { setError('유효하지 않은 도면 변경은 저장하지 않았습니다.'); return; }
         current.current = next;
+        if (mode === 'cabinet' && 'view' in next) partCallback.current?.(DIAGRAM_PARTS[next.view as keyof typeof DIAGRAM_PARTS]);
         const pending = (queues.get(key) ?? Promise.resolve()).catch(() => {}).then(async () => {
           const previous = await AsyncStorage.getItem(key);
           if (previous) await AsyncStorage.setItem(`${key}:backup`, previous);

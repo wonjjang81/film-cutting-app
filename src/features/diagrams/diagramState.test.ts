@@ -5,6 +5,13 @@ import { DIAGRAM_PARTS } from './diagramState';
 
 const state = () => ({ version: 2, part: 'upper', next: 2, nextPreset: 1, selected: 1, sizes: { upper: { cols: 25, rows: 17 } }, drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [26, 27] }] }, presets: [] });
 describe('construction diagram state boundary', () => {
+  it('accepts only one or two pieces per diagram selection', () => {
+    const selection = { id: 'U01', shapeKey: 'cabinet:U01', part: '싱크대 상부장', name: '양문장' };
+    expect(parseDiagramSelection({ ...selection, quantity: 2 })?.quantity).toBe(2);
+    expect(parseDiagramSelection({ ...selection, quantity: 1 })?.quantity).toBe(1);
+    expect(parseDiagramSelection({ ...selection, quantity: 3 })).toBeNull();
+    expect(parseDiagramSelection({ ...selection, quantity: '2' })).toBeNull();
+  });
   it('accepts legacy cabinet and thin structural IDs independently of grid IDs', () => {
     expect(parseDiagramSelection({ id: 'U01', shapeKey: 'cabinet:U01', part: '싱크대 상부장', name: '양문장' })).not.toBeNull();
     expect(parseDiagramSelection({ id: 'U-MT', shapeKey: 'cabinet:U-MT', part: '싱크대 상부장', name: '몰딩' })).not.toBeNull();

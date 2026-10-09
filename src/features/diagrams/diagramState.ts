@@ -2,7 +2,7 @@ import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
 
 export const DIAGRAM_PARTS = { upper: '싱크대 상부장', lower: '싱크대 하부장', fridge: '냉장고장', vanity: '화장대', shelf: '책장', sash: '샷시 (내부)', bathdoor: '화장실문/문틀', shoe: '신발장', door: '방문/문틀', island: '아일랜드식탁', wardrobe: '붙박이장', dress: '드레스룸' } as const;
 export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
-export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string };
+export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string; quantity?: 1 | 2 };
 export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: 'V', shelf: 'B', sash: 'S', bathdoor: 'T', shoe: 'H', door: 'D', island: 'I', wardrobe: 'W', dress: 'C' } as const;
 export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
 type Size = { cols: number; rows: number };
@@ -36,6 +36,7 @@ export function parseDiagramState(value: unknown): DiagramState | null {
 }
 
 export function parseDiagramSelection(v: unknown): DiagramSelection | null {
+  if (object(v) && v.quantity !== undefined && v.quantity !== 1 && v.quantity !== 2) return null;
   if (object(v) && typeof v.id === 'string' && typeof v.shapeKey === 'string' && v.shapeKey === `cabinet:${v.id}` && text(v.name)) {
     const id = v.id;
     const section = Object.entries(CABINET_PREFIXES).find(([, prefix]) => prefix === id[0])?.[0];
