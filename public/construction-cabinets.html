@@ -213,15 +213,36 @@
      }
    }
    const layout=new Map();for(const g of groups)for(const id of g.ids){const b=bounds.get(id);layout.set(id,{x:g.x+(b.minX-g.minX)*unit,y:g.y+(b.minY-g.minY)*unit});}
-   const totalX=4+Math.max(24,...groups.map(g=>g.x+(g.maxX-g.minX+1)*unit)),totalY=4+Math.max(24,...groups.map(g=>g.y+(g.maxY-g.minY+1)*unit));
+   // Bookcase frames are elastic illustrations: inner cabinet width determines
+   // the opening, top spans fit it, and inner sides/lower cabinet reach the base.
+   // Never mutate the preset cells or measured cutting dimensions.
+   const sides=customPreset.shapes.filter(s=>s.role==='side'&&bounds.get(s.id).rectangular&&bounds.get(s.id).maxY-bounds.get(s.id).minY>bounds.get(s.id).maxX-bounds.get(s.id).minX).sort((a,b)=>bounds.get(a.id).minX-bounds.get(b.id).minX);
+   if(customPreset.part==='shelf'&&sides.length===4){
+     const [outerLeft,innerLeft,innerRight,outerRight]=sides;
+     const core=customPreset.shapes.filter(s=>bounds.get(s.id).rectangular&&!sides.includes(s)&&bounds.get(s.id).minX>bounds.get(innerLeft.id).maxX&&bounds.get(s.id).maxX<bounds.get(innerRight.id).minX);
+     if(core.length){
+       const width=s=>(bounds.get(s.id).maxX-bounds.get(s.id).minX+1)*unit;
+       const coreWidth=Math.max(...core.map(width)),space=unit*gap;
+       const left=layout.get(outerLeft.id).x,innerX=left+width(outerLeft)+space,coreX=innerX+width(innerLeft)+space,rightX=coreX+coreWidth+space;
+       const bottom=Math.max(...[outerLeft,outerRight].map(s=>layout.get(s.id).y+(bounds.get(s.id).maxY-bounds.get(s.id).minY+1)*unit));
+       layout.get(innerLeft.id).x=innerX;layout.get(innerRight.id).x=rightX;layout.get(outerRight.id).x=rightX+width(innerRight)+space;
+       for(const s of [innerLeft,innerRight])layout.get(s.id).h=Math.max(unit,bottom-layout.get(s.id).y);
+       for(const s of core){const p=layout.get(s.id);p.x=coreX+(coreWidth-width(s))/2;}
+       const lower=core.filter(s=>!['top','bottom','molding','side','empty'].includes(s.role)).sort((a,b)=>bounds.get(b.id).maxY-bounds.get(a.id).maxY)[0];
+       if(lower)layout.get(lower.id).h=Math.max(unit,bottom-layout.get(lower.id).y);
+       for(const s of customPreset.shapes){const b=bounds.get(s.id);if(b.rectangular&&['top','molding'].includes(s.role)&&b.minY<=bounds.get(innerLeft.id).minY&&width(s)>coreWidth){const p=layout.get(s.id);p.x=innerX;p.w=rightX+width(innerRight)-innerX;}}
+       el('custom-hint').textContent='책장 길이 자동맞춤 · 상부 폭과 하단 길이를 간격에 맞춰 조정 · 모눈 원본·재단 실측치수는 변경하지 않습니다.';
+     }
+   }
+   const totalX=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).x+(layout.get(id).w??(b.maxX-b.minX+1)*unit))),totalY=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).y+(layout.get(id).h??(b.maxY-b.minY+1)*unit)));
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='<defs><pattern id="overlap-illustration" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8l8-8" stroke="#b45309" stroke-width="1.2"/></pattern></defs>';
    for(const s of customPreset.shapes){
      const cells=new Set(s.cells),chosen=customShape?.id===s.id;
      let pixels='',edges='';
      const {minX,maxX,minY,maxY,rectangular}=bounds.get(s.id);
-     const {x,y}=layout.get(s.id),w=(maxX-minX+1)*unit,h=(maxY-minY+1)*unit;
-     for(const i of cells){const cx=i%cols,cy=Math.floor(i/cols),px=x+(cx-minX)*unit,py=y+(cy-minY)*unit,cw=unit,ch=unit;
+     const p=layout.get(s.id),{x,y}=p,w=p.w??(maxX-minX+1)*unit,h=p.h??(maxY-minY+1)*unit,cellWidth=w/(maxX-minX+1),cellHeight=h/(maxY-minY+1);
+     for(const i of cells){const cx=i%cols,cy=Math.floor(i/cols),px=x+(cx-minX)*cellWidth,py=y+(cy-minY)*cellHeight,cw=cellWidth,ch=cellHeight;
        pixels+=`M${px} ${py}h${cw}v${ch}h${-cw}z`;
        if(cy===0||!cells.has(i-cols))edges+=`M${px} ${py}h${cw}`;
        if(cy===rows-1||!cells.has(i+cols))edges+=`M${px} ${py+ch}h${cw}`;
@@ -238,11 +259,11 @@
      const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${separator}${divider}${text}</g>`;
    }
-   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const b=bounds.get(s.id),p=layout.get(s.id),x=p.x+(i%cols-b.minX)*unit,y=p.y+(Math.floor(i/cols)-b.minY)*unit,key=x+','+y;const cell=occupied.get(key)??{x,y,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,count} of occupied.values())if(count>1)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="20" height="20" fill="url(#overlap-illustration)" pointer-events="none"/>`;
+   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const b=bounds.get(s.id),p=layout.get(s.id),cw=(p.w??(b.maxX-b.minX+1)*unit)/(b.maxX-b.minX+1),ch=(p.h??(b.maxY-b.minY+1)*unit)/(b.maxY-b.minY+1),x=p.x+(i%cols-b.minX)*cw,y=p.y+(Math.floor(i/cols)-b.minY)*ch,key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${totalX} ${totalY}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{
      const choose=e=>{let hit=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));
-       if(e?.type==='click'){const svg=node.ownerSVGElement,point=svg.createSVGPoint();point.x=e.clientX;point.y=e.clientY;const local=point.matrixTransform(svg.getScreenCTM().inverse());const hits=customPreset.shapes.filter(s=>{const p=layout.get(s.id),b=bounds.get(s.id),cx=Math.floor((local.x-p.x)/unit)+b.minX,cy=Math.floor((local.y-p.y)/unit)+b.minY;return cx>=b.minX&&cx<=b.maxX&&cy>=b.minY&&cy<=b.maxY&&s.cells.includes(cy*cols+cx);}).reverse();if(hits.length>1){const current=hits.findIndex(s=>s.id===customShape?.id);hit=hits[(current+1)%hits.length];}}
+       if(e?.type==='click'){const svg=node.ownerSVGElement,point=svg.createSVGPoint();point.x=e.clientX;point.y=e.clientY;const local=point.matrixTransform(svg.getScreenCTM().inverse());const hits=customPreset.shapes.filter(s=>{const p=layout.get(s.id),b=bounds.get(s.id),cw=(p.w??(b.maxX-b.minX+1)*unit)/(b.maxX-b.minX+1),ch=(p.h??(b.maxY-b.minY+1)*unit)/(b.maxY-b.minY+1),cx=Math.floor((local.x-p.x)/cw)+b.minX,cy=Math.floor((local.y-p.y)/ch)+b.minY;return cx>=b.minX&&cx<=b.maxX&&cy>=b.minY&&cy<=b.maxY&&s.cells.includes(cy*cols+cx);}).reverse();if(hits.length>1){const current=hits.findIndex(s=>s.id===customShape?.id);hit=hits[(current+1)%hits.length];}}
        customShape=hit;state.query='';renderCustom();
      };node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};
    });
