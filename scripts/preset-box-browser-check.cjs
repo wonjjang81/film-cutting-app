@@ -49,7 +49,7 @@ const assert = require('node:assert/strict');
     await page.locator('[data-custom-preset]').selectOption('P4');
     boxes = await page.evaluate(()=>[1,2,3,4].map(id=>{const r=document.querySelector(`[data-preset-shape="${id}"] rect`);return ['x','y','width','height'].map(k=>Number(r.getAttribute(k)));}));
     assert.equal(boxes[1][0]-boxes[0][0]-boxes[0][2],0,'touching source members retain aligned boundaries');
-    assert.equal(boxes[2][1]-boxes[1][1]-boxes[1][3],40,'internal empty space shrinks without changing spanning panel length');
+    assert.equal(boxes[2][1]-boxes[1][1]-boxes[1][3],120,'connected spanning panel preserves door positions and bottom alignment');
     assert.equal(boxes[3][0]-boxes[1][0]-boxes[1][2],0,'adjacent members retain their exact original positions');
     assert.equal(boxes[0][3],240,'spanning panel retains its entire original size');
     if(process.env.DIAGRAM_SCREENSHOT)await page.screenshot({path:process.env.DIAGRAM_SCREENSHOT,fullPage:true});

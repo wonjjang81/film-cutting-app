@@ -48,5 +48,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  await page.locator('[data-custom-preset] option[value="P1"]').waitFor({state:'attached'});await page.locator('[data-custom-preset]').selectOption('P1');
  assert.equal(await page.locator('[data-illustration-gap]').inputValue(),'4','saved gap survives reload');
  assert.deepEqual(await Promise.all([1,2,3,4].map(box)),adjusted,'adjusted positions and original dimensions survive reload');
- assert.deepEqual(errors,[]);console.log('PASS: actual horizontal/vertical gap ratio, rigid dimensions, symmetry, zero-gap safety, persistence and stable selection');
+ // Connected frame must preserve bottom offsets and the right-hand opening.
+ const frame=[{id:1,role:'side',name:'좌',cells:rect(0,0,1,12)},{id:2,role:'side',name:'우',cells:rect(11,0,1,12)},{id:3,role:'top',name:'상',cells:rect(1,0,10,2)},{id:4,role:'front',name:'앞',cells:rect(2,4,8,7)},{id:5,role:'side',name:'내판',cells:rect(10,2,1,10)}];
+ await init(frame);
+ await page.locator('[data-illustration-gap]').fill('3');await page.locator('[data-illustration-gap]').dispatchEvent('input');
+ const beforeFrame=await Promise.all([1,2,3,4,5].map(box));
+ await page.locator('[data-illustration-gap]').fill('1');await page.locator('[data-illustration-gap]').dispatchEvent('input');
+ const afterFrame=await Promise.all([1,2,3,4,5].map(box));
+ assert.deepEqual(afterFrame,beforeFrame,'connected frame retains bottom alignment and right opening instead of shifting members independently');
+ assert.deepEqual(errors,[]);console.log('PASS: actual gap ratio, connected-frame anchors, rigid dimensions, symmetry, persistence and stable selection');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
