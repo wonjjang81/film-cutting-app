@@ -35,6 +35,12 @@ describe('construction diagram state boundary', () => {
     expect(parseCabinetState({ ...doc, parts: [{ ...cabinet, qty: NaN }] })).toBeNull();
   });
   it('round-trips expanded grids and new board roles', () => { expect(parseDiagramState(state())).toEqual(state()); });
+  it('accepts fine grids and front panels without changing legacy preset dimensions', () => {
+    const legacyPreset = { id: 'P1', part: 'upper', name: '기존', shapes: [{ id: 7, role: 'side', name: '옆판', cells: [0,24] }] };
+    const fine = { ...state(), sizes: { upper: { cols: 128, rows: 128 } }, drawings: { upper: [{ id: 1, role: 'front', name: '앞판', cells: [16383] }] }, presets: [legacyPreset] };
+    expect(parseDiagramState(fine)).toEqual(fine);
+    expect(parseDiagramState({ ...fine, sizes: { upper: { cols: 129, rows: 128 } } })).toBeNull();
+  });
   it('rejects overlaps, out-of-bounds cells and unsafe role/name/state inputs', () => {
     expect(parseDiagramState({ ...state(), drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [5000] }] } })).toBeNull();
     expect(parseDiagramState({ ...state(), drawings: { upper: [...state().drawings.upper, { id: 2, role: 'bottom', name: '밑판', cells: [26] }] } })).toBeNull();

@@ -162,7 +162,7 @@
  function restore(saved){const s=saved?.privateContent,valid=p=>typeof p.id==='string'&&typeof p.name==='string'&&Object.hasOwn(categories,p.section)&&Object.hasOwn(kinds,p.kind)&&['width','height','qty','a','b','allowance','sites'].every(k=>Number.isFinite(p[k]));if(![3,4].includes(s?.version)||!Array.isArray(s.parts)||s.parts.length>30||!s.parts.every(valid))return;const surfaces=s.version===4&&Array.isArray(s.surfaces)?s.surfaces:defaultSurfaces(s.parts);if(surfaces.length>60||!surfaces.every(valid))return;state={...state,...s,surfaces,next:{...state.next,...s.next},query:'',queue:Array.isArray(s.queue)?s.queue:[]};if(!all().some(p=>p.id===state.selected)){state.selected=null;state.screen='diagram';}for(const section of Object.keys(prefix))state.next[section]=Math.max(state.next[section]||1,...state.parts.filter(p=>p.section===section).map(p=>Number(p.id.slice(1))+1));}
  let initialized=false,canSelect=false;
  let customPresets=[],customPreset=null,customShape=null;
- const customRoles={side:'옆판',bottom:'밑판',top:'윗판',molding:'몰딩',double:'양문장',single:'싱글장',plinth:'걸레받이',drawer:'서랍장',hood:'후드장',empty:'Empty · 시공안함'};
+ const customRoles={side:'옆판',bottom:'밑판',top:'윗판',front:'앞판',molding:'몰딩',double:'양문장',single:'싱글장',plinth:'걸레받이',drawer:'서랍장',hood:'후드장',empty:'Empty · 시공안함'};
  const customId=s=>customPreset.id+'-G'+String(s.id).padStart(2,'0');
  function renderCustom(){
    root.querySelector('.drawing').hidden=!!customPreset;el('custom-illustration').hidden=!customPreset;
@@ -216,7 +216,7 @@
      const label=s.role==='empty'?'Empty':customId(s)+' '+customRoles[s.role];
      const stroke=chosen?'#2563eb':'#278c9a';
      const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
-     const divider=rectangular&&s.role==='double'?`<path data-door-divider d="M${tx} ${y}v${h}" stroke="#eaffff" stroke-width="1"/>`:rectangular&&s.role==='drawer'?`<path data-door-divider d="M${x} ${ty}h${w}" stroke="#eaffff" stroke-width="1"/>`:'';
+     const divider=rectangular&&s.role==='double'?`<path data-door-divider d="M${tx} ${y}v${h}" stroke="#eaffff" stroke-width="1"/>`:'';
      const font=Math.min(12,Math.max(7,w/customId(s).length*1.4)),rotate=h>w*2;
      const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${divider}${text}</g>`;

@@ -1,7 +1,7 @@
 import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
 
 export const DIAGRAM_PARTS = { upper: '싱크대 상부장', lower: '싱크대 하부장', fridge: '냉장고장', vanity: '화장대', shelf: '책장', sash: '샷시 (내부)', bathdoor: '화장실문/문틀', shoe: '신발장', door: '방문/문틀', island: '아일랜드식탁', wardrobe: '붙박이장', dress: '드레스룸' } as const;
-export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
+export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'front', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
 export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string; quantity?: 1 | 2 };
 export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: 'V', shelf: 'B', sash: 'S', bathdoor: 'T', shoe: 'H', door: 'D', island: 'I', wardrobe: 'W', dress: 'C' } as const;
 export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
@@ -9,7 +9,7 @@ type Size = { cols: number; rows: number };
 type Shape = { id: number; role: string; name: string; cells: number[] };
 export type DiagramState = { version: 1 | 2; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; shapes: Shape[] }[] };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const size = (v: unknown): v is Size => object(v) && Number.isInteger(v.cols) && Number(v.cols) >= 24 && Number(v.cols) <= 64 && Number.isInteger(v.rows) && Number(v.rows) >= 16 && Number(v.rows) <= 64;
+const size = (v: unknown): v is Size => object(v) && Number.isInteger(v.cols) && Number(v.cols) >= 24 && Number(v.cols) <= 128 && Number.isInteger(v.rows) && Number(v.rows) >= 16 && Number(v.rows) <= 128;
 const part = (v: unknown): v is string => typeof v === 'string' && Object.hasOwn(DIAGRAM_PARTS, v);
 const text = (v: unknown) => typeof v === 'string' && v.length <= 40;
 function shapes(v: unknown, grid: Size): boolean {
