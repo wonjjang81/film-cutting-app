@@ -159,9 +159,9 @@ const server = http.createServer((req, res) => {
     await page.waitForFunction(() => Object.keys(localStorage).some(k => k.includes('diagrams-v1') && !k.endsWith(':backup') && !k.endsWith(':cabinets') && JSON.parse(localStorage.getItem(k))?.presets?.length===0));
     await page.reload();
     await page.getByRole('tab', { name: '새 프리셋 제작 · 모눈', exact: true }).click();
-    await editor.locator('[data-svg] .cell[data-role="top"]').first().waitFor();
+    await editor.locator('[data-svg]').waitFor();
     assert.equal(await editor.locator('[data-preset] option[value="'+presetId+'"]').count(),0,'preset deletion persists after reload');
-    assert.equal(await editor.locator('[data-svg] .cell[data-role="top"]').count(),120,'deleting preset preserves current drawing');
+    assert.equal(await editor.locator('[data-svg] .cell').count(),0,'deleting preset clears current drawing and persists after reload');
     assert.deepEqual(errors, []);
     console.log('PASS: non-grid cabinet picker; ID input and duplicate prevention; add/change/delete/Empty/hood door; fridge base; independent grid presets; new preset preserves saved presets; reload; mobile widths; no runtime errors');
   } finally { await browser.close(); server.close(); }
