@@ -181,11 +181,14 @@
      const cw=maxX-minX+1,ch=maxY-minY+1,rectangular=new Set(s.cells).size===cw*ch;
      return [s.id,{minX,maxX,minY,maxY,rectangular}];
    }));
-   // Layered members and members inside irregular openings remain a rigid group.
+   // Overlapping or edge-connected members form a rigid frame. Keeping only
+   // overlaps rigid allowed inner panels to detach from the frame and drift up/left.
    const groups=[];
    for(const [id,b] of bounds){let group={...b,ids:[id]},merged=true;
      while(merged){merged=false;for(let i=groups.length-1;i>=0;i--){const other=groups[i];
-       if(group.minX<=other.maxX&&other.minX<=group.maxX&&group.minY<=other.maxY&&other.minY<=group.maxY){
+       const overlapX=group.minX<=other.maxX&&other.minX<=group.maxX,overlapY=group.minY<=other.maxY&&other.minY<=group.maxY;
+       const adjacentX=group.maxX+1===other.minX||other.maxX+1===group.minX,adjacentY=group.maxY+1===other.minY||other.maxY+1===group.minY;
+       if(overlapX&&overlapY||adjacentX&&overlapY||adjacentY&&overlapX){
          group={minX:Math.min(group.minX,other.minX),maxX:Math.max(group.maxX,other.maxX),minY:Math.min(group.minY,other.minY),maxY:Math.max(group.maxY,other.maxY),ids:[...group.ids,...other.ids]};groups.splice(i,1);merged=true;
        }
      }}groups.push(group);
