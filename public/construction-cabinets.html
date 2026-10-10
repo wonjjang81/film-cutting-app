@@ -232,8 +232,10 @@
          const left=candidates.filter(o=>bounds.get(o.layoutKey)[hi]<b[lo]).sort((a,c)=>bounds.get(c.layoutKey)[hi]-bounds.get(a.layoutKey)[hi])[0];
          const right=candidates.filter(o=>bounds.get(o.layoutKey)[lo]>b[hi]).sort((a,c)=>bounds.get(a.layoutKey)[lo]-bounds.get(c.layoutKey)[lo])[0];
          const anchorLo=b[lo]===ext[lo],anchorHi=b[hi]===ext[hi];
-         const a=anchorLo?4:left?layout.get(left.layoutKey)[key]+layout.get(left.layoutKey)[size]+spacing:null;
-         const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.layoutKey)[key]-spacing:null;
+         const leftGap=left&&b[lo]-bounds.get(left.layoutKey)[hi]>1?spacing:0;
+         const rightGap=right&&bounds.get(right.layoutKey)[lo]-b[hi]>1?spacing:0;
+         const a=anchorLo?4:left?layout.get(left.layoutKey)[key]+layout.get(left.layoutKey)[size]+leftGap:null;
+         const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.layoutKey)[key]-rightGap:null;
          const structural=['side','top','bottom','molding','plinth'].includes(s.role),longAxis=axis==='X'?p.w>p.h:p.h>p.w;
          const stretch=!structural||longAxis;
          let pos=p[key],length=p[size];

@@ -41,7 +41,7 @@ const equal=(a,b,message)=>typeof a==='number'&&typeof b==='number'?assert.ok(Ma
  const adjusted=await Promise.all([1,2,3,4].map(box));
  assert.ok(adjusted[3].width<original[3].width,'front resizes to enlarged gaps while outside frame stays fixed');
  equal(adjusted[3].height,original[3].height,'occupied front height stays fixed');
- assert.ok(adjusted[2].width<original[2].width,'top span adapts within fixed outside boundaries');
+ equal(adjusted[2].width,original[2].width,'touching top-side joints remain touching');
  equal(Number(await page.locator('[data-member-separator]').first().getAttribute('stroke-width')),4/3,'gap control uses one-third display scale');
  await page.locator('[data-preset-shape="4"]').click();equal(await page.locator('[data-search]').inputValue(),'P1-G04 앞판');
  if(process.env.DIAGRAM_SCREENSHOT)await page.screenshot({path:process.env.DIAGRAM_SCREENSHOT,fullPage:true});
@@ -58,7 +58,7 @@ const equal=(a,b,message)=>typeof a==='number'&&typeof b==='number'?assert.ok(Ma
  const beforeFrame=await Promise.all([1,2,3,4,5].map(box));
  await page.locator('[data-illustration-gap]').fill('1');await page.locator('[data-illustration-gap]').dispatchEvent('input');
  const afterFrame=await Promise.all([1,2,3,4,5].map(box));
- assert.ok(afterFrame[2].width>beforeFrame[2].width,'top expands when gaps shrink inside fixed outside frame');
+ equal(afterFrame[2].width,beforeFrame[2].width,'touching top joints do not acquire artificial gaps');
  equal(afterFrame[0].y+afterFrame[0].height,afterFrame[1].y+afterFrame[1].height,'shared transform keeps side endpoints aligned');
  equal(afterFrame[4].y+afterFrame[4].height,afterFrame[1].y+afterFrame[1].height,'inner side remains aligned with outer base');
  assert.deepEqual(errors,[]);console.log('PASS: actual gap ratio, connected-frame resizing, occupied face dimensions, symmetry, persistence and stable selection');
