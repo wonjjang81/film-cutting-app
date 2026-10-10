@@ -232,8 +232,7 @@
          const left=candidates.filter(o=>bounds.get(o.layoutKey)[hi]<b[lo]).sort((a,c)=>bounds.get(c.layoutKey)[hi]-bounds.get(a.layoutKey)[hi])[0];
          const right=candidates.filter(o=>bounds.get(o.layoutKey)[lo]>b[hi]).sort((a,c)=>bounds.get(a.layoutKey)[lo]-bounds.get(c.layoutKey)[lo])[0];
          const anchorLo=b[lo]===ext[lo],anchorHi=b[hi]===ext[hi];
-         const leftGap=left&&b[lo]-bounds.get(left.layoutKey)[hi]>1?spacing:0;
-         const rightGap=right&&bounds.get(right.layoutKey)[lo]-b[hi]>1?spacing:0;
+         const leftGap=spacing,rightGap=spacing;
          const a=anchorLo?4:left?layout.get(left.layoutKey)[key]+layout.get(left.layoutKey)[size]+leftGap:null;
          const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.layoutKey)[key]-rightGap:null;
          const structural=['side','top','bottom','molding','plinth'].includes(s.role),longAxis=axis==='X'?p.w>p.h:p.h>p.w;
@@ -261,7 +260,7 @@
      if(framed&&s){const b=bounds.get(s.layoutKey),p=layout.get(s.layoutKey),cw=p.w/(b.maxX-b.minX+1),ch=p.h/(b.maxY-b.minY+1);return{x:p.x+(cx-b.minX)*cw,y:p.y+(cy-b.minY)*ch,cw,ch};}
      return {x:dx[cx],y:dy[cy],cw:dx[cx+1]-dx[cx],ch:dy[cy+1]-dy[cy]};
    };
-   el('custom-hint').textContent=framed?'외곽 상하좌우 고정 · 내부 간격 균일 맞춤 · 모눈 배치·두께 유지, 표시 길이 조정 · 실측치수 변경 없음':'간격 우선 자동맞춤 · Empty·겹침·비정형 모눈 형태 유지 · 모눈 원본·재단 실측치수 변경 없음';
+   el('custom-hint').textContent=framed?'외곽 상하좌우 고정 · 모든 부재 사이 동일 최소 간격 · 모눈 배치·두께 유지, 표시 길이 조정 · 실측치수 변경 없음':'간격 우선 자동맞춤 · Empty·겹침·비정형 모눈 형태 유지 · 모눈 원본·재단 실측치수 변경 없음';
    const totalX=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).x+(layout.get(id).w??(b.maxX-b.minX+1)*unit))),totalY=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).y+(layout.get(id).h??(b.maxY-b.minY+1)*unit)));
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='<defs><pattern id="overlap-illustration" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8l8-8" stroke="#b45309" stroke-width="1.2"/></pattern></defs>';
