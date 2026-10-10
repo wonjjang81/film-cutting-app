@@ -164,7 +164,7 @@
  let customPresets=[],customPreset=null,customShape=null;
  const customRoles={side:'옆판',bottom:'밑판',top:'윗판',front:'앞판',molding:'몰딩',double:'양문장',single:'싱글장',plinth:'걸레받이',drawer:'서랍장',hood:'후드장',empty:'Empty · 시공안함'};
  const customComponents=s=>{const cols=customPreset.size?.cols??24,left=new Set(s.cells),groups=[];while(left.size){const first=left.values().next().value,todo=[first],group=[];left.delete(first);while(todo.length){const i=todo.pop(),x=i%cols;group.push(i);for(const j of [i-cols,i+cols,...(x>0?[i-1]:[]),...(x<cols-1?[i+1]:[])])if(left.delete(j))todo.push(j);}groups.push(group);}return groups;};
- const customQuantity=s=>customComponents(s).length*(s.role==='double'?2:1);
+ const customQuantity=s=>customComponents(s).length*(s.role==='double'?2:1)*(s.sites??1);
  const customId=s=>customPreset.id+'-G'+String(s.id).padStart(2,'0');
  const customRole=s=>customPreset?.roles?.[s.role]??customRoles[s.role]??s.name;
  function renderCustom(){
@@ -208,11 +208,46 @@
    const layout=new Map([...bounds].map(([id,b])=>[id,{
      x:dx[b.minX],y:dy[b.minY],w:dx[b.maxX+1]-dx[b.minX],h:dy[b.maxY+1]-dy[b.minY]
    }]));
-   const cellBox=i=>{
+   // Local frame fitting: global empty-column compression cannot close a gap
+   // crossed by another member. Keep the source outside edges and fit interiors.
+   const sourceMinX=Math.min(...[...bounds.values()].map(b=>b.minX)),sourceMaxX=Math.max(...[...bounds.values()].map(b=>b.maxX));
+   const frameSide=(s,edge)=>{const b=bounds.get(s.id);return s.role==='side'&&b.maxY-b.minY>b.maxX-b.minX&&(edge==='left'?b.minX===sourceMinX:b.maxX===sourceMaxX);};
+   const seenCells=new Set();let hasOverlap=false;for(const s of customPreset.shapes)for(const i of s.cells){if(seenCells.has(i))hasOverlap=true;seenCells.add(i);}
+   const framed=customPreset.shapes.length>2&&!hasOverlap&&customPreset.shapes.some(s=>frameSide(s,'left'))&&customPreset.shapes.some(s=>frameSide(s,'right'))&&customPreset.shapes.every(s=>bounds.get(s.id).rectangular&&s.role!=='empty');
+   if(framed){
+     const ext={minX:Math.min(...[...bounds.values()].map(b=>b.minX)),maxX:Math.max(...[...bounds.values()].map(b=>b.maxX)),minY:Math.min(...[...bounds.values()].map(b=>b.minY)),maxY:Math.max(...[...bounds.values()].map(b=>b.maxY))};
+     for(const [id,b] of bounds)layout.set(id,{x:4+(b.minX-ext.minX)*unit,y:4+(b.minY-ext.minY)*unit,w:(b.maxX-b.minX+1)*unit,h:(b.maxY-b.minY+1)*unit});
+     const spacing=unit*gap;
+     for(let pass=0;pass<80;pass++){
+       let delta=0;
+       for(const axis of ['X','Y'])for(const s of customPreset.shapes){
+         const b=bounds.get(s.id),p=layout.get(s.id),lo='min'+axis,hi='max'+axis,orth=axis==='X'?'Y':'X',key=axis.toLowerCase(),size=axis==='X'?'w':'h';
+         const candidates=customPreset.shapes.filter(o=>o!==s&&bounds.get(o.id)['min'+orth]<=b['max'+orth]&&b['min'+orth]<=bounds.get(o.id)['max'+orth]);
+         const left=candidates.filter(o=>bounds.get(o.id)[hi]<b[lo]).sort((a,c)=>bounds.get(c.id)[hi]-bounds.get(a.id)[hi])[0];
+         const right=candidates.filter(o=>bounds.get(o.id)[lo]>b[hi]).sort((a,c)=>bounds.get(a.id)[lo]-bounds.get(c.id)[lo])[0];
+         const anchorLo=b[lo]===ext[lo],anchorHi=b[hi]===ext[hi];
+         const a=anchorLo?4:left?layout.get(left.id)[key]+layout.get(left.id)[size]+spacing:null;
+         const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.id)[key]-spacing:null;
+         const structural=['side','top','bottom','molding','plinth'].includes(s.role),longAxis=axis==='X'?p.w>p.h:p.h>p.w;
+         const stretch=!structural||longAxis;
+         let pos=p[key],length=p[size];
+         if(a!==null&&z!==null&&stretch&&z-a>=unit){pos=a;length=z-a;}
+         else if(a!==null&&!anchorHi)pos=a;
+         else if(z!==null&&!anchorLo)pos=z-length;
+         // Never reverse a source ordering or collapse a member to fit an
+         // incompatible frame. Preserve it instead of inventing a new shape.
+         if(pos<4||pos+length>4+(ext[hi]-ext[lo]+1)*unit||length<=0)continue;
+         delta=Math.max(delta,Math.abs(pos-p[key]),Math.abs(length-p[size]));p[key]=pos;p[size]=length;
+       }
+       if(delta<1e-7)break;
+     }
+   }
+   const cellBox=(i,s)=>{
      const cx=i%cols,cy=Math.floor(i/cols);
+     if(framed&&s){const b=bounds.get(s.id),p=layout.get(s.id),cw=p.w/(b.maxX-b.minX+1),ch=p.h/(b.maxY-b.minY+1);return{x:p.x+(cx-b.minX)*cw,y:p.y+(cy-b.minY)*ch,cw,ch};}
      return {x:dx[cx],y:dy[cy],cw:dx[cx+1]-dx[cx],ch:dy[cy+1]-dy[cy]};
    };
-   el('custom-hint').textContent='간격 우선 자동맞춤 · 연결 부재 길이는 빈칸에 맞춤 · Empty 공간 유지 · 모눈 원본·재단 실측치수 변경 없음';
+   el('custom-hint').textContent=framed?'외곽 상하좌우 고정 · 내부 간격 균일 맞춤 · 모눈 배치·두께 유지, 표시 길이 조정 · 실측치수 변경 없음':'간격 우선 자동맞춤 · Empty·겹침·비정형 모눈 형태 유지 · 모눈 원본·재단 실측치수 변경 없음';
    const totalX=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).x+(layout.get(id).w??(b.maxX-b.minX+1)*unit))),totalY=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).y+(layout.get(id).h??(b.maxY-b.minY+1)*unit)));
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='<defs><pattern id="overlap-illustration" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8l8-8" stroke="#b45309" stroke-width="1.2"/></pattern></defs>';
@@ -221,7 +256,7 @@
      let pixels='',edges='';
      const {minX,maxX,minY,maxY,rectangular}=bounds.get(s.id);
      const p=layout.get(s.id),{x,y}=p,w=p.w,h=p.h;
-     for(const i of cells){const cx=i%cols,cy=Math.floor(i/cols),{x:px,y:py,cw,ch}=cellBox(i);
+     for(const i of cells){const cx=i%cols,cy=Math.floor(i/cols),{x:px,y:py,cw,ch}=cellBox(i,s);
        pixels+=`M${px} ${py}h${cw}v${ch}h${-cw}z`;
        if(cy===0||!cells.has(i-cols))edges+=`M${px} ${py}h${cw}`;
        if(cy===rows-1||!cells.has(i+cols))edges+=`M${px} ${py+ch}h${cw}`;
@@ -237,23 +272,23 @@
      for(const component of customComponents(s)){
        const xs=component.map(i=>i%cols),ys=component.map(i=>Math.floor(i/cols));
        const left=Math.min(...xs),right=Math.max(...xs)+1,top=Math.min(...ys),bottom=Math.max(...ys)+1;
-       const px=dx[left],py=dy[top],pw=dx[right]-px,ph=dy[bottom]-py,cx=px+pw/2,cy=py+ph/2;
+       const first=cellBox(top*cols+left,s),last=cellBox((bottom-1)*cols+right-1,s),px=first.x,py=first.y,pw=last.x+last.cw-px,ph=last.y+last.ch-py,cx=px+pw/2,cy=py+ph/2;
        if(component.length===(right-left)*(bottom-top)&&s.role==='double')divider+=`<path data-door-divider d="M${cx} ${py}v${ph}" stroke="#eaffff" stroke-width="1"/>`;
        const font=Math.min(12,Math.max(7,pw/customId(s).length*1.4)),rotate=ph>pw*2;
        if(Math.min(pw,ph)>=14)text+=`<text x="${cx}" y="${cy}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${cx} ${cy})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`;
      }
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${separator}${divider}${text}</g>`;
    }
-   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
+   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i,s),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${totalX} ${totalY}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{
      const choose=e=>{let hit=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));
-       if(e?.type==='click'){const svg=node.ownerSVGElement,point=svg.createSVGPoint();point.x=e.clientX;point.y=e.clientY;const local=point.matrixTransform(svg.getScreenCTM().inverse());const hits=customPreset.shapes.filter(s=>s.cells.some(i=>{const {x,y,cw,ch}=cellBox(i);return cw>0&&ch>0&&local.x>=x&&local.x<x+cw&&local.y>=y&&local.y<y+ch;})).reverse();if(hits.length>1){const current=hits.findIndex(s=>s.id===customShape?.id);hit=hits[(current+1)%hits.length];}}
+       if(e?.type==='click'){const svg=node.ownerSVGElement,point=svg.createSVGPoint();point.x=e.clientX;point.y=e.clientY;const local=point.matrixTransform(svg.getScreenCTM().inverse());const hits=customPreset.shapes.filter(s=>s.cells.some(i=>{const {x,y,cw,ch}=cellBox(i,s);return cw>0&&ch>0&&local.x>=x&&local.x<x+cw&&local.y>=y&&local.y<y+ch;})).reverse();if(hits.length>1){const current=hits.findIndex(s=>s.id===customShape?.id);hit=hits[(current+1)%hits.length];}}
        customShape=hit;state.query='';renderCustom();
      };node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};
    });
    el('search').value=customShape?customId(customShape)+' '+customRole(customShape):'';
-   el('selection').textContent=customShape?customId(customShape)+' '+customRole(customShape)+' · 수량 '+customQuantity(customShape)+'개':customPreset.name+' · 형태를 선택하세요.';
+   el('selection').textContent=customShape?customId(customShape)+' '+customRole(customShape)+' · '+(customShape.sites??1)+'개소 · 총 수량 '+customQuantity(customShape)+'개':customPreset.name+' · 형태를 선택하세요.';
    el('popup-input').disabled=!canSelect||!customShape||customShape.role==='empty';el('popup-shape').disabled=true;el('popup-delete').disabled=true;
  }
  function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id&&p.part===state.view)??null;customShape=null;}

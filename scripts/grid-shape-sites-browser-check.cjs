@@ -1,0 +1,25 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({channel:'msedge',headless:true});try{
+ const page=await browser.newPage({viewport:{width:700,height:1000}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.route('https://diagram-test.invalid/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.resolve(__dirname,'../public/construction-diagram.html'),'utf8')}));
+ await page.goto('https://diagram-test.invalid/?mode=editor');
+ await page.evaluate(()=>{window.addEventListener('message',e=>{if(e.data.type==='diagram-save')window.saved=e.data.state;});window.postMessage({type:'diagram-init',state:{version:3,part:'upper',next:3,nextPreset:1,selected:1,sizes:{upper:{cols:48,rows:32}},drawings:{upper:[{id:1,role:'double',name:'양문',cells:[0,1,5,6]},{id:2,role:'single',name:'싱글',cells:[10]}]},presets:[]}},'*');});
+ const sites=page.locator('[data-shape-sites]');await page.waitForFunction(()=>!document.querySelector('[data-shape-sites]').disabled);assert.equal(await sites.inputValue(),'1','legacy default is one site');
+ await sites.fill('3');await sites.dispatchEvent('change');
+ await page.waitForFunction(()=>window.saved?.drawings.upper[0].sites===3);
+ assert.match(await page.locator('[data-selection]').innerText(),/3개소.*총 수량 12개/,'two copies × double doors × three sites');
+ assert.equal(await page.evaluate(()=>window.saved.drawings.upper[1].sites),undefined,'other shapes untouched');
+ await sites.fill('0');await sites.dispatchEvent('change');assert.equal(await sites.inputValue(),'3','invalid zero reverted');
+ await page.locator('[data-preset-name]').fill('개소A');await page.locator('[data-save-preset]').click();await page.waitForFunction(()=>window.saved?.presets.length===1);
+ const saved=await page.evaluate(()=>window.saved);assert.equal(saved.presets[0].shapes[0].sites,3);
+ await page.reload();await page.evaluate(state=>window.postMessage({type:'diagram-init',state},'*'),saved);
+ assert.equal(await sites.inputValue(),'3','sites survive restore');
+ await page.route('https://cabinet-test.invalid/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.resolve(__dirname,'../public/construction-cabinets.html'),'utf8')}));
+ await page.goto('https://cabinet-test.invalid/');await page.evaluate(preset=>{window.addEventListener('message',e=>{if(e.data.type==='diagram-select')window.selection=e.data.selection;});window.postMessage({type:'diagram-init',canSelect:true,presets:[preset]},'*');},saved.presets[0]);
+ await page.locator('[data-custom-preset]').selectOption('P1');await page.locator('[data-preset-shape="1"]').press('Enter');
+ assert.match(await page.locator('[data-selection]').innerText(),/3개소.*총 수량 12개/);
+ await page.locator('[data-popup-input]').click();await page.waitForFunction(()=>window.selection?.quantity===12);
+ assert.equal(await page.evaluate(()=>window.selection.id),'P1-G01','ID unchanged');
+ assert.deepEqual(errors,[]);console.log('PASS: shape sites default, validation, independent values, preset restore, repeat/door multiplication and cutting quantity');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
