@@ -163,6 +163,8 @@
  let initialized=false,canSelect=false;
  let customPresets=[],customPreset=null,customShape=null;
  const customRoles={side:'옆판',bottom:'밑판',top:'윗판',front:'앞판',molding:'몰딩',double:'양문장',single:'싱글장',plinth:'걸레받이',drawer:'서랍장',hood:'후드장',empty:'Empty · 시공안함'};
+ const customComponents=s=>{const cols=customPreset.size?.cols??24,left=new Set(s.cells),groups=[];while(left.size){const first=left.values().next().value,todo=[first],group=[];left.delete(first);while(todo.length){const i=todo.pop(),x=i%cols;group.push(i);for(const j of [i-cols,i+cols,...(x>0?[i-1]:[]),...(x<cols-1?[i+1]:[])])if(left.delete(j))todo.push(j);}groups.push(group);}return groups;};
+ const customQuantity=s=>customComponents(s).length*(s.role==='double'?2:1);
  const customId=s=>customPreset.id+'-G'+String(s.id).padStart(2,'0');
  const customRole=s=>customPreset?.roles?.[s.role]??customRoles[s.role]??s.name;
  function renderCustom(){
@@ -231,9 +233,15 @@
      const stroke=chosen?'#2563eb':'#278c9a';
      const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
      const separator=gap>0?`<path data-member-separator d="${edges}" fill="none" stroke="${chosen?'#2563eb':'light-dark(#f7faff,#182438)'}" stroke-width="${gap}" pointer-events="none"/>`:'';
-     const divider=rectangular&&s.role==='double'?`<path data-door-divider d="M${tx} ${y}v${h}" stroke="#eaffff" stroke-width="1"/>`:'';
-     const font=Math.min(12,Math.max(7,w/customId(s).length*1.4)),rotate=h>w*2;
-     const text=Math.min(w,h)>=14?`<text x="${tx}" y="${ty}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${tx} ${ty})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`:'';
+     let divider='',text='';
+     for(const component of customComponents(s)){
+       const xs=component.map(i=>i%cols),ys=component.map(i=>Math.floor(i/cols));
+       const left=Math.min(...xs),right=Math.max(...xs)+1,top=Math.min(...ys),bottom=Math.max(...ys)+1;
+       const px=dx[left],py=dy[top],pw=dx[right]-px,ph=dy[bottom]-py,cx=px+pw/2,cy=py+ph/2;
+       if(component.length===(right-left)*(bottom-top)&&s.role==='double')divider+=`<path data-door-divider d="M${cx} ${py}v${ph}" stroke="#eaffff" stroke-width="1"/>`;
+       const font=Math.min(12,Math.max(7,pw/customId(s).length*1.4)),rotate=ph>pw*2;
+       if(Math.min(pw,ph)>=14)text+=`<text x="${cx}" y="${cy}" fill="#153d47" font-size="${rotate?10:font}" text-anchor="middle" dominant-baseline="middle" ${rotate?`transform="rotate(-90 ${cx} ${cy})"`:''} pointer-events="none">${s.role==='empty'?'Empty':escape(customId(s))}</text>`;
+     }
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${separator}${divider}${text}</g>`;
    }
    const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
@@ -245,7 +253,7 @@
      };node.onclick=choose;node.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();choose();}};
    });
    el('search').value=customShape?customId(customShape)+' '+customRole(customShape):'';
-   el('selection').textContent=customShape?customId(customShape)+' '+customRole(customShape):customPreset.name+' · 형태를 선택하세요.';
+   el('selection').textContent=customShape?customId(customShape)+' '+customRole(customShape)+' · 수량 '+customQuantity(customShape)+'개':customPreset.name+' · 형태를 선택하세요.';
    el('popup-input').disabled=!canSelect||!customShape||customShape.role==='empty';el('popup-shape').disabled=true;el('popup-delete').disabled=true;
  }
  function registerPresets(presets){customPresets=Array.isArray(presets)?presets:[];customPreset=customPresets.find(p=>p.id===customPreset?.id&&p.part===state.view)??null;customShape=null;}
@@ -266,7 +274,7 @@
  function render(){drawing();const p=selected();el('diagram').hidden=state.screen==='editor'&&!!p;el('editor').hidden=state.screen!=='editor'||!p;if(p){el('cabinet-id').value=p.id;el('cabinet-kind').value=categories[p.section]+' · '+kinds[p.kind];for(const k of ['name','major','sites','width','height','qty','shape','a','b','allowance'])el(k).value=['width','height'].includes(k)&&p[k]===0?'':p[k];summary();}el('queue').innerHTML=state.queue.length?state.queue.map(q=>'<div class="row"><span>'+escape(q.id)+' · '+escape(q.name)+' · 대그룹 '+escape(q.major)+'</span><span>'+fmt(q.width)+' × '+fmt(q.height)+'mm · '+q.qty+'개 × '+q.sites+'개소</span><button class="cursor-interaction" data-edit-id="'+escape(q.id)+'">입력 보기</button></div>').join(''):'<div class="hint">입력 내역 없음</div>';root.querySelectorAll('[data-edit-id]').forEach(b=>b.onclick=()=>open(b.dataset.editId));}
  for(const k of ['name','major','sites','width','height','qty','shape','a','b','allowance'])el(k).addEventListener(['major','shape'].includes(k)?'change':'input',e=>{const p=selected();if(!p)return;p[k]=['name','major','shape'].includes(k)?e.target.value:Number(e.target.value);summary();save();});
  el('back').onclick=()=>{state.screen='diagram';render();save();};
- el('popup-input').onclick=()=>{if(customPreset){const s=customShape;if(canSelect&&s&&s.role!=='empty')parent.postMessage({type:'diagram-select',selection:{id:customId(s),shapeKey:'preset:'+customPreset.id+':'+s.id,part:categories[customPreset.part],name:s.name,quantity:s.role==='double'?2:1}},'*');return;}const p=selected();if(canSelect&&p&&p.kind!=='empty')parent.postMessage({type:'diagram-select',selection:{id:p.id,shapeKey:'cabinet:'+p.id,part:categories[p.section],name:p.name,quantity:p.kind==='double'||p.kind==='hood'&&p.hoodDoorKind==='double'?2:1}},'*');};
+ el('popup-input').onclick=()=>{if(customPreset){const s=customShape;if(canSelect&&s&&s.role!=='empty')parent.postMessage({type:'diagram-select',selection:{id:customId(s),shapeKey:'preset:'+customPreset.id+':'+s.id,part:categories[customPreset.part],name:s.name,quantity:customQuantity(s)}},'*');return;}const p=selected();if(canSelect&&p&&p.kind!=='empty')parent.postMessage({type:'diagram-select',selection:{id:p.id,shapeKey:'cabinet:'+p.id,part:categories[p.section],name:p.name,quantity:p.kind==='double'||p.kind==='hood'&&p.hoodDoorKind==='double'?2:1}},'*');};
  el('popup-delete').onclick=()=>remove();
  el('popup-shape').onclick=()=>{const p=selected();if(!p||p.kind==='surface')return;el('new-kind').innerHTML=p.kind==='hood'?'<option value="double">후드장 · 양문형</option><option value="single">후드장 · 싱글형</option>':'<option value="double">양문장</option><option value="single">싱글장</option><option value="hood">후드장</option>';el('new-kind').value=p.kind==='hood'?(p.hoodDoorKind??'single'):p.kind==='empty'?'single':p.kind;el('shape-panel').hidden=false;};
  el('shape-cancel').onclick=()=>el('shape-panel').hidden=true;
