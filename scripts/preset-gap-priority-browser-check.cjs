@@ -20,9 +20,9 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     for (const part of ['upper','lower','fridge','vanity','door','sash','shoe','island','bathdoor','wardrobe','shelf','dress']) {
       await page.evaluate(({part,shapes}) => window.postMessage({type:'diagram-init',canSelect:true,presets:[{id:'P1',part,name:'검증A',size:{cols:24,rows:16},shapes}]},'*'),{part,shapes});
       // The available part keys come from the application, rather than display names.
-      const available = await page.locator(`[data-view] option[value="${part}"]`).count();
+      const available = await page.locator(`[data-view] option[value="${part === 'door' ? 'bathdoor' : part}"]`).count();
       assert.equal(available,1,`${part}: supported construction part`);
-      await page.locator('[data-view]').selectOption(part);
+      await page.locator('[data-view]').selectOption(part === 'door' ? 'bathdoor' : part);
       await page.locator('[data-custom-preset]').selectOption('P1');
       await page.locator('[data-illustration-gap]').fill('1'); await page.locator('[data-illustration-gap]').dispatchEvent('input');
       const [left,right,top,front] = await Promise.all([1,2,3,4].map(box));

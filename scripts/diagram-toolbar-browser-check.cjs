@@ -23,9 +23,40 @@ const assert = require('node:assert/strict');
       await page.locator('[data-custom-preset]').selectOption('P1');
       assert.equal(await page.locator('[data-gap-control] .hint').count(), 0);
       assert.equal(await page.locator('[data-gap-control]').evaluate(n => getComputedStyle(n).flexDirection), 'row');
+      assert.equal((await page.locator('[data-gap-control]').innerText()).trim(), '간격');
+      const alignment = await page.evaluate(() => {
+        const search = document.querySelector('[data-search]').getBoundingClientRect();
+        const gap = document.querySelector('[data-illustration-gap]').getBoundingClientRect();
+        return { searchY: search.y, gapY: gap.y, searchRight: search.right, gapX: gap.x };
+      });
+      assert.ok(Math.abs(alignment.searchY - alignment.gapY) < 1 && alignment.gapX > alignment.searchRight, 'ID left, gap right on same row');
+      await page.evaluate(() => {
+        window.__centerMessages = [];
+        window.addEventListener('message', e => { if (e.data?.type === 'diagram-illustration-center') window.__centerMessages.push(e.data.centerY); });
+        window.postMessage({ type: 'diagram-focus-illustration' }, '*');
+      });
+      await page.waitForFunction(() => window.__centerMessages.length === 1);
+      const actualCenter = await page.locator('[data-custom-illustration]').evaluate(n => { const b = n.getBoundingClientRect(); return b.top + b.height / 2; });
+      assert.equal(await page.evaluate(() => window.__centerMessages[0]), actualCenter);
       await page.locator('[data-preset-shape="1"]').click();
       assert.equal(await page.locator('[data-popup-input]').isEnabled(), true);
       assert.deepEqual(errors, []);
+      assert.equal(await page.locator('[data-view] option[value="bathdoor"]').innerText(), '문/틀');
+      assert.equal(await page.locator('[data-view] option[value="door"]').count(), 0);
+      await page.evaluate(() => window.postMessage({ type: 'diagram-init', canSelect: true, presets: [
+        { id: 'P2', name: '기존 화장실문', part: 'bathdoor', shapes: [{ id: 1, role: 'single', name: '문', cells: [0] }] },
+        { id: 'P3', name: '기존 방문', part: 'door', shapes: [{ id: 2, role: 'single', name: '문', cells: [1] }] }
+      ] }, '*'));
+      await page.locator('[data-view]').selectOption('bathdoor');
+      assert.equal(await page.locator('[data-custom-preset] option').count(), 3, 'both legacy door presets retained');
+      await page.locator('[data-custom-preset]').selectOption('P3');
+      assert.equal(await page.locator('[data-view]').inputValue(), 'bathdoor');
+      assert.equal(await page.locator('[data-preset-shape="2"]').count(), 1);
+      await page.locator('[data-custom-preset]').selectOption('');
+      await page.locator('[data-plus]').click();
+      await page.locator('select[data-kind]').selectOption('single');
+      await page.locator('[data-confirm-add]').click();
+      assert.ok(await page.locator('[data-id^="T"]').count() > 0, 'bathroom illustration used by unified entry');
       await page.close();
     }
     console.log('PASS: compact gap control, single-row toolbar and working add/select at 320/390/610px');

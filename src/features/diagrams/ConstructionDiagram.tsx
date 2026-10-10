@@ -9,13 +9,14 @@ import { DIAGRAM_PARTS, diagramStorageKey, parseDiagramSelection, parseDiagramSt
 const queues = new Map<string, Promise<void>>();
 
 /** Sandboxed, network-disabled canvas. Only this host can read/write local state. */
-export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'picker' | 'editor' | 'cabinet'; onSelect?(selection: DiagramSelection): void; onPartChange?(part: string): void }) {
+export function ConstructionDiagram({ mode, onSelect, onPartChange, illustrationFocusRequest = 0, onIllustrationCenter }: { mode: 'picker' | 'editor' | 'cabinet'; onSelect?(selection: DiagramSelection): void; onPartChange?(part: string): void; illustrationFocusRequest?: number; onIllustrationCenter?(centerY: number): void }) {
   const auth = useAuthSession();
   const key = diagramStorageKey(auth.user?.id ?? 'local') + (mode === 'cabinet' ? ':cabinets' : '');
   const validate = mode === 'cabinet' ? parseCabinetState : parseDiagramState;
   const frame = useRef<HTMLIFrameElement>(null);
   const callback = useRef(onSelect); callback.current = onSelect;
   const partCallback = useRef(onPartChange); partCallback.current = onPartChange;
+  const centerCallback = useRef(onIllustrationCenter); centerCallback.current = onIllustrationCenter;
   const current = useRef<DiagramState | CabinetState | null>(null);
   const presets = useRef<DiagramState['presets']>([]);
   const [ready, setReady] = useState(false);
@@ -48,11 +49,15 @@ export function ConstructionDiagram({ mode, onSelect, onPartChange }: { mode: 'p
   }, [key, validate, mode, auth.user?.id]);
   useFocusEffect(load);
   useEffect(() => {
+    if (ready && illustrationFocusRequest > 0) frame.current?.contentWindow?.postMessage({ type: 'diagram-focus-illustration' }, '*');
+  }, [ready, illustrationFocusRequest]);
+  useEffect(() => {
     if (Platform.OS !== 'web') return;
     const receive = (event: MessageEvent) => {
       if (loadedKey !== key || !frame.current || event.source !== frame.current.contentWindow || !event.data || typeof event.data !== 'object') return;
       if (event.data.type === 'diagram-ready' && ready) frame.current.contentWindow?.postMessage({ type: 'diagram-init', state: current.current, presets: presets.current, canSelect: !!callback.current }, '*');
       if (event.data.type === 'diagram-height' && Number.isFinite(event.data.height)) setHeight(Math.max(180, Math.min(6000, event.data.height)));
+      if (event.data.type === 'diagram-illustration-center' && ready && Number.isFinite(event.data.centerY) && event.data.centerY >= 0 && event.data.centerY <= 6000) centerCallback.current?.(event.data.centerY);
       if (event.data.type === 'diagram-select' && mode !== 'editor' && ready) {
         const selection = parseDiagramSelection(event.data.selection);
         if (selection) callback.current?.(selection);
