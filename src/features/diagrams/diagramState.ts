@@ -2,7 +2,7 @@ import { INSTALLATION_LABOR_REFERENCES } from '../estimate/installationLabor';
 
 export const DIAGRAM_PARTS = { upper: '싱크대 상부장', lower: '싱크대 하부장', fridge: '냉장고장', vanity: '화장대', shelf: '책장', sash: '샷시 (내부)', bathdoor: '화장실문/문틀', shoe: '신발장', door: '방문/문틀', island: '아일랜드식탁', wardrobe: '붙박이장', dress: '드레스룸' } as const;
 export const DIAGRAM_ROLES = ['side', 'bottom', 'top', 'front', 'molding', 'double', 'single', 'plinth', 'drawer', 'hood', 'empty'] as const;
-export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string; quantity?: 1 | 2 };
+export type DiagramSelection = { id: string; shapeKey: string; part: string; name: string; quantity?: number };
 export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: 'V', shelf: 'B', sash: 'S', bathdoor: 'T', shoe: 'H', door: 'D', island: 'I', wardrobe: 'W', dress: 'C' } as const;
 export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
 type Size = { cols: number; rows: number };
@@ -39,7 +39,8 @@ export function parseDiagramState(value: unknown): DiagramState | null {
 }
 
 export function parseDiagramSelection(v: unknown): DiagramSelection | null {
-  if (object(v) && v.quantity !== undefined && v.quantity !== 1 && v.quantity !== 2) return null;
+  if (object(v) && v.quantity !== undefined && (!Number.isSafeInteger(v.quantity) || Number(v.quantity) < 1 || Number(v.quantity) > 32768)) return null;
+  if (object(v) && typeof v.shapeKey === 'string' && v.shapeKey.startsWith('cabinet:') && v.quantity !== undefined && v.quantity !== 1 && v.quantity !== 2) return null;
   if (object(v) && typeof v.shapeKey === 'string' && /^preset:P[1-9]\d*:[1-9]\d*$/.test(v.shapeKey) && text(v.name) && typeof v.part === 'string' && INSTALLATION_LABOR_REFERENCES.some(p => p.name === v.part)) {
     const [, preset, id] = v.shapeKey.split(':');
     if (v.id === `${preset}-G${String(Number(id)).padStart(2, '0')}`) return v as DiagramSelection;

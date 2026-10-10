@@ -5,13 +5,20 @@ import { DIAGRAM_PARTS } from './diagramState';
 
 const state = () => ({ version: 2, part: 'upper', next: 2, nextPreset: 1, selected: 1, sizes: { upper: { cols: 25, rows: 17 } }, drawings: { upper: [{ id: 1, role: 'top', name: '윗판', cells: [26, 27] }] }, presets: [] });
 describe('construction diagram state boundary', () => {
+  it('accepts repeated preset quantities and rejects unsafe values', () => {
+    const target = { id: 'P1-G01', shapeKey: 'preset:P1:1', part: '싱크대 상부장', name: '반복장' };
+    expect(parseDiagramSelection({ ...target, quantity: 6 })?.quantity).toBe(6);
+    for (const quantity of [0, -1, 1.5, 32769, NaN, Infinity, '3']) {
+      expect(parseDiagramSelection({ ...target, quantity })).toBeNull();
+    }
+  });
   it('accepts stable preset-specific IDs without colliding across presets', () => {
     const selection = { id: 'P1-G07', shapeKey: 'preset:P1:7', part: '화장대', name: '몰딩', quantity: 1 };
     expect(parseDiagramSelection(selection)).toEqual(selection);
     expect(parseDiagramSelection({ ...selection, id: 'P2-G07' })).toBeNull();
     expect(parseDiagramSelection({ ...selection, part: 'unknown' })).toBeNull();
   });
-  it('accepts only one or two pieces per diagram selection', () => {
+  it('retains one or two pieces for standard cabinet selections', () => {
     const selection = { id: 'U01', shapeKey: 'cabinet:U01', part: '싱크대 상부장', name: '양문장' };
     expect(parseDiagramSelection({ ...selection, quantity: 2 })?.quantity).toBe(2);
     expect(parseDiagramSelection({ ...selection, quantity: 1 })?.quantity).toBe(1);

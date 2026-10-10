@@ -52,7 +52,7 @@
 <div class="toolbar">
 <div data-grid-size class="hint" aria-live="polite"></div>
 <div class="bar"><button data-grow-x class="cursor-interaction">＋ 가로 한 칸</button><button data-grow-y class="cursor-interaction">＋ 세로 한 칸</button><button data-refine class="cursor-interaction">눈금 2배 세분화</button></div>
-<div class="hint">두께는 그린 모눈 그대로 표시합니다. 부재는 상하좌우로 이어져야 합니다. 다른 부재와 겹칠 수 있으며 사선 영역을 반복 선택하면 겹친 부재를 차례로 선택합니다.</div>
+<div class="hint">두께는 그린 모눈 그대로 표시합니다. 한 조각은 상하좌우로 이어져야 합니다. 동일 모양은 떨어져 그린 후 확인하면 같은 ID로 수량이 늘어납니다. 다른 부재와 겹칠 수 있으며 사선 영역을 반복 선택하면 겹친 부재를 차례로 선택합니다.</div>
 <div class="fields"><label>편집 도구<select data-tool><option value="rect">사각형 채우기</option><option value="brush">칸 채우기</option><option value="select">형태 선택</option><option value="erase">칸 지우기</option></select></label><label>형태 종류<select data-role></select></label></div>
 <div data-selection class="hint" aria-live="polite">선택 없음</div>
 <div class="bar"><button data-new class="cursor-interaction">＋ 새 형태</button><button data-retype class="cursor-interaction" disabled>종류 적용</button><button data-delete-shape class="cursor-interaction" disabled>형태 삭제</button></div>
@@ -105,43 +105,61 @@
  el('yes').onclick=()=>{const fn=pending;cancel();fn?.();};el('no').onclick=cancel;
  el('new-preset').onclick=()=>ask('현재 부위의 편집 도면을 비우고 새 프리셋을 만들까요? 저장된 프리셋과 기존 장 도면은 유지됩니다.',()=>{const before=clone(state);state.drawings[state.part]=[];state.sizes??={};state.sizes[state.part]=newSize();state.selected=null;cursor=0;el('preset-name').value='';draw();if(!save()){state=before;draw();return;}status('새 프리셋 · 모눈에 형태를 그린 후 이름을 입력하여 저장하세요.');});
  function bounds(s){const xs=s.cells.map(i=>i%cols()),ys=s.cells.map(i=>Math.floor(i/cols()));return {x:Math.min(...xs),y:Math.min(...ys),w:Math.max(...xs)-Math.min(...xs)+1,h:Math.max(...ys)-Math.min(...ys)+1};}
- function draw(){const w=el('board').getBoundingClientRect?.().width||el('input-board').getBoundingClientRect?.().width||480,font=Math.max(11,11*cols()*20/w);let out='<defs><pattern id="overlap-grid" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M-2 2l4-4M0 8l8-8M6 10l4-4" stroke="#b45309" stroke-width="1.5"/></pattern></defs>';for(const s of shapes()){for(const i of s.cells)out+='<rect class="cell" data-role="'+s.role+'" x="'+i%cols()*20+'" y="'+Math.floor(i/cols())*20+'" width="20" height="20" style="fill:hsl('+s.id*67%360+' 45% 58%);fill-opacity:.65"/>';const b=bounds(s);const rectangular=s.cells.length===b.w*b.h;if(rectangular&&s.role==='double')out+='<path class="detail-line" d="M'+(b.x+b.w/2)*20+' '+b.y*20+'v'+b.h*20+'"/>';if(b.w*20>font*3.5&&b.h*20>font*1.8)out+='<text x="'+(b.x+b.w/2)*20+'" y="'+(b.y+b.h/2)*20+'" text-anchor="middle" dominant-baseline="middle" font-size="'+font+'">'+(s.role==='empty'?'Empty':'G'+String(s.id).padStart(2,'0'))+'</text>';if(s.id===state.selected)for(const i of s.cells)out+='<rect class="outline" x="'+(i%cols()*20+1)+'" y="'+(Math.floor(i/cols())*20+1)+'" width="18" height="18"/>';}
+ function draw(){const w=el('board').getBoundingClientRect?.().width||el('input-board').getBoundingClientRect?.().width||480,font=Math.max(11,11*cols()*20/w);let out='<defs><pattern id="overlap-grid" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M-2 2l4-4M0 8l8-8M6 10l4-4" stroke="#b45309" stroke-width="1.5"/></pattern></defs>';for(const s of shapes()){for(const i of s.cells)out+='<rect class="cell" data-role="'+s.role+'" x="'+i%cols()*20+'" y="'+Math.floor(i/cols())*20+'" width="20" height="20" style="fill:hsl('+s.id*67%360+' 45% 58%);fill-opacity:.65"/>';for(const pieceCells of components(s.cells)){const b=bounds({cells:pieceCells});const rectangular=pieceCells.length===b.w*b.h;if(rectangular&&s.role==='double')out+='<path class="detail-line" d="M'+(b.x+b.w/2)*20+' '+b.y*20+'v'+b.h*20+'"/>';if(b.w*20>font*3.5&&b.h*20>font*1.8)out+='<text x="'+(b.x+b.w/2)*20+'" y="'+(b.y+b.h/2)*20+'" text-anchor="middle" dominant-baseline="middle" font-size="'+font+'">'+(s.role==='empty'?'Empty':'G'+String(s.id).padStart(2,'0'))+'</text>';}if(s.id===state.selected)for(const i of s.cells)out+='<rect class="outline" x="'+(i%cols()*20+1)+'" y="'+(Math.floor(i/cols())*20+1)+'" width="18" height="18"/>';}
  const occupied=new Map();for(const s of shapes())for(const i of s.cells)occupied.set(i,(occupied.get(i)??0)+1);for(const [i,count] of occupied)if(count>1)out+='<rect data-overlap="'+count+'" x="'+i%cols()*20+'" y="'+Math.floor(i/cols())*20+'" width="20" height="20" fill="url(#overlap-grid)" pointer-events="none"/>';
  for(let x=0;x<=cols();x++)out+='<path class="'+(x%4?'grid-line':'grid-major')+'" d="M'+x*20+' 0v'+rows()*20+'"/>';for(let y=0;y<=rows();y++)out+='<path class="'+(y%4?'grid-line':'grid-major')+'" d="M0 '+y*20+'h'+cols()*20+'"/>';
  if(stroke?.tool==='rect'){const b=paintBounds(stroke.start,stroke.last);out+='<rect class="preview" x="'+b.x*20+'" y="'+b.y*20+'" width="'+b.w*20+'" height="'+b.h*20+'"/>';}
  out+='<rect class="cursor-cell" x="'+(cursor%cols()*20+2)+'" y="'+(Math.floor(cursor/cols())*20+2)+'" width="16" height="16"/>';el('svg').setAttribute('viewBox','0 0 '+cols()*20+' '+rows()*20);el('svg').innerHTML=out;el('grid-size').textContent='가로 '+cols()+' × 세로 '+rows()+'칸 · 각 최대 128칸';el('grow-x').disabled=cols()>=128;el('grow-y').disabled=rows()>=128;const refinementSize=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part)?.size??(state.presets.some(p=>p.id===el('preset').value&&p.part===state.part)?defaultSize():size());el('refine').disabled=refinementSize.cols>64||refinementSize.rows>64;
- const s=selected();el('selection').textContent=s?label(s)+' · '+s.cells.length+'칸'+(!connected(s.cells)?' · 경고: 분리된 부재':''):'선택 없음 · '+roles[role];el('info').value=s?label(s):'';el('name').disabled=!s;el('name').value=s?.name??'';el('retype').disabled=!s;el('delete-shape').disabled=!s;el('board').dataset.mode=tool;
+ const s=selected();el('selection').textContent=s?label(s)+' · '+s.cells.length+'칸'+(identical(s.cells)?' · 수량 '+quantity(s)+'개':' · 경고: 서로 다른 분리 부재'):'선택 없음 · '+roles[role];el('info').value=s?label(s):'';el('name').disabled=!s;el('name').value=s?.name??'';el('retype').disabled=!s;el('delete-shape').disabled=!s;el('board').dataset.mode=tool;
  el('input-svg').setAttribute('viewBox','0 0 '+cols()*20+' '+rows()*20);el('input-svg').innerHTML=out.replace(/<rect class="cursor-cell"[^>]*\/>/g,'');el('input-selection').textContent=s?label(s):shapes().length?'선택할 형태를 클릭하세요.':'저장된 도면 없음 · 모눈 도면제작에서 형태를 만들어 주세요.';el('input-part').value=state.part;const usable=s&&s.role!=='empty';el('use-selection').disabled=!usable;
  }
  function presets(){const previous=el('preset').value;el('preset').innerHTML='<option value="">프리셋 선택</option>'+state.presets.filter(p=>p.part===state.part).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');if(state.presets.some(p=>p.id===previous&&p.part===state.part))el('preset').value=previous;else el('preset').value='';el('load-preset').disabled=!state.presets.some(p=>p.part===state.part);el('delete-preset').disabled=el('load-preset').disabled;}
  function render(){el('part').value=state.part;syncRoles();el('tool').value=tool;draw();presets();}
  function locate(e,board=el('board')){const b=board.getBoundingClientRect();const x=Math.floor((e.clientX-b.left)/b.width*cols()),y=Math.floor((e.clientY-b.top)/b.height*rows());return x<0||y<0||x>=cols()||y>=rows()?null:y*cols()+x;}
  function rectBounds(a,b){const x=Math.min(a%cols(),b%cols()),y=Math.min(Math.floor(a/cols()),Math.floor(b/cols()));return{x,y,w:Math.abs(a%cols()-b%cols())+1,h:Math.abs(Math.floor(a/cols())-Math.floor(b/cols()))+1};}
- function connected(cells){if(!cells.length)return true;const remaining=new Set(cells),todo=[cells[0]];remaining.delete(cells[0]);while(todo.length){const i=todo.pop(),x=i%cols();for(const j of [i-cols(),i+cols(),...(x>0?[i-1]:[]),...(x<cols()-1?[i+1]:[])])if(remaining.delete(j))todo.push(j);}return remaining.size===0;}
+ function components(cells){const left=new Set(cells),groups=[];while(left.size){const first=left.values().next().value,todo=[first],group=[];left.delete(first);while(todo.length){const i=todo.pop(),x=i%cols();group.push(i);for(const j of [i-cols(),i+cols(),...(x>0?[i-1]:[]),...(x<cols()-1?[i+1]:[])])if(left.delete(j))todo.push(j);}groups.push(group);}return groups;}
+ const signature=cells=>{const b=bounds({cells});return cells.map(i=>(Math.floor(i/cols())-b.y)*cols()+i%cols()-b.x).sort((a,b)=>a-b).join(',');};
+ const identical=cells=>{const groups=components(cells);return groups.every(g=>signature(g)===signature(groups[0]));};
+ const quantity=s=>components(s.cells).length*(s.role==='double'?2:1);
+ function commitDrawing(before,mode='paint'){
+   const s=selected(),previous=before.drawings[before.part]?.find(p=>p.id===s?.id);
+   if(s&&(!identical(s.cells)||(mode==='erase'&&previous&&components(s.cells).length>components(previous.cells).length))){state=before;draw();status('경고: 떨어진 조각은 동일한 크기·모양만 허용됩니다.');return;}
+   const count=s?components(s.cells).length:0,oldCount=previous?components(previous.cells).length:0;
+   if(mode==='paint'&&oldCount>1&&count<oldCount){state=before;draw();status('경고: 반복 조각을 연결할 수 없습니다. 동일 모양과 간격을 유지하세요.');return;}
+   if(s&&previous&&count>oldCount){
+     const after=clone(state);state=before;draw();
+     ask(label(s)+' 동일 모양 '+(count-oldCount)+'개를 추가할까요? 같은 ID 유지 · 수량 '+quantity(previous)+' → '+quantity(s)+'개',()=>{
+       if(JSON.stringify(state)!==JSON.stringify(before)){status('도면이 변경되어 추가를 취소했습니다. 다시 그려주세요.');return;}
+       state=after;draw();if(!save()){state=before;draw();return;}status(label(s)+' · 수량 '+quantity(s)+'개 반영');
+     });return;
+   }
+   draw();if(!save()){state=before;draw();}else status('모눈 형태 변경됨 · 실측치수는 별도 입력');
+ }
+ function connected(cells){return components(cells).length<=1;}
  function applyCells(cells,mode){
    state.drawings[state.part]??=[];
    let s=selected();
    if(mode==='erase'){
      s??=shapes().filter(s=>s.cells.some(i=>cells.includes(i))).at(-1);
      if(!s)return true;
+     state.selected=s.id;
      const next=s.cells.filter(i=>!cells.includes(i));
-     if(!connected(next)){status('경고: 지우면 부재가 분리됩니다. 연결을 유지하거나 부재를 삭제하세요.');if(stroke)stroke.blocked=true;return false;}
+     if(!stroke&&next.length&&(!identical(next)||components(next).length>components(s.cells).length)){status('경고: 지우면 부재가 분리되거나 동일 모양이 달라집니다. 연결을 유지하거나 조각 전체를 지우세요.');if(stroke)stroke.blocked=true;return false;}
      s.cells=next;state.drawings[state.part]=shapes().filter(s=>s.cells.length);if(!selected())state.selected=null;return true;
    }
    if(s?.role!==role)s=null;
    const next=[...new Set([...(s?.cells??[]),...cells])].sort((a,b)=>a-b);
-   if(!connected(next)){status('경고: 한 부재는 상하좌우로 이어져야 합니다. 떨어진 부위는 새 형태로 그리세요.');if(stroke)stroke.blocked=true;return false;}
    if(!s){if(shapes().length>=40){status('현재 부위 최대 40개 형태');if(stroke)stroke.blocked=true;return false;}s={id:state.next++,role,name:roles[role],cells:[]};state.drawings[state.part].push(s);state.selected=s.id;}
    s.cells=next;return true;
  }
  function pick(i){const hits=shapes().filter(s=>s.cells.includes(i)).reverse(),index=hits.findIndex(s=>s.id===state.selected),s=hits[(index+1)%hits.length];state.selected=s?.id??null;if(s){role=s.role;el('role').value=role;}cancel();draw();save();}
  function line(a,b){const cells=[a];let x=a%cols(),y=Math.floor(a/cols()),tx=b%cols(),ty=Math.floor(b/cols());while(x!==tx||y!==ty){if(x!==tx){x+=Math.sign(tx-x);cells.push(y*cols()+x);}if(y!==ty){y+=Math.sign(ty-y);cells.push(y*cols()+x);}}return cells;}
- function finish(e,cancelled=false){if(!stroke)return;const was=stroke;if(cancelled){state=was.before;stroke=null;draw();return;}if(was.tool==='rect'){const b=paintBounds(was.start,was.last);applyCells(block(b.x,b.y,b.w,b.h,cols()),'paint');}stroke=null;el('board').releasePointerCapture?.(e.pointerId);draw();if(!save()){state=was.before;draw();}else if(!was.blocked)status('모눈 형태 변경됨 · 실측치수는 별도 입력');}
+ function finish(e,cancelled=false){if(!stroke)return;const was=stroke;if(cancelled){state=was.before;stroke=null;draw();return;}if(was.tool==='rect'){const b=paintBounds(was.start,was.last);applyCells(block(b.x,b.y,b.w,b.h,cols()),'paint');}stroke=null;el('board').releasePointerCapture?.(e.pointerId);if(was.blocked){state=was.before;draw();return;}commitDrawing(was.before,was.tool==='erase'?'erase':'paint');}
  function paintBounds(a,b){return rectBounds(a,b);}
  el('board').onpointerdown=e=>{if(stroke||e.button>0)return;const i=locate(e);if(i===null)return;cursor=i;if(tool==='select'){pick(i);return;}e.preventDefault();cancel();stroke={tool,start:i,last:i,before:clone(state)};el('board').setPointerCapture?.(e.pointerId);if(tool==='brush'||tool==='erase')applyCells([i],tool==='erase'?'erase':'paint');draw();};
  el('board').onpointermove=e=>{if(!stroke)return;e.preventDefault();const i=locate(e);if(i===null)return;if(stroke.tool==='brush'||stroke.tool==='erase')applyCells(line(stroke.last,i),stroke.tool==='erase'?'erase':'paint');stroke.last=i;cursor=i;draw();};
  el('board').onpointerup=e=>finish(e);el('board').onpointercancel=e=>finish(e,true);el('board').onlostpointercapture=e=>{if(stroke)finish(e,true);};
- el('board').onkeydown=e=>{if(stroke)return;const col=cursor%cols(),row=Math.floor(cursor/cols());if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();cursor=Math.max(0,Math.min(rows()-1,row+(e.key==='ArrowUp'?-1:e.key==='ArrowDown'?1:0)))*cols()+Math.max(0,Math.min(cols()-1,col+(e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0)));draw();}else if(e.key==='Enter'){e.preventDefault();pick(cursor);}else if(e.key===' '){e.preventDefault();const before=clone(state);applyCells([cursor],tool==='erase'?'erase':'paint');draw();if(!save()){state=before;draw();}}};
+ el('board').onkeydown=e=>{if(stroke)return;const col=cursor%cols(),row=Math.floor(cursor/cols());if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();cursor=Math.max(0,Math.min(rows()-1,row+(e.key==='ArrowUp'?-1:e.key==='ArrowDown'?1:0)))*cols()+Math.max(0,Math.min(cols()-1,col+(e.key==='ArrowLeft'?-1:e.key==='ArrowRight'?1:0)));draw();}else if(e.key==='Enter'){e.preventDefault();pick(cursor);}else if(e.key===' '){e.preventDefault();const before=clone(state);cancel();if(applyCells([cursor],tool==='erase'?'erase':'paint'))commitDrawing(before,tool==='erase'?'erase':'paint');}};
  el('part').innerHTML=Object.entries(parts).map(([key,name])=>'<option value="'+key+'">'+name+'</option>').join('');el('role').innerHTML=Object.entries(roles).map(([key,name])=>'<option value="'+key+'">'+name+'</option>').join('');
  el('input-part').innerHTML=el('part').innerHTML;
  function showTab(view){if(stroke)finish({pointerId:0},true);cancel();el('input-screen').hidden=view!=='input';el('editor-screen').hidden=view!=='editor';draw();}
@@ -181,7 +199,7 @@
  el('delete-preset').onclick=()=>{const p=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part);if(!p){status('삭제할 프리셋을 선택하세요.');return;}ask(p.name+' 프리셋과 현재 '+parts[state.part]+' 모눈의 모든 부재를 삭제할까요? 다른 프리셋과 다른 시공부위는 유지됩니다.',()=>{if(stroke)finish({pointerId:0},true);const before=clone(state),oldCursor=cursor;state.presets=state.presets.filter(x=>x.id!==p.id);state.drawings[state.part]=[];state.selected=null;cursor=0;if(!save()){state=before;cursor=oldCursor;return;}el('preset-name').value='';presets();draw();status('프리셋 및 현재 모눈 삭제됨 · 다른 프리셋과 시공부위 유지');});};
  if(typeof ResizeObserver!=='undefined'){const observer=new ResizeObserver(()=>draw());observer.observe(el('board'));observer.observe(el('input-board'));}
  root.inert=true;
- el('use-selection').onclick=()=>{const s=selected();if(s&&s.role!=='empty')parent.postMessage({type:'diagram-select',selection:{id:'G'+String(s.id).padStart(2,'0'),shapeKey:state.part+':'+s.id,part:parts[state.part],name:s.name}},'*');};
+ el('use-selection').onclick=()=>{const s=selected();if(s&&s.role!=='empty')parent.postMessage({type:'diagram-select',selection:{id:'G'+String(s.id).padStart(2,'0'),shapeKey:state.part+':'+s.id,part:parts[state.part],name:s.name,quantity:quantity(s)}},'*');};
  const height=()=>parent.postMessage({type:'diagram-height',height:Math.ceil(root.getBoundingClientRect().height)+4},'*');
  window.addEventListener('message',e=>{if(e.source!==parent||e.data?.type!=='diagram-init')return;if(stroke)finish({pointerId:0},true);cancel();if(e.data.state)restore({privateContent:e.data.state});initialized=true;root.inert=false;showTab(mode==='editor'?'editor':'input');render();height();});
  new ResizeObserver(height).observe(root);
