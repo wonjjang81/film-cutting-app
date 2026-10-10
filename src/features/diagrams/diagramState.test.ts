@@ -8,8 +8,18 @@ describe('construction diagram state boundary', () => {
   it('accepts repeated preset quantities and rejects unsafe values', () => {
     const target = { id: 'P1-G01', shapeKey: 'preset:P1:1', part: '싱크대 상부장', name: '반복장' };
     expect(parseDiagramSelection({ ...target, quantity: 6 })?.quantity).toBe(6);
-    for (const quantity of [0, -1, 1.5, 32769, NaN, Infinity, '3']) {
+    for (const quantity of [0, -1, 1.5, 32768 * 99 + 1, NaN, Infinity, '3']) {
       expect(parseDiagramSelection({ ...target, quantity })).toBeNull();
+    }
+  });
+  it('preserves per-shape sites in drawings and presets with legacy default support', () => {
+    const legacy = state();
+    expect(parseDiagramState(legacy)).not.toBeNull();
+    const updated = { ...legacy, drawings: { upper: legacy.drawings.upper.map(s => ({ ...s, sites: 3 })) } };
+    expect(parseDiagramState(updated)?.drawings.upper?.[0]?.sites).toBe(3);
+    for (const sites of [0, -1, 1.5, 100, NaN, '2']) {
+      expect(parseDiagramState({ ...legacy, drawings: { upper: legacy.drawings.upper.map(s => ({ ...s, sites })) } })).toBeNull();
+      expect(parseDiagramState({ ...legacy, presets: [{ id: 'P1', part: 'upper', name: '검증', shapes: legacy.drawings.upper.map(s => ({ ...s, sites })) }] })).toBeNull();
     }
   });
   it('accepts stable preset-specific IDs without colliding across presets', () => {

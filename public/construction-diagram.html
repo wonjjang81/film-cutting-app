@@ -61,7 +61,7 @@
 <div class="hint">클릭으로 한 칸, 드래그로 영역을 채웁니다. 같은 형태에 칸을 더하려면 계속 그리세요. 다른 장은 ‘새 형태’로 시작합니다.</div>
 <button data-board data-mode="rect" class="board cursor-interaction" aria-label="모눈 편집판. 방향키로 칸 이동, 스페이스로 채우기 또는 지우기, Enter로 형태 선택"><svg data-svg viewBox="0 0 480 320" role="img" aria-label="모눈 도면"></svg></button>
 <div data-status class="status" role="status" aria-live="polite"></div>
-<section class="panel"><h3>선택 형태</h3><div class="fields"><label>이름<input data-name placeholder="선택 후 입력" disabled maxlength="40"></label><label>선택 정보<input data-info readonly></label></div><div class="hint">양문장은 중앙 분할선을 표시하고 서랍장에는 가로 분할선을 표시하지 않습니다. Empty는 시공안함이며 사용자용 ID를 표시하지 않습니다.</div></section>
+<section class="panel"><h3>선택 형태</h3><div class="fields"><label>이름<input data-name placeholder="선택 후 입력" disabled maxlength="40"></label><label>선택 정보<input data-info readonly></label><label>개소<input data-shape-sites type="number" min="1" max="99" step="1" value="1" disabled></label></div><div class="hint">양문장은 중앙 분할선을 표시하고 서랍장에는 가로 분할선을 표시하지 않습니다. Empty는 시공안함이며 사용자용 ID를 표시하지 않습니다.</div></section>
 <section class="panel"><h3>시공부위 프리셋</h3><div class="fields"><label>프리셋 이름<input data-preset-name maxlength="40" placeholder="예: 상부장 기본형"></label><label>저장된 프리셋<select data-preset></select></label></div><div class="bar"><button data-save-preset class="primary cursor-interaction">프리셋 저장</button><button data-load-preset class="cursor-interaction">불러오기</button><button data-delete-preset class="cursor-interaction">프리셋 삭제</button></div><div class="hint">도면과 프리셋은 현재 기기·브라우저에 저장됩니다. 모눈은 형태 확인용이며 실측치수를 자동 생성하지 않습니다.</div></section>
 </section>
 <dialog data-role-dialog aria-labelledby="role-editor-title"><h3 id="role-editor-title">형태 종류 편집</h3><label>편집할 종류<select data-edit-role></select></label><label>형태 종류 이름<input data-role-name maxlength="40" placeholder="예: 앞판"></label><div class="bar"><button data-add-role>종류 추가</button><button data-rename-role>이름 변경</button><button data-remove-role>종류 삭제</button></div><div data-role-status class="hint" role="status"></div><div class="bar"><button data-close-role class="primary">닫기</button></div></dialog>
@@ -81,7 +81,7 @@
  const defaultSize=()=>({cols:24,rows:16});
  const newSize=()=>({cols:48,rows:32});
  const validSize=s=>s&&Number.isInteger(s.cols)&&s.cols>=24&&s.cols<=128&&Number.isInteger(s.rows)&&s.rows>=16&&s.rows<=128;
- const validShape=(s,size,catalog=roles)=>s&&Number.isInteger(s.id)&&s.id>0&&Object.hasOwn(catalog,s.role)&&typeof s.name==='string'&&s.name.length<=40&&Array.isArray(s.cells)&&s.cells.length>0&&s.cells.length<=size.cols*size.rows&&s.cells.every(i=>Number.isInteger(i)&&i>=0&&i<size.cols*size.rows)&&new Set(s.cells).size===s.cells.length;
+ const validShape=(s,size,catalog=roles)=>s&&Number.isInteger(s.id)&&s.id>0&&Object.hasOwn(catalog,s.role)&&typeof s.name==='string'&&s.name.length<=40&&Array.isArray(s.cells)&&s.cells.length>0&&s.cells.length<=size.cols*size.rows&&s.cells.every(i=>Number.isInteger(i)&&i>=0&&i<size.cols*size.rows)&&new Set(s.cells).size===s.cells.length&&(s.sites===undefined||Number.isInteger(s.sites)&&s.sites>=1&&s.sites<=99);
  const validShapes=(shapes,size,catalog=roles)=>Array.isArray(shapes)&&shapes.length<=40&&shapes.every(s=>validShape(s,size,catalog))&&new Set(shapes.map(s=>s.id)).size===shapes.length;
  function restore(w){const s=w?.privateContent;if(![1,2,3].includes(s?.version)||!Object.hasOwn(parts,s.part)||!s.drawings||(s.roles!==undefined&&!validRoles(s.roles))||!Object.entries(s.sizes??{}).every(([p,z])=>Object.hasOwn(parts,p)&&validSize(z))||!Object.entries(s.drawings).every(([p,d])=>Object.hasOwn(parts,p)&&validShapes(d,s.sizes?.[p]??defaultSize(),s.roles??defaultRoles))||!Array.isArray(s.presets)||s.presets.length>8||!s.presets.every(p=>p&&typeof p.id==='string'&&typeof p.name==='string'&&p.name.length<=40&&Object.hasOwn(parts,p.part)&&validSize(p.size??defaultSize())&&(p.roles===undefined||validRoles(p.roles))&&validShapes(p.shapes,p.size??defaultSize(),p.roles??defaultRoles)))return;state=clone(s);roles=clone(s.roles??defaultRoles);syncRoles();state.next=Math.max(Number(s.next)||1,...Object.values(s.drawings).flat().map(x=>x.id+1));state.nextPreset=Math.max(Number(s.nextPreset)||1,...s.presets.map(p=>(Number(p.id.slice(1))||0)+1));}
  let initialized=false;const mode=new URLSearchParams(location.search).get('mode')==='editor'?'editor':'picker';
@@ -110,7 +110,7 @@
  for(let x=0;x<=cols();x++)out+='<path class="'+(x%4?'grid-line':'grid-major')+'" d="M'+x*20+' 0v'+rows()*20+'"/>';for(let y=0;y<=rows();y++)out+='<path class="'+(y%4?'grid-line':'grid-major')+'" d="M0 '+y*20+'h'+cols()*20+'"/>';
  if(stroke?.tool==='rect'){const b=paintBounds(stroke.start,stroke.last);out+='<rect class="preview" x="'+b.x*20+'" y="'+b.y*20+'" width="'+b.w*20+'" height="'+b.h*20+'"/>';}
  out+='<rect class="cursor-cell" x="'+(cursor%cols()*20+2)+'" y="'+(Math.floor(cursor/cols())*20+2)+'" width="16" height="16"/>';el('svg').setAttribute('viewBox','0 0 '+cols()*20+' '+rows()*20);el('svg').innerHTML=out;el('grid-size').textContent='가로 '+cols()+' × 세로 '+rows()+'칸 · 각 최대 128칸';el('grow-x').disabled=cols()>=128;el('grow-y').disabled=rows()>=128;const refinementSize=state.presets.find(p=>p.id===el('preset').value&&p.part===state.part)?.size??(state.presets.some(p=>p.id===el('preset').value&&p.part===state.part)?defaultSize():size());el('refine').disabled=refinementSize.cols>64||refinementSize.rows>64;
- const s=selected();el('selection').textContent=s?label(s)+' · '+s.cells.length+'칸'+(identical(s.cells)?' · 수량 '+quantity(s)+'개':' · 경고: 서로 다른 분리 부재'):'선택 없음 · '+roles[role];el('info').value=s?label(s):'';el('name').disabled=!s;el('name').value=s?.name??'';el('retype').disabled=!s;el('delete-shape').disabled=!s;el('board').dataset.mode=tool;
+ const s=selected();el('selection').textContent=s?label(s)+' · '+s.cells.length+'칸'+(identical(s.cells)?' · '+(s.sites??1)+'개소 · 총 수량 '+quantity(s)+'개':' · 경고: 서로 다른 분리 부재'):'선택 없음 · '+roles[role];el('info').value=s?label(s):'';el('name').disabled=!s;el('name').value=s?.name??'';el('shape-sites').disabled=!s||s.role==='empty';el('shape-sites').value=String(s?.sites??1);el('retype').disabled=!s;el('delete-shape').disabled=!s;el('board').dataset.mode=tool;
  el('input-svg').setAttribute('viewBox','0 0 '+cols()*20+' '+rows()*20);el('input-svg').innerHTML=out.replace(/<rect class="cursor-cell"[^>]*\/>/g,'');el('input-selection').textContent=s?label(s):shapes().length?'선택할 형태를 클릭하세요.':'저장된 도면 없음 · 모눈 도면제작에서 형태를 만들어 주세요.';el('input-part').value=state.part;const usable=s&&s.role!=='empty';el('use-selection').disabled=!usable;
  }
  function presets(){const previous=el('preset').value;el('preset').innerHTML='<option value="">프리셋 선택</option>'+state.presets.filter(p=>p.part===state.part).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');if(state.presets.some(p=>p.id===previous&&p.part===state.part))el('preset').value=previous;else el('preset').value='';el('load-preset').disabled=!state.presets.some(p=>p.part===state.part);el('delete-preset').disabled=el('load-preset').disabled;}
@@ -120,7 +120,7 @@
  function components(cells){const left=new Set(cells),groups=[];while(left.size){const first=left.values().next().value,todo=[first],group=[];left.delete(first);while(todo.length){const i=todo.pop(),x=i%cols();group.push(i);for(const j of [i-cols(),i+cols(),...(x>0?[i-1]:[]),...(x<cols()-1?[i+1]:[])])if(left.delete(j))todo.push(j);}groups.push(group);}return groups;}
  const signature=cells=>{const b=bounds({cells});return cells.map(i=>(Math.floor(i/cols())-b.y)*cols()+i%cols()-b.x).sort((a,b)=>a-b).join(',');};
  const identical=cells=>{const groups=components(cells);return groups.every(g=>signature(g)===signature(groups[0]));};
- const quantity=s=>components(s.cells).length*(s.role==='double'?2:1);
+ const quantity=s=>components(s.cells).length*(s.role==='double'?2:1)*(s.sites??1);
  function commitDrawing(before,mode='paint'){
    const s=selected(),previous=before.drawings[before.part]?.find(p=>p.id===s?.id);
    if(s&&(!identical(s.cells)||(mode==='erase'&&previous&&components(s.cells).length>components(previous.cells).length))){state=before;draw();status('경고: 떨어진 조각은 동일한 크기·모양만 허용됩니다.');return;}
@@ -191,6 +191,13 @@
  el('preset').onchange=()=>{cancel();draw();};
  el('tool').onchange=e=>{tool=e.target.value;cancel();draw();};el('role').onchange=e=>{if(e.target.value==='__edit'){cancel();el('role').value=role;syncRoles();el('role-status').textContent='';el('role-dialog').showModal();requestAnimationFrame(()=>el('role-dialog').scrollIntoView({block:'center'}));return;}role=e.target.value;syncRoles();draw();};
  el('new').onclick=()=>{cancel();state.selected=null;if(tool==='select'||tool==='erase')tool='rect';render();status('새 '+roles[role]+' · 모눈을 클릭/드래그하세요.');save();};
+ el('shape-sites').onchange=e=>{
+   cancel();const s=selected();if(!s||s.role==='empty')return;
+   const value=Number(e.target.value);
+   if(!Number.isInteger(value)||value<1||value>99||!e.target.value.trim()){e.target.value=String(s.sites??1);status('개소는 1~99 사이의 정수로 입력하세요.');return;}
+   const before=clone(state);s.sites=value;draw();
+   if(!save()){state=before;draw();return;}status(label(s)+' · '+value+'개소 · 총 수량 '+quantity(s)+'개');
+ };
  el('name').oninput=e=>{const s=selected();if(!s)return;s.name=e.target.value.slice(0,40);el('selection').textContent=label(s);el('info').value=label(s);save();};
  el('retype').onclick=()=>{const s=selected();if(!s)return;ask(label(s)+'의 종류를 '+roles[role]+'으로 바꿀까요?',()=>{s.role=role;draw();save();status('형태 종류 변경됨 · 위치 유지');});};
  el('delete-shape').onclick=()=>{const s=selected();if(!s)return;ask(label(s)+'을 삭제할까요?',()=>{state.drawings[state.part]=shapes().filter(x=>x.id!==s.id);state.selected=null;draw();save();status('선택 형태 삭제됨');});};

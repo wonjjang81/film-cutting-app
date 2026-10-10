@@ -6,7 +6,7 @@ export type DiagramSelection = { id: string; shapeKey: string; part: string; nam
 export const CABINET_PREFIXES = { upper: 'U', lower: 'L', fridge: 'R', vanity: 'V', shelf: 'B', sash: 'S', bathdoor: 'T', shoe: 'H', door: 'D', island: 'I', wardrobe: 'W', dress: 'C' } as const;
 export type CabinetState = { version: 4; parts: Record<string, unknown>[]; surfaces: Record<string, unknown>[]; view: string; next: Record<string, number>; selected: string | null; screen: 'diagram'; query: string; queue: unknown[] };
 type Size = { cols: number; rows: number };
-type Shape = { id: number; role: string; name: string; cells: number[] };
+type Shape = { id: number; role: string; name: string; cells: number[]; sites?: number };
 export type DiagramState = { version: 1 | 2 | 3; roles?: Record<string, string>; part: string; next: number; nextPreset: number; selected: number | null; sizes?: Record<string, Size>; drawings: Record<string, Shape[]>; presets: { id: string; part: string; name: string; size?: Size; roles?: Record<string, string>; shapes: Shape[] }[] };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const size = (v: unknown): v is Size => object(v) && Number.isInteger(v.cols) && Number(v.cols) >= 24 && Number(v.cols) <= 128 && Number.isInteger(v.rows) && Number(v.rows) >= 16 && Number(v.rows) <= 128;
@@ -19,6 +19,7 @@ function shapes(v: unknown, grid: Size, roles?: Record<string, string>): boolean
   for (const s of v) {
     if (!object(s) || !Number.isSafeInteger(s.id) || Number(s.id) < 1 || ids.has(Number(s.id)) || !(roles ? typeof s.role === 'string' && Object.hasOwn(roles, s.role) : DIAGRAM_ROLES.includes(s.role as typeof DIAGRAM_ROLES[number])) || !text(s.name) || !Array.isArray(s.cells) || !s.cells.length || s.cells.length > grid.cols * grid.rows) return false;
     ids.add(Number(s.id));
+    if (s.sites !== undefined && (!Number.isSafeInteger(s.sites) || Number(s.sites) < 1 || Number(s.sites) > 99)) return false;
     const occupied = new Set<number>(); // Different members may overlap; duplicates within one member may not.
     for (const i of s.cells) { if (!Number.isInteger(i) || i < 0 || i >= grid.cols * grid.rows || occupied.has(i)) return false; occupied.add(i); }
   }
@@ -39,7 +40,7 @@ export function parseDiagramState(value: unknown): DiagramState | null {
 }
 
 export function parseDiagramSelection(v: unknown): DiagramSelection | null {
-  if (object(v) && v.quantity !== undefined && (!Number.isSafeInteger(v.quantity) || Number(v.quantity) < 1 || Number(v.quantity) > 32768)) return null;
+  if (object(v) && v.quantity !== undefined && (!Number.isSafeInteger(v.quantity) || Number(v.quantity) < 1 || Number(v.quantity) > 32768 * 99)) return null;
   if (object(v) && typeof v.shapeKey === 'string' && v.shapeKey.startsWith('cabinet:') && v.quantity !== undefined && v.quantity !== 1 && v.quantity !== 2) return null;
   if (object(v) && typeof v.shapeKey === 'string' && /^preset:P[1-9]\d*:[1-9]\d*$/.test(v.shapeKey) && text(v.name) && typeof v.part === 'string' && INSTALLATION_LABOR_REFERENCES.some(p => p.name === v.part)) {
     const [, preset, id] = v.shapeKey.split(':');
