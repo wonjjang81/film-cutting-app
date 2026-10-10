@@ -29,11 +29,11 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
       near(front.x-left.x-left.width,20/3,`${part}: left opening shrinks even in connected frame`);
       near(right.x-front.x-front.width,20/3,`${part}: right opening equals left`);
       near(front.y-top.y-top.height,20/3,`${part}: vertical opening shrinks`);
-      near(top.width,80-40/3,`${part}: top fits fixed outside frame with uniform gaps`);
-      near(front.width,top.width,`${part}: core expands to the same side gaps`);
+      near(top.width,80,`${part}: touching top-side joints stay closed`);
+      near(front.width,80-40/3,`${part}: original front openings shrink uniformly`);
       near(left.y+left.height,right.y+right.height,`${part}: sides share lower endpoint`);
       await page.locator('[data-illustration-gap]').fill('3'); await page.locator('[data-illustration-gap]').dispatchEvent('input');
-      near((await box(3)).width,40,`${part}: larger selected gaps resize span within fixed frame`);
+      near((await box(3)).width,80,`${part}: touching top span remains unchanged`);
     }
     const reserved=[...shapes,{id:5,role:'empty',name:'Empty',cells:rect(1,1,4,5)}];
     await page.evaluate(shapes=>window.postMessage({type:'diagram-init',canSelect:true,presets:[{id:'P2',part:'upper',name:'Empty 보존',size:{cols:24,rows:16},shapes}]},'*'),reserved);

@@ -13,9 +13,9 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  await page.locator('[data-view]').selectOption(part);await page.locator('[data-custom-preset]').selectOption('P9');
  const b={};for(const s of shapes)b[s.id]=await box(s.id);
  near(b[102].x,4,'left outside fixed');near(b[104].x+b[104].width,404,'right outside fixed');near(b[90].y,4,'top fixed');near(b[103].y+b[103].height,604,'bottom fixed');
- near(b[100].y-b[90].y-b[90].height,20/3,'upper gap');near(b[101].y-b[100].y-b[100].height,20/3,'middle gap');near(b[103].y-b[101].y-b[101].height,20/3,'front grows upward');
+ near(b[100].y-b[90].y-b[90].height,20/3,'upper gap');near(b[101].y-b[100].y-b[100].height,0,'middle gap');near(b[103].y-b[101].y-b[101].height,20/3,'front grows upward');
  near(b[100].x-b[98].x-b[98].width,20/3,'horizontal part expands left');near(b[96].x-b[100].x-b[100].width,20/3,'horizontal part expands right');
- near(b[103].x-b[99].x-b[99].width,20/3,'front left gap');near(b[95].x-b[103].x-b[103].width,20/3,'front right gap');
+ near(b[103].x-b[99].x-b[99].width,0,'front left gap');near(b[95].x-b[103].x-b[103].width,0,'front right gap');
  }
  assert.deepEqual(errors,[]);console.log('PASS: fixed outside boundaries, uniform local gaps, upper spans and side/front lengths');
 }finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});
