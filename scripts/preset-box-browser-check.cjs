@@ -71,7 +71,7 @@ const assert = require('node:assert/strict');
     await page.locator('[data-preset-shape="4"]').click();
     assert.equal(await page.locator('[data-search]').inputValue(),'P3-G04 앞판');
     assert.equal(await page.locator('[data-popup-input]').isDisabled(),false,'front panel connects to cutting input');
-    await page.locator('[data-preset-shape="2"]').click();
+    await page.locator('[data-preset-shape="2"]').press('Enter');
     assert.equal(await page.locator('[data-popup-input]').isDisabled(), true, 'Empty is still non-cuttable');
     // Restore the cabinet fixture to verify ID selection still works.
     await page.reload();

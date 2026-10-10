@@ -215,7 +215,7 @@
    const sourceMinX=Math.min(...[...bounds.values()].map(b=>b.minX)),sourceMaxX=Math.max(...[...bounds.values()].map(b=>b.maxX));
    const frameSide=(s,edge)=>{const b=bounds.get(s.layoutKey);return s.role==='side'&&b.maxY-b.minY>b.maxX-b.minX&&(edge==='left'?b.minX===sourceMinX:b.maxX===sourceMaxX);};
    const seenCells=new Set();let hasOverlap=false;for(const s of members)for(const i of s.cells){if(seenCells.has(i))hasOverlap=true;seenCells.add(i);}
-   const framed=members.length>2&&!hasOverlap&&members.some(s=>frameSide(s,'left'))&&members.some(s=>frameSide(s,'right'))&&members.every(s=>bounds.get(s.layoutKey).rectangular&&s.role!=='empty');
+   const framed=members.length>2&&!hasOverlap&&members.some(s=>frameSide(s,'left'))&&members.some(s=>frameSide(s,'right'))&&members.every(s=>bounds.get(s.layoutKey).rectangular);
    if(framed){
      const ext={minX:Math.min(...[...bounds.values()].map(b=>b.minX)),maxX:Math.max(...[...bounds.values()].map(b=>b.maxX)),minY:Math.min(...[...bounds.values()].map(b=>b.minY)),maxY:Math.max(...[...bounds.values()].map(b=>b.maxY))};
      for(const [id,b] of bounds)layout.set(id,{x:4+(b.minX-ext.minX)*unit,y:4+(b.minY-ext.minY)*unit,w:(b.maxX-b.minX+1)*unit,h:(b.maxY-b.minY+1)*unit});
@@ -237,6 +237,7 @@
          // the same narrow clearance shown in the reference illustration.
          const jointGap=o=>{
            if(!o)return spacing;
+           if(s.role==='empty'||o.role==='empty')return 0;
            const ob=bounds.get(o.layoutKey),structural=q=>['side','top','bottom','molding','plinth'].includes(q.role);
            const vertical=q=>q.maxY-q.minY>q.maxX-q.minX;
            const touching=b[lo]-ob[hi]===1||ob[lo]-b[hi]===1;
@@ -249,7 +250,7 @@
          const a=anchorLo?4:left?layout.get(left.layoutKey)[key]+layout.get(left.layoutKey)[size]+leftGap:null;
          const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.layoutKey)[key]-rightGap:null;
          const structural=['side','top','bottom','molding','plinth'].includes(s.role),longAxis=axis==='X'?p.w>p.h:p.h>p.w;
-         const stretch=!structural||longAxis;
+         const stretch=s.role!=='empty'&&(!structural||longAxis);
          let pos=p[key],length=p[size];
          if(a!==null&&z!==null&&stretch&&z-a>=unit){pos=a;length=z-a;}
          else if(a!==null&&z!==null&&!stretch&&!anchorLo&&!anchorHi){
@@ -290,6 +291,12 @@
        if(cx===cols-1||!cells.has(i+1))edges+=`M${px+cw} ${py}v${ch}`;
      }
      const tx=x+w/2,ty=y+h/2;
+     if(s.role==='empty'){
+       // Reserve source geometry without painting a face, outline or ID.
+       const reserved=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="none" stroke="none"/>`:`<path d="${pixels}" fill="none" stroke="none"/>`;
+       svg+=`<g data-preset-shape="${s.id}" data-empty-space role="button" tabindex="0" aria-label="Empty · 시공안함" fill="none" stroke="none" pointer-events="none">${reserved}</g>`;
+       continue;
+     }
      const label=s.role==='empty'?'Empty':customId(s)+' '+customRole(s);
      const stroke=chosen?'#2563eb':'#278c9a';
      const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
@@ -305,7 +312,7 @@
      }
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${separator}${divider}${text}</g>`;
    }
-   const occupied=new Map();for(const s of members)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i,s),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
+   const occupied=new Map();for(const s of members.filter(s=>s.role!=='empty'))for(const i of s.cells){const {x,y,cw,ch}=cellBox(i,s),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${totalX} ${totalY}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{
      const choose=e=>{let hit=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));

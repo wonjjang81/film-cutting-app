@@ -42,7 +42,10 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
     await page.locator('[data-illustration-gap]').fill('0'); await page.locator('[data-illustration-gap]').dispatchEvent('input');
     near((await box(3)).width,80,'explicit Empty keeps reserved opening even at zero gap');
     near((await box(5)).height,100,'Empty retains original size');
-    assert.ok(await page.locator('[data-overlap]').count()>0,'shared cell transform retains overlapping-member markings');
+    assert.equal(await page.locator('[data-overlap]').count(),0,'Empty reservation is not a painted overlapping member');
+    assert.equal(await page.locator('[data-empty-space] rect').getAttribute('fill'),'none');
+    assert.equal(await page.locator('[data-empty-space] rect').getAttribute('stroke'),'none');
+    assert.equal(await page.locator('[data-empty-space] text').count(),0,'Empty has no visible text');
     await page.locator('[data-preset-shape="5"]').press('Enter');
     assert.equal(await page.locator('[data-popup-input]').isDisabled(),true,'Empty never creates a cutting piece');
     await page.locator('[data-preset-shape="4"]').press('Enter');
