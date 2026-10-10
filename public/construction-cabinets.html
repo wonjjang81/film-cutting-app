@@ -234,6 +234,11 @@
          const stretch=!structural||longAxis;
          let pos=p[key],length=p[size];
          if(a!==null&&z!==null&&stretch&&z-a>=unit){pos=a;length=z-a;}
+         else if(a!==null&&z!==null&&!stretch&&!anchorLo&&!anchorHi){
+           // Fit thin members from their nearest outside frame, not always
+           // from the left/top: the opposite chain must stay anchored too.
+           pos=b[lo]+b[hi]>ext[lo]+ext[hi]?z-length:a;
+         }
          else if(a!==null&&!anchorHi)pos=a;
          else if(z!==null&&!anchorLo)pos=z-length;
          // Never reverse a source ordering or collapse a member to fit an

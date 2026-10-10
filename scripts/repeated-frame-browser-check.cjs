@@ -25,6 +25,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  near(a.x-inner[0].x-inner[0].width,20/3,'left span gap');near(inner[1].x-a.x-a.width,20/3,'right span gap');
  near(front.x-sides[0].x-sides[0].width,20/3,'left front gap');near(sides[1].x-front.x-front.width,20/3,'right front gap');
  for(const s of [...outer,...inner,...sides])near(s.y+s.height,604,'side bottom anchor');
+ near(inner[0].x-outer[0].x-outer[0].width,20/3,'outer left gap');
+ near(sides[0].x-inner[0].x-inner[0].width,20/3,'inner left gap');
+ near(outer[1].x-inner[1].x-inner[1].width,20/3,'outer right gap');
+ near(inner[1].x-sides[1].x-sides[1].width,20/3,'inner right gap');
  await page.locator('[data-preset-shape="102"]').last().press('Enter');
  assert.match(await page.locator('[data-selection]').innerText(),/3개소.*수량 6개/);
  await page.locator('[data-popup-input]').click();await page.waitForFunction(()=>window.selection);
