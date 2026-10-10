@@ -10,18 +10,18 @@ vi.mock('react-native-svg', () => ({
 import { PlacementPreviewAnnotation } from './PlacementPreviewAnnotation';
 
 describe('completion annotation rendering', () => {
-  it.each([[950, 2350], [100, 450]])('puts an opaque ID background above the X for #5 on %s×%s pieces', (width, height) => {
+  it.each([[950, 2350], [100, 450]])('keeps original labels without backing and uses a 30% X for #5 on %s×%s pieces', (width, height) => {
     const markup = renderToStaticMarkup(<PlacementPreviewAnnotation id={5} x={10} y={20} width={width} height={height} rotated={false} completed color="#1e3a8a" />);
-    const background = markup.indexOf('<rect');
-    expect(background).toBeGreaterThan(markup.lastIndexOf('<line'));
-    expect(background).toBeLessThan(markup.indexOf('<text'));
-    expect(markup).toMatch(/<rect[^>]*fill="#ffffff"/);
+    expect(markup).not.toContain('<rect');
+    expect(markup).not.toContain('#ffffff');
+    expect(markup).toMatch(/<g[^>]*opacity="0.3"[^>]*>[\s\S]*<line/);
+    expect(markup.match(/<line/g)).toHaveLength(2);
     expect(markup).toContain('#5');
   });
-  it.each([[1040, 2200], [100, 450]])('keeps #51 above the completion cross for %s×%s pieces', (width, height) => {
+  it.each([[1040, 2200], [100, 450]])('retains original #51 position and rotation for %s×%s pieces', (width, height) => {
     const markup = renderToStaticMarkup(<PlacementPreviewAnnotation id={51} x={0} y={0} width={width} height={height} rotated={false} completed color="#1e3a8a" />);
-    expect(markup.indexOf('<line')).toBeLessThan(markup.indexOf('<text'));
-    expect(markup).toContain('stroke="#ffffff"');
+    expect(markup.indexOf('<text')).toBeLessThan(markup.indexOf('<line'));
+    expect(markup).toContain('opacity="0.3"');
     expect(markup).toContain('#51');
     expect(markup).toContain('fill="#1e3a8a"');
     if (height > width * 3) expect(markup).toContain('rotate(90');
