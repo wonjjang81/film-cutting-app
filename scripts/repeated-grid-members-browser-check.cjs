@@ -28,7 +28,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  await page.goto('https://cabinet-test.invalid/');
  await page.evaluate(preset=>{window.addEventListener('message',e=>{if(e.data.type==='diagram-select')window.selection=e.data.selection;});window.postMessage({type:'diagram-init',canSelect:true,presets:[preset]},'*');},{...saved.presets[0],shapes:saved.presets[0].shapes.map(s=>({...s,role:'double'}))});
  await page.locator('[data-custom-preset]').selectOption('P1');
- await page.locator('[data-preset-shape="1"]').press('Enter');
+ await page.locator('[data-preset-shape="1"]').first().press('Enter');
  assert.match(await page.locator('[data-selection]').innerText(),/수량 6개/,'three double cabinets produce six doors');
  assert.equal(await page.locator('[data-door-divider]').count(),3,'each repeated double cabinet has its divider');
  await page.locator('[data-popup-input]').click();

@@ -17,7 +17,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  assert.equal(await sites.inputValue(),'3','sites survive restore');
  await page.route('https://cabinet-test.invalid/**',r=>r.fulfill({contentType:'text/html',body:fs.readFileSync(path.resolve(__dirname,'../public/construction-cabinets.html'),'utf8')}));
  await page.goto('https://cabinet-test.invalid/');await page.evaluate(preset=>{window.addEventListener('message',e=>{if(e.data.type==='diagram-select')window.selection=e.data.selection;});window.postMessage({type:'diagram-init',canSelect:true,presets:[preset]},'*');},saved.presets[0]);
- await page.locator('[data-custom-preset]').selectOption('P1');await page.locator('[data-preset-shape="1"]').press('Enter');
+ await page.locator('[data-custom-preset]').selectOption('P1');await page.locator('[data-preset-shape="1"]').first().press('Enter');
  assert.match(await page.locator('[data-selection]').innerText(),/3개소.*총 수량 12개/);
  await page.locator('[data-popup-input]').click();await page.waitForFunction(()=>window.selection?.quantity===12);
  assert.equal(await page.evaluate(()=>window.selection.id),'P1-G01','ID unchanged');
