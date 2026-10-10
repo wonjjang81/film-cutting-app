@@ -10,7 +10,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  const near=(a,b,m)=>assert.ok(Math.abs(a-b)<1e-6,`${m}: ${a} != ${b}`);
  for(const part of ['upper','lower','fridge','vanity','shelf','sash','bathdoor','shoe','door','island','wardrobe','dress']){
  await page.evaluate(({part,shapes})=>window.postMessage({type:'diagram-init',canSelect:true,presets:[{id:'P9',name:'A',part,size:{cols:24,rows:32},shapes}]},'*'),{part,shapes});
- await page.locator('[data-view]').selectOption(part);await page.locator('[data-custom-preset]').selectOption('P9');
+ await page.locator('[data-view]').selectOption(part === 'door' ? 'bathdoor' : part);await page.locator('[data-custom-preset]').selectOption('P9');
  const b={};for(const s of shapes)b[s.id]=await box(s.id);
  near(b[102].x,4,'left outside fixed');near(b[104].x+b[104].width,404,'right outside fixed');near(b[90].y,4,'top fixed');near(b[103].y+b[103].height,604,'bottom fixed');
  near(b[100].y-b[90].y-b[90].height,20/3,'upper gap');near(b[101].y-b[100].y-b[100].height,0,'middle gap');near(b[103].y-b[101].y-b[101].height,20/3,'front grows upward');

@@ -17,7 +17,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  await page.evaluate(()=>window.addEventListener('message',e=>{if(e.data.type==='diagram-select')window.selection=e.data.selection;}));
  for(const part of ['upper','lower','fridge','vanity','shelf','sash','bathdoor','shoe','door','island','wardrobe','dress']){
  await page.evaluate(({shapes,part})=>window.postMessage({type:'diagram-init',canSelect:true,presets:[{id:'P9',name:'A',part,size:{cols:24,rows:32},shapes}]},'*'),{shapes,part});
- await page.locator('[data-view]').selectOption(part);await page.locator('[data-custom-preset]').selectOption('P9');
+ await page.locator('[data-view]').selectOption(part === 'door' ? 'bathdoor' : part);await page.locator('[data-custom-preset]').selectOption('P9');
  assert.match(await page.locator('[data-custom-hint]').innerText(),/외곽 상하좌우 고정/,'repeated members must receive frame fitting');
  const boxes=async id=>page.locator('[data-preset-shape="'+id+'"] rect').evaluateAll(rs=>rs.map(r=>Object.fromEntries(['x','y','width','height'].map(k=>[k,Number(r.getAttribute(k))]))));
  const near=(a,b,m)=>assert.ok(Math.abs(a-b)<1e-6,m+': '+a+' != '+b);
