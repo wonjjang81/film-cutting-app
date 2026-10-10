@@ -5,7 +5,8 @@ import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
 import { horizontalFreeSpaceAtPoint, type HorizontalFreeSpace } from './horizontalFreeSpace';
 import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacementsBySubgroup, layoutUtilizationComparison, placementCompletionControl } from './planningPlacementModel';
-import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
+import { formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
+import { PlacementPreviewAnnotation } from './PlacementPreviewAnnotation';
 import { runPlacementPopupAction } from './placementPopupAction';
 import type { PlacementEdgeDirection } from './moveMergedPlacement';
 import { dragAutoScrollStep } from './dragAutoScroll';
@@ -125,25 +126,9 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       {result.placements.map((placement) => {
         const color = colorFor(placement.sourceId, sourceIds);
         const active = selectedId === placement.id || focusedPlacementId === placement.id;
-        const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
-        const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
-        const centerX = placement.x + placement.width / 2;
-        const centerY = placement.y + placement.height / 2;
         return <G key={placement.id} onPress={() => { setMoveError(null); setSelectedId((current) => current === placement.id ? null : placement.id); }} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
           <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
-          <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
-            <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={color}>{annotation.label}</SvgText>
-            <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
-          </G>
-          {completedPlacementIds.has(placement.id) && <G accessibilityLabel={`제품 ${placement.id} 재단 완료 표시`}>
-            {(() => {
-              const cross = completionCrossMetrics(placement.width, placement.height);
-              return <>
-                <Line x1={placement.x + cross.insetX} y1={placement.y + cross.insetY} x2={placement.x + placement.width - cross.insetX} y2={placement.y + placement.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-                <Line x1={placement.x + placement.width - cross.insetX} y1={placement.y + cross.insetY} x2={placement.x + cross.insetX} y2={placement.y + placement.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-              </>;
-            })()}
-          </G>}
+          <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)} color={color} />
         </G>;
       })}
     </Svg>

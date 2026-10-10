@@ -3,7 +3,8 @@ import * as React from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { FilmLayoutResult } from './optimizeFilmLayout';
 import type { ContinuousRollResult } from './optimizeContinuousRollLayout';
-import { completionCrossMetrics, formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
+import { formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
+import { PlacementPreviewAnnotation } from './PlacementPreviewAnnotation';
 import { placementCompletionControl } from './planningPlacementModel';
 import { runPlacementPopupAction } from './placementPopupAction';
 
@@ -103,29 +104,9 @@ export function FilmLayoutPreview({ result, rollWidthMm, rollLengthMm, marginMm,
           ))}
           {result.placements.map((item) => (
             <G key={item.id} onPress={() => setSelectedId((current) => current === item.id ? null : item.id)} accessibilityLabel={`조각 ${item.id} 상세 보기`}>
-              {(() => {
-                const annotation = formatPlacementPreview(item.id, item.width, item.height, item.rotated);
-                const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(item.width, item.height, annotation);
-                const centerX = item.x + item.width / 2;
-                const centerY = item.y + item.height / 2;
-                return <>
               <Rect x={item.x} y={item.y} width={item.width} height={item.height} rx={2}
                 fill={item.rotated ? '#ccfbf1' : '#dbeafe'} stroke={item.rotated ? '#0f766e' : '#1d4ed8'} strokeWidth={Math.max(0.8, rollWidthMm / 700)} />
-              <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
-                <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={item.rotated ? '#115e59' : '#1e3a8a'}>{annotation.label}</SvgText>
-                <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
-              </G>
-              {completedPlacementIds.includes(item.id) && <G accessibilityLabel={`제품 ${item.id} 재단 완료 표시`}>
-                {(() => {
-                  const cross = completionCrossMetrics(item.width, item.height);
-                  return <>
-                    <Line x1={item.x + cross.insetX} y1={item.y + cross.insetY} x2={item.x + item.width - cross.insetX} y2={item.y + item.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-                    <Line x1={item.x + item.width - cross.insetX} y1={item.y + cross.insetY} x2={item.x + cross.insetX} y2={item.y + item.height - cross.insetY} stroke="#dc2626" strokeWidth={cross.strokeWidth} strokeLinecap="round" />
-                  </>;
-                })()}
-              </G>}
-                </>;
-              })()}
+              <PlacementPreviewAnnotation {...item} completed={completedPlacementIds.includes(item.id)} color={item.rotated ? '#115e59' : '#1e3a8a'} />
             </G>
           ))}
         </Svg>
