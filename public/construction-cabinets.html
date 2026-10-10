@@ -128,7 +128,7 @@
 <label class="part-picker">저장된 시공부위 프리셋<select data-custom-preset><option value="">기본 장 일러스트</option></select></label>
 <div data-custom-hint class="hint"></div><div data-custom-illustration hidden></div>
 <div data-actionbar class="actionbar" aria-label="선택한 장 편집 도구"><label>장 ID / 검색 · 선택 정보<input data-search type="search" aria-label="장 ID 검색 및 선택 정보" placeholder="장 ID 또는 이름 검색"></label><div class="bar actions"><button data-popup-input class="primary cursor-interaction" disabled>치수 입력</button><button data-popup-shape class="cursor-interaction" disabled>형태 변경</button><button data-popup-delete class="cursor-interaction" disabled>삭제</button></div><div data-shape-panel hidden><label>장 형태<select data-new-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="hood">후드장</option></select></label><div class="bar"><button data-shape-apply class="primary cursor-interaction">변경 적용</button><button data-shape-cancel class="cursor-interaction">취소</button></div></div><section data-confirm-panel aria-label="변경 확인" hidden><div data-confirm-message></div><div class="bar"><button data-confirm-yes class="primary cursor-interaction">확인 · 실행</button><button data-confirm-no class="cursor-interaction">취소</button></div></section></div>
-<label data-gap-control hidden class="part-picker">일러스트 간격 (표시용)<input data-illustration-gap type="number" min="0" max="8" step="1" value="1" aria-label="일러스트 형태 간격"><span class="hint">기본 1: 원본 빈공간의 1/3 · 3: 원본 간격. 부재 크기·형태는 유지하고 표시 위치만 조정합니다. 긴 부재나 겹침으로 제한된 공간은 유지됩니다.</span></label>
+<label data-gap-control hidden class="part-picker">일러스트 간격 (표시용)<input data-illustration-gap type="number" min="0" max="8" step="1" value="1" aria-label="일러스트 형태 간격"><span class="hint">기본 1: 원본 빈공간의 1/3 · 3: 원본 간격. 외곽 틀을 고정하고 내부 간격에 맞춰 표시 위치·길이를 조정합니다. 동일 ID의 떨어진 부재도 각각 보정하며 모눈 원본·재단치수는 변경하지 않습니다.</span></label>
 <div class="bar"><button data-plus class="cursor-interaction" aria-label="현재 부위 장 추가">＋ 추가</button></div>
 <section data-add-panel hidden class="panel" aria-label="장 추가 설정"><h3>장 추가</h3><div class="grid"><label>위치<select data-section><option value="upper">상부장</option><option value="lower">하부장</option><option value="fridge">냉장고장</option></select></label><label>형태<select data-kind><option value="double">양문장</option><option value="single">싱글장</option><option value="empty">Empty · 빈 공간</option><option value="hood">후드장</option></select></label></div><div class="bar"><button data-confirm-add class="primary cursor-interaction">추가</button><button data-cancel-add class="cursor-interaction">취소</button></div></section>
 <div class="panel"><div class="section-labels"><span>시공부위 도면</span><span>장 선택 → 상단 편집 버튼</span></div><div class="drawing" aria-label="선택한 시공부위 입면"><div class="kitchen"><div data-upper class="cab-frame upper"></div><div data-lower class="cab-frame lower"></div></div><div data-fridge class="fridge-column fridge"></div></div><div data-search-status class="hint" aria-live="polite"></div><div data-selection class="hint" aria-live="polite"></div></div>
@@ -178,22 +178,24 @@
    // Gap-first shared coordinate transform for every construction part.
    // Structural spans adapt to the compressed openings, rather than locking
    // connected frames. Empty and occupied faces reserve their source space.
-   const bounds=new Map(customPreset.shapes.map(s=>{
+   // Split only display geometry; persisted IDs, cells, sites and quantities stay intact.
+   const members=customPreset.shapes.flatMap(s=>customComponents(s).map((cells,index)=>({...s,cells,layoutKey:s.id+":"+index})));
+   const bounds=new Map(members.map(s=>{
      const xs=s.cells.map(i=>i%cols),ys=s.cells.map(i=>Math.floor(i/cols));
      const minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);
-     return [s.id,{minX,maxX,minY,maxY,rectangular:new Set(s.cells).size===(maxX-minX+1)*(maxY-minY+1)}];
+     return [s.layoutKey,{minX,maxX,minY,maxY,rectangular:new Set(s.cells).size===(maxX-minX+1)*(maxY-minY+1)}];
    }));
    const axisPositions=(axis,count)=>{
      const covered=Array(count).fill(false),lo='min'+axis,hi='max'+axis;
-     const contributors=customPreset.shapes.filter(s=>{
-       const b=bounds.get(s.id),cw=b.maxX-b.minX+1,ch=b.maxY-b.minY+1;
+     const contributors=members.filter(s=>{
+       const b=bounds.get(s.layoutKey),cw=b.maxX-b.minX+1,ch=b.maxY-b.minY+1;
        const structural=b.rectangular&&['side','top','bottom','molding','plinth'].includes(s.role);
        return !(structural&&(axis==='X'?cw>ch:ch>cw));
      });
-     for(const s of contributors.length?contributors:customPreset.shapes)
+     for(const s of contributors.length?contributors:members)
        for(const i of s.cells)covered[axis==='X'?i%cols:Math.floor(i/cols)]=true;
      // An isolated structural member has no opening to fit: do not collapse it.
-     for(const s of customPreset.shapes){const b=bounds.get(s.id);
+     for(const s of members){const b=bounds.get(s.layoutKey);
        if(!covered.slice(b[lo],b[hi]+1).some(Boolean))
          for(let i=b[lo];i<=b[hi];i++)covered[i]=true;
      }
@@ -211,23 +213,23 @@
    // Local frame fitting: global empty-column compression cannot close a gap
    // crossed by another member. Keep the source outside edges and fit interiors.
    const sourceMinX=Math.min(...[...bounds.values()].map(b=>b.minX)),sourceMaxX=Math.max(...[...bounds.values()].map(b=>b.maxX));
-   const frameSide=(s,edge)=>{const b=bounds.get(s.id);return s.role==='side'&&b.maxY-b.minY>b.maxX-b.minX&&(edge==='left'?b.minX===sourceMinX:b.maxX===sourceMaxX);};
-   const seenCells=new Set();let hasOverlap=false;for(const s of customPreset.shapes)for(const i of s.cells){if(seenCells.has(i))hasOverlap=true;seenCells.add(i);}
-   const framed=customPreset.shapes.length>2&&!hasOverlap&&customPreset.shapes.some(s=>frameSide(s,'left'))&&customPreset.shapes.some(s=>frameSide(s,'right'))&&customPreset.shapes.every(s=>bounds.get(s.id).rectangular&&s.role!=='empty');
+   const frameSide=(s,edge)=>{const b=bounds.get(s.layoutKey);return s.role==='side'&&b.maxY-b.minY>b.maxX-b.minX&&(edge==='left'?b.minX===sourceMinX:b.maxX===sourceMaxX);};
+   const seenCells=new Set();let hasOverlap=false;for(const s of members)for(const i of s.cells){if(seenCells.has(i))hasOverlap=true;seenCells.add(i);}
+   const framed=members.length>2&&!hasOverlap&&members.some(s=>frameSide(s,'left'))&&members.some(s=>frameSide(s,'right'))&&members.every(s=>bounds.get(s.layoutKey).rectangular&&s.role!=='empty');
    if(framed){
      const ext={minX:Math.min(...[...bounds.values()].map(b=>b.minX)),maxX:Math.max(...[...bounds.values()].map(b=>b.maxX)),minY:Math.min(...[...bounds.values()].map(b=>b.minY)),maxY:Math.max(...[...bounds.values()].map(b=>b.maxY))};
      for(const [id,b] of bounds)layout.set(id,{x:4+(b.minX-ext.minX)*unit,y:4+(b.minY-ext.minY)*unit,w:(b.maxX-b.minX+1)*unit,h:(b.maxY-b.minY+1)*unit});
      const spacing=unit*gap;
      for(let pass=0;pass<80;pass++){
        let delta=0;
-       for(const axis of ['X','Y'])for(const s of customPreset.shapes){
-         const b=bounds.get(s.id),p=layout.get(s.id),lo='min'+axis,hi='max'+axis,orth=axis==='X'?'Y':'X',key=axis.toLowerCase(),size=axis==='X'?'w':'h';
-         const candidates=customPreset.shapes.filter(o=>o!==s&&bounds.get(o.id)['min'+orth]<=b['max'+orth]&&b['min'+orth]<=bounds.get(o.id)['max'+orth]);
-         const left=candidates.filter(o=>bounds.get(o.id)[hi]<b[lo]).sort((a,c)=>bounds.get(c.id)[hi]-bounds.get(a.id)[hi])[0];
-         const right=candidates.filter(o=>bounds.get(o.id)[lo]>b[hi]).sort((a,c)=>bounds.get(a.id)[lo]-bounds.get(c.id)[lo])[0];
+       for(const axis of ['X','Y'])for(const s of members){
+         const b=bounds.get(s.layoutKey),p=layout.get(s.layoutKey),lo='min'+axis,hi='max'+axis,orth=axis==='X'?'Y':'X',key=axis.toLowerCase(),size=axis==='X'?'w':'h';
+         const candidates=members.filter(o=>o!==s&&bounds.get(o.layoutKey)['min'+orth]<=b['max'+orth]&&b['min'+orth]<=bounds.get(o.layoutKey)['max'+orth]);
+         const left=candidates.filter(o=>bounds.get(o.layoutKey)[hi]<b[lo]).sort((a,c)=>bounds.get(c.layoutKey)[hi]-bounds.get(a.layoutKey)[hi])[0];
+         const right=candidates.filter(o=>bounds.get(o.layoutKey)[lo]>b[hi]).sort((a,c)=>bounds.get(a.layoutKey)[lo]-bounds.get(c.layoutKey)[lo])[0];
          const anchorLo=b[lo]===ext[lo],anchorHi=b[hi]===ext[hi];
-         const a=anchorLo?4:left?layout.get(left.id)[key]+layout.get(left.id)[size]+spacing:null;
-         const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.id)[key]-spacing:null;
+         const a=anchorLo?4:left?layout.get(left.layoutKey)[key]+layout.get(left.layoutKey)[size]+spacing:null;
+         const z=anchorHi?4+(ext[hi]-ext[lo]+1)*unit:right?layout.get(right.layoutKey)[key]-spacing:null;
          const structural=['side','top','bottom','molding','plinth'].includes(s.role),longAxis=axis==='X'?p.w>p.h:p.h>p.w;
          const stretch=!structural||longAxis;
          let pos=p[key],length=p[size];
@@ -243,19 +245,20 @@
      }
    }
    const cellBox=(i,s)=>{
+     if(s&&!s.layoutKey)s=members.find(m=>m.id===s.id&&m.cells.includes(i));
      const cx=i%cols,cy=Math.floor(i/cols);
-     if(framed&&s){const b=bounds.get(s.id),p=layout.get(s.id),cw=p.w/(b.maxX-b.minX+1),ch=p.h/(b.maxY-b.minY+1);return{x:p.x+(cx-b.minX)*cw,y:p.y+(cy-b.minY)*ch,cw,ch};}
+     if(framed&&s){const b=bounds.get(s.layoutKey),p=layout.get(s.layoutKey),cw=p.w/(b.maxX-b.minX+1),ch=p.h/(b.maxY-b.minY+1);return{x:p.x+(cx-b.minX)*cw,y:p.y+(cy-b.minY)*ch,cw,ch};}
      return {x:dx[cx],y:dy[cy],cw:dx[cx+1]-dx[cx],ch:dy[cy+1]-dy[cy]};
    };
    el('custom-hint').textContent=framed?'외곽 상하좌우 고정 · 내부 간격 균일 맞춤 · 모눈 배치·두께 유지, 표시 길이 조정 · 실측치수 변경 없음':'간격 우선 자동맞춤 · Empty·겹침·비정형 모눈 형태 유지 · 모눈 원본·재단 실측치수 변경 없음';
    const totalX=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).x+(layout.get(id).w??(b.maxX-b.minX+1)*unit))),totalY=4+Math.max(24,...[...bounds].map(([id,b])=>layout.get(id).y+(layout.get(id).h??(b.maxY-b.minY+1)*unit)));
    const fill=customPreset.part==='upper'?'#3bbf9c':customPreset.part==='fridge'?'#ceca31':'#38afc1';
    let svg='<defs><pattern id="overlap-illustration" width="8" height="8" patternUnits="userSpaceOnUse"><path d="M0 8l8-8" stroke="#b45309" stroke-width="1.2"/></pattern></defs>';
-   for(const s of customPreset.shapes){
+   for(const s of members){
      const cells=new Set(s.cells),chosen=customShape?.id===s.id;
      let pixels='',edges='';
-     const {minX,maxX,minY,maxY,rectangular}=bounds.get(s.id);
-     const p=layout.get(s.id),{x,y}=p,w=p.w,h=p.h;
+     const {minX,maxX,minY,maxY,rectangular}=bounds.get(s.layoutKey);
+     const p=layout.get(s.layoutKey),{x,y}=p,w=p.w,h=p.h;
      for(const i of cells){const cx=i%cols,cy=Math.floor(i/cols),{x:px,y:py,cw,ch}=cellBox(i,s);
        pixels+=`M${px} ${py}h${cw}v${ch}h${-cw}z`;
        if(cy===0||!cells.has(i-cols))edges+=`M${px} ${py}h${cw}`;
@@ -279,7 +282,7 @@
      }
      svg+=`<g data-preset-shape="${s.id}" role="button" tabindex="0" aria-label="${escape(label)}" aria-pressed="${chosen}" style="cursor:pointer" fill-opacity=".65" fill="${s.role==='empty'?'#f1f5f9':fill}"><title>${escape(label)}</title>${face}${separator}${divider}${text}</g>`;
    }
-   const occupied=new Map();for(const s of customPreset.shapes)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i,s),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
+   const occupied=new Map();for(const s of members)for(const i of s.cells){const {x,y,cw,ch}=cellBox(i,s),key=x+','+y+','+cw+','+ch;const cell=occupied.get(key)??{x,y,cw,ch,count:0};cell.count++;occupied.set(key,cell);}for(const {x,y,cw,ch,count} of occupied.values())if(count>1&&cw>0&&ch>0)svg+=`<rect data-overlap="${count}" x="${x}" y="${y}" width="${cw}" height="${ch}" fill="url(#overlap-illustration)" pointer-events="none"/>`;
    el('custom-illustration').innerHTML=`<svg data-preset-svg viewBox="0 0 ${totalX} ${totalY}" style="display:block;width:100%;height:auto" aria-label="${escape(customPreset.name)} 일러스트">${svg}</svg>`;
    el('custom-illustration').querySelectorAll('[data-preset-shape]').forEach(node=>{
      const choose=e=>{let hit=customPreset.shapes.find(s=>s.id===Number(node.dataset.presetShape));
