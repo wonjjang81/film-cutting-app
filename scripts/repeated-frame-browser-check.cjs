@@ -29,6 +29,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  near(sides[0].x-inner[0].x-inner[0].width,20/3,'inner left gap');
  near(outer[1].x-inner[1].x-inner[1].width,20/3,'outer right gap');
  near(inner[1].x-sides[1].x-sides[1].width,20/3,'inner right gap');
+ for(const s of sides)near(s.y-a.y-a.height,20/3,'expanded top cannot overlap inner side');
  await page.locator('[data-preset-shape="102"]').last().press('Enter');
  assert.match(await page.locator('[data-selection]').innerText(),/3개소.*수량 6개/);
  await page.locator('[data-popup-input]').click();await page.waitForFunction(()=>window.selection);

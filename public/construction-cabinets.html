@@ -224,7 +224,11 @@
        let delta=0;
        for(const axis of ['X','Y'])for(const s of members){
          const b=bounds.get(s.layoutKey),p=layout.get(s.layoutKey),lo='min'+axis,hi='max'+axis,orth=axis==='X'?'Y':'X',key=axis.toLowerCase(),size=axis==='X'?'w':'h';
-         const candidates=members.filter(o=>o!==s&&bounds.get(o.layoutKey)['min'+orth]<=b['max'+orth]&&b['min'+orth]<=bounds.get(o.layoutKey)['max'+orth]);
+         const orthKey=orth.toLowerCase(),orthSize=axis==='X'?'h':'w';
+         const candidates=members.filter(o=>{if(o===s)return false;const ob=bounds.get(o.layoutKey),op=layout.get(o.layoutKey);
+           return ob['min'+orth]<=b['max'+orth]&&b['min'+orth]<=ob['max'+orth]||
+             Math.min(op[orthKey]+op[orthSize],p[orthKey]+p[orthSize])-Math.max(op[orthKey],p[orthKey])>1e-7;
+         });
          const left=candidates.filter(o=>bounds.get(o.layoutKey)[hi]<b[lo]).sort((a,c)=>bounds.get(c.layoutKey)[hi]-bounds.get(a.layoutKey)[hi])[0];
          const right=candidates.filter(o=>bounds.get(o.layoutKey)[lo]>b[hi]).sort((a,c)=>bounds.get(a.layoutKey)[lo]-bounds.get(c.layoutKey)[lo])[0];
          const anchorLo=b[lo]===ext[lo],anchorHi=b[hi]===ext[hi];
