@@ -1,5 +1,10 @@
 export type PieceIdEntry = { id: string };
 
+/** Scope the editable suffix to its subgroup; never use duplicate source IDs. */
+export function composeSubgroupPieceId(groupName: string, subgroupName: string | undefined, suffix: string): string {
+  return composePieceId(groupName, subgroupName ? `${subgroupName.trim()}_${suffix.trim()}` : suffix);
+}
+
 /** Legacy-compatible default ID: group name plus a two-digit sequence. */
 export function defaultPieceId(groupName: string, index: number): string {
   return `${groupName}_${String(Math.max(1, index)).padStart(2, '0')}`;

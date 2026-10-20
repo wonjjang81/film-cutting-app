@@ -9,8 +9,7 @@ export function diagramSubgroupName(part: string): string {
 /** One diagram target creates one editable piece, regardless of door count. */
 export function nextDiagramSubgroupName(part: string, names: readonly string[]): string {
   const base = diagramSubgroupName(part);
-  if (!names.includes(base)) return base;
-  let index = 2;
+  let index = names.includes(base) ? 2 : 1;
   while (names.includes(`${base}${index}`)) index++;
   return `${base}${index}`;
 }

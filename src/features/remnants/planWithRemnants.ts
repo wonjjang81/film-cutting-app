@@ -20,6 +20,7 @@ export type FilmRemnant = {
 };
 
 export type RemnantPlanRequest = ContinuousRollInput & {
+  placementDeferred?: boolean;
   brand: string;
   productNumber: string;
   remnants: FilmRemnant[];
@@ -259,6 +260,7 @@ function makeInventoryDelta(consumed: ConsumedSource[], inventoryIds: readonly s
  * applies it or mutates the request or supplied remnant records.
  */
 export function planWithRemnants(request: RemnantPlanRequest, remnantOverride?: FilmRemnant[]): RemnantPlan {
+  if (request.placementDeferred) return { remnantUses: [], newRollQuantity: 0, newRollResult: null, newRollResults: [], inventoryDelta: { removeIds: [], add: [], basedOnUpdatedAt: {} } };
   const remnants = remnantOverride ?? request.remnants;
   const seenIds = new Set<string>();
   const matching = remnants

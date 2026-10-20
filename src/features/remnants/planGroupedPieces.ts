@@ -1,6 +1,7 @@
 import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
 import { boundedNewRollLength } from '../cutting/rollLengthLimit';
+import { consolidateRolls } from '../cutting/consolidateRolls';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
@@ -62,6 +63,24 @@ export type MergedRemnantUse = {
 export const AUTO_MERGE_GROUP_ID = 'auto';
 export const DISABLED_MERGE_GROUP_ID = 'none';
 
+/** Legacy input sometimes saved the group product on only one piece.
+ * Fill blank codes only when group + brand has exactly one explicit code.
+ * Different explicit products and different major groups remain isolated. */
+export function normalizeGroupProducts(requests: readonly GroupedPieceRequest[]): GroupedPieceRequest[] {
+  const codes = new Map<string, Set<string>>();
+  for (const entry of requests) {
+    const key = JSON.stringify([entry.groupId, entry.request.brand.trim()]);
+    const values = codes.get(key) ?? new Set<string>();
+    if (entry.request.productNumber.trim()) values.add(entry.request.productNumber.trim());
+    codes.set(key, values);
+  }
+  return requests.map(entry => {
+    const values = codes.get(JSON.stringify([entry.groupId, entry.request.brand.trim()]))!;
+    return !entry.request.productNumber.trim() && values.size === 1
+      ? { ...entry, request: { ...entry.request, productNumber: [...values][0]! } } : entry;
+  });
+}
+
 function validateGroupedRequest(entry: GroupedPieceRequest): void {
   const { request } = entry;
   const label = `${entry.groupName} · ${entry.pieceName}`;
@@ -80,6 +99,7 @@ function applyDelta(inventory: readonly FilmRemnant[], plan: RemnantPlan): FilmR
 
 /** Plans every piece in group order, carrying remnant inventory forward between pieces. */
 export function planGroupedPieces(requests: readonly GroupedPieceRequest[], inventory: readonly FilmRemnant[]): GroupedPiecePlan[] {
+  requests = normalizeGroupProducts(requests);
   requests.forEach(validateGroupedRequest);
   let working = inventory.map((item) => ({ ...item }));
   return requests.map((entry) => {
@@ -108,6 +128,7 @@ export function planMergedGroups(
   inventory: readonly FilmRemnant[] = [],
   useRemnants = false,
 ): MergedGroupPlan[] {
+  requests = normalizeGroupProducts(requests).filter(entry => !entry.request.placementDeferred);
   requests.forEach(validateGroupedRequest);
   const buckets = new Map<string, GroupedPieceRequest[]>();
   for (const request of requests) {
@@ -269,6 +290,7 @@ function planMergedGroup(entries: readonly GroupedPieceRequest[], mergeGroupId: 
     for (const [id, count] of Object.entries(countPlacements(roll.placements))) remaining.set(id, Math.max(0, (remaining.get(id) ?? 0) - count));
     rollResults.push(roll);
   }
+  rollResults = consolidateRolls(rollResults, { rollWidthMm, maxLengthMm: maxNewRollLengthMm, ...condition }, new Map(entries.map(entry => [sourceId(entry), entry.request.allowRotation])));
   const sourceInstanceCounts = new Map<string, number>();
   const sourceSiteOffsets = new Map<string, number>();
   const entryBySource = new Map(entries.map((entry) => [sourceId(entry), entry]));
