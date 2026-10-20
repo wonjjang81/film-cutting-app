@@ -93,7 +93,7 @@ function rebuildPlan(plan: MergedGroupPlan, rolls: readonly MergedRollResult[], 
   return { ...plan, rollResults: rolls.map((roll) => ({ ...roll, placements: roll.placements.map((item) => ({ ...item })) })), result: { ...combined, usedLengthMm: rolls.reduce((sum, roll) => sum + roll.usedLengthMm, 0) }, newRollQuantity: placements.length };
 }
 
-/** Rotates a piece 90 degrees around its center when its source allows rotation. */
+/** Rotates in place if possible, otherwise finds free space on the same roll. */
 export function rotatePlacementWithinRoll(
   plan: MergedGroupPlan,
   placementId: number,
@@ -111,11 +111,11 @@ export function rotatePlacementWithinRoll(
 
   const { rollWidthMm, gapMm, sideMarginMm, startEndMarginMm } = specification.request;
   const maxX = rollWidthMm - sideMarginMm - selected.height;
-  const maxY = roll.usedLengthMm - startEndMarginMm - selected.width;
+  const maxY = boundedNewRollLength(specification.request.maxLengthMm) - startEndMarginMm - selected.width;
   if (maxX < sideMarginMm || maxY < startEndMarginMm) return { error: '현재 롤 영역 안에서 회전할 수 없습니다.' };
   const centerX = selected.x + selected.width / 2;
   const centerY = selected.y + selected.height / 2;
-  const candidate = {
+  let candidate = {
     ...selected,
     x: Math.max(sideMarginMm, Math.min(maxX, snap(centerX - selected.height / 2))),
     y: Math.max(startEndMarginMm, Math.min(maxY, snap(centerY - selected.width / 2))),
@@ -124,7 +124,25 @@ export function rotatePlacementWithinRoll(
     rotated: !selected.rotated,
   };
   const others = roll.placements.filter((item) => item.id !== placementId);
-  if (others.some((item) => collides(candidate, item, gapMm))) return { error: '회전 후 다른 조각과 겹치거나 필요한 간격이 부족합니다.' };
+  const initialOverlaps = others.some((item) => collides(candidate, item, gapMm));
+  if (initialOverlaps || candidate.y + candidate.height + startEndMarginMm > roll.usedLengthMm) {
+    const xs = [...new Set([sideMarginMm, maxX, ...others.flatMap(item => [item.x, item.x + item.width + gapMm, item.x - candidate.width - gapMm])])].filter(x => x >= sideMarginMm && x <= maxX);
+    const ys = [...new Set([startEndMarginMm, ...others.flatMap(item => [item.y, item.y + item.height + gapMm, item.y - candidate.height - gapMm])])].filter(y => y >= startEndMarginMm && y <= maxY);
+    let best: typeof candidate | undefined = initialOverlaps ? undefined : candidate;
+    let bestEnd = best ? Math.max(roll.usedLengthMm, best.y + best.height + startEndMarginMm) : Infinity;
+    let bestDistance = best ? Math.abs(best.x-selected.x) + Math.abs(best.y-selected.y) : Infinity;
+    let comparisons = 0;
+    search: for (const y of ys) for (const x of xs) {
+      if (comparisons > 2_000_000) break search;
+      const next = { ...candidate, x, y };
+      if (others.some(item => { comparisons++; return collides(next, item, gapMm); })) continue;
+      const end = Math.max(roll.usedLengthMm, y + candidate.height + startEndMarginMm);
+      const distance = Math.abs(x-selected.x) + Math.abs(y-selected.y);
+      if (end < bestEnd || (end === bestEnd && distance < bestDistance)) { best = next; bestEnd = end; bestDistance = distance; }
+    }
+    if (!best) return { error: '25m 한도 내에 회전한 조각이 들어갈 빈공간이 없습니다.' };
+    candidate = best;
+  }
   const updated = metrics(roll.placements.map((item) => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
   return { plan: rebuildPlan(plan, rolls.map((item, index) => index === rollIndex ? updated : item), rollWidthMm), movedPlacementIds: [placementId] };
 }
@@ -150,8 +168,10 @@ export function movePlacementWithinRoll(
   const rawDeltaY = yMm - selected.y;
   const direction: PlacementEdgeDirection = Math.abs(rawDeltaX) >= Math.abs(rawDeltaY)
     ? (rawDeltaX >= 0 ? 'right' : 'left') : (rawDeltaY >= 0 ? 'bottom' : 'top');
+  // A free drop should detach the selected piece. Do not force its former
+  // neighbors to travel with it; only use the push chain if the drop overlaps.
   const movingIds = attachedPushChain(roll.placements, placementId, direction, gapMm);
-  const others = roll.placements.filter((item) => !movingIds.has(item.id));
+  const others = roll.placements.filter((item) => item.id !== placementId);
   const xAnchors = others.flatMap((item) => [
     item.x,
     item.x + item.width + gapMm,
@@ -170,13 +190,20 @@ export function movePlacementWithinRoll(
   };
   const deltaX = candidate.x - selected.x;
   const deltaY = candidate.y - selected.y;
+  const maxLengthMm = boundedNewRollLength(specification.request.maxLengthMm);
+  const candidateInside = candidate.x >= sideMarginMm && candidate.y >= startEndMarginMm
+    && candidate.x + candidate.width <= rollWidthMm - sideMarginMm
+    && candidate.y + candidate.height <= maxLengthMm - startEndMarginMm;
+  if (candidateInside && !others.some(item => collides(candidate, item, gapMm))) {
+    const updated = metrics(roll.placements.map(item => item.id === placementId ? candidate : item), rollWidthMm, startEndMarginMm);
+    return { plan: rebuildPlan(plan, rolls.map((item,index) => index === rollIndex ? updated : item), rollWidthMm), movedPlacementIds: [placementId] };
+  }
   const translated = roll.placements.map((item) => movingIds.has(item.id)
     ? { ...item, x: item.x + deltaX, y: item.y + deltaY } : item);
-  const maxLengthMm = Math.min(roll.usedLengthMm, boundedNewRollLength(specification.request.maxLengthMm));
   if (translated.some((item) => movingIds.has(item.id) && (item.x < sideMarginMm || item.y < startEndMarginMm
     || item.x + item.width > rollWidthMm - sideMarginMm
     || item.y + item.height > maxLengthMm - startEndMarginMm))) {
-    return { error: '조각이 롤의 여백 또는 현재 도면 길이를 벗어납니다.' };
+    return { error: '조각이 롤의 여백 또는 최대 롤 길이를 벗어납니다.' };
   }
   if (translated.some((item) => movingIds.has(item.id)
     && translated.some((other) => !movingIds.has(other.id) && collides(item, other, gapMm)))) {

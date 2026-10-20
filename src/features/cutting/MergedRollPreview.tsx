@@ -10,6 +10,7 @@ import { PlacementPreviewAnnotation } from './PlacementPreviewAnnotation';
 import { runPlacementPopupAction } from './placementPopupAction';
 import type { PlacementEdgeDirection } from './moveMergedPlacement';
 import { dragAutoScrollStep } from './dragAutoScroll';
+import { MAX_NEW_ROLL_LENGTH_MM } from './rollLengthLimit';
 
 const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
@@ -83,7 +84,8 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
   const dragging = result.placements.find((placement) => placement.id === draggingId) ?? null;
-  const safeLength = Math.max(result.usedLengthMm, 1);
+  const [workspaceLengths, setWorkspaceLengths] = React.useState<Record<number, number>>({});
+  const safeLength = Math.max(result.usedLengthMm, Math.min(MAX_NEW_ROLL_LENGTH_MM, Math.max(workspaceLengths[selectedRollIndex] ?? 0, dragging ? result.usedLengthMm + 1000 : 0)), 1);
   const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
   const zoom = manualZoom ?? fitZoom;
   const baseHeight = Math.max(240, (viewportWidth / 1220) * safeLength);
@@ -192,6 +194,10 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
       </View>
       {dragging && <View style={styles.dragHintRow}><Text style={styles.dragHintText}>#{dragging.id} · 이동 중 화면은 고정되며, 화면 맨 위·아래에서만 스크롤됩니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="수동 이동 취소" onPress={() => { setDraggingId(null); setMoveError(null); }}><Text style={styles.dragCancelText}>취소</Text></TouchableOpacity></View>}
       {moveError && dragging && <Text style={styles.dragErrorText}>{moveError}</Text>}
+      {!!onMovePlacementWithinRoll && <View style={styles.dragHintRow}>
+        <Text style={styles.dragHintText}>사용 {Math.round(result.usedLengthMm).toLocaleString()}mm · 작업공간 {Math.round(safeLength).toLocaleString()}mm · 최대 25m</Text>
+        <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 롤 작업공간 1m 늘리기" disabled={busy || safeLength >= MAX_NEW_ROLL_LENGTH_MM} onPress={() => setWorkspaceLengths(current => ({ ...current, [selectedRollIndex]: Math.min(MAX_NEW_ROLL_LENGTH_MM, safeLength + 1000) }))} style={[styles.controlButton, (busy || safeLength >= MAX_NEW_ROLL_LENGTH_MM) && styles.disabled]}><Text style={styles.controlButtonText}>작업공간 +1m</Text></TouchableOpacity>
+      </View>}
       {result.placements.length > 0 ? <>
         <View style={styles.zoomRow} accessibilityLabel="병합 도면 확대 축소">
           <Text style={styles.zoomLabel}>확대/축소</Text>

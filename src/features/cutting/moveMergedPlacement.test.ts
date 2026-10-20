@@ -8,6 +8,39 @@ const request = (pieceId: string, width: number, length: number, allowRotation =
 });
 
 describe('movePlacementToBestOtherRoll', () => {
+  it('finds free space after rotation and can extend the used length', () => {
+    const requests=[request('a',600,300,true),request('b',600,900)];
+    const roll={placements:[
+      {id:1,sourceId:'g1-a',instanceIndex:0,x:5,y:5,width:600,height:300,rotated:false},
+      {id:2,sourceId:'g1-b',instanceIndex:0,x:5,y:305,width:600,height:900,rotated:false},
+    ],usedLengthMm:1210,producedQuantity:2,utilizationPercent:50,wastePercent:50};
+    const plan={mergeGroupId:'auto',sourceIds:requests.map(r=>`g1-${r.pieceId}`),groupNames:['그룹 1'],pieceCount:2,result:roll,rollResults:[roll],newRollQuantity:2,producedQuantity:2,remnantUses:[],inventoryDelta:{removeIds:[],add:[],basedOnUpdatedAt:{}},inventoryAfter:[]} satisfies MergedGroupPlan;
+    const rotated=rotatePlacementWithinRoll(plan,1,requests);
+    expect(rotated.error).toBeUndefined();
+    expect(rotated.plan?.result.placements.find(p=>p.id===1)).toMatchObject({x:605,y:5,width:300,height:600,rotated:true});
+    const moved=movePlacementWithinRoll(plan,1,5,1505,requests);
+    expect(moved.error).toBeUndefined();
+    expect(moved.plan!.result.usedLengthMm).toBeGreaterThan(1210);
+    expect(movePlacementWithinRoll(plan,1,5,24900,requests).error).toContain('벗어');
+    const wide=request('a',1000,300,true);
+    const single={...roll,placements:[{...roll.placements[0]!,width:1000}],usedLengthMm:310,producedQuantity:1};
+    const extended=rotatePlacementWithinRoll({...plan,result:single,rollResults:[single]},1,[wide]);
+    expect(extended.error).toBeUndefined();
+    expect(extended.plan!.result.usedLengthMm).toBe(1010);
+  });
+  it('lets a dragged piece detach from its neighbor into a genuinely empty area', () => {
+    const requests=[request('a',300,300),request('b',300,2000)];
+    const roll={placements:[
+      {id:1,sourceId:'g1-a',instanceIndex:0,x:5,y:5,width:300,height:300,rotated:false},
+      {id:2,sourceId:'g1-b',instanceIndex:0,x:5,y:305,width:300,height:2000,rotated:false},
+    ],usedLengthMm:2310,producedQuantity:2,utilizationPercent:25,wastePercent:75};
+    const plan={mergeGroupId:'auto',sourceIds:requests.map(r=>`g1-${r.pieceId}`),groupNames:['그룹 1'],pieceCount:2,result:roll,rollResults:[roll],newRollQuantity:2,producedQuantity:2,remnantUses:[],inventoryDelta:{removeIds:[],add:[],basedOnUpdatedAt:{}},inventoryAfter:[]} satisfies MergedGroupPlan;
+    const moved=movePlacementWithinRoll(plan,1,605,1005,requests);
+    expect(moved.error).toBeUndefined();
+    expect(moved.plan?.result.placements.find(p=>p.id===1)).toMatchObject({x:600,y:1000});
+    expect(moved.plan?.result.placements.find(p=>p.id===2)).toEqual(roll.placements[1]);
+    expect(moved.movedPlacementIds).toEqual([1]);
+  });
   it('manually rotates only a non-pattern-fixed piece when the free space fits', () => {
     const rotatingRequest = request('rotating', 300, 600, true);
     const fixedRequest = request('rotating', 300, 600, false);
@@ -128,7 +161,7 @@ describe('movePlacementToBestOtherRoll', () => {
     expect(movePlacementWithinRoll(plan, 2, 1006, 5001, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
     expect(movePlacementWithinRoll(plan, 2, 989, 5017, requests).plan?.rollResults?.[0]?.placements[1]).toMatchObject({ x: 1005, y: 5000 });
     expect(movePlacementWithinRoll(plan, 2, 900, 5000, requests).error).toContain('겹치');
-    expect(movePlacementWithinRoll(plan, 2, 1005, 9000, requests).error).toContain('벗어');
+    expect(movePlacementWithinRoll(plan, 2, 1005, 9000, requests).plan?.result.usedLengthMm).toBeGreaterThan(10010);
     expect(plan.rollResults[0]?.placements[1]?.y).toBe(5);
   });
 
