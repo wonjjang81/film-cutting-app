@@ -6,6 +6,7 @@ import { cutAllowanceDimensions } from '../cutting/cutAllowance';
 
 
 export type CuttingFormState = {
+  placementDeferred?: boolean;
   brand: string;
   productNumber: string;
   rollWidth: string;
@@ -47,6 +48,7 @@ export function toRemnantPlanRequest(
     sideMarginMm: Number(form.sideMargin),
     startEndMarginMm: Number(form.startEndMargin),
     allowRotation: form.allowRotation,
+    ...(form.placementDeferred ? { placementDeferred: true } : {}),
     remnants: remnants.map((remnant) => ({ ...remnant })),
   };
 }
@@ -176,6 +178,7 @@ export function buildSavedCuttingJob({
       sideMarginMm: request.sideMarginMm,
       startEndMarginMm: request.startEndMarginMm,
       allowRotation: request.allowRotation,
+      ...(request.placementDeferred ? { placementDeferred: true } : {}),
       ...(request.maxLengthMm === undefined ? {} : { maxLengthMm: request.maxLengthMm }),
     },
     remnantIds: [...orderedIds],

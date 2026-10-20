@@ -34,6 +34,7 @@ export type FilmRemnant = {
 };
 
 export type SavedContinuousRollInput = {
+  placementDeferred?: boolean;
   rollWidthMm: number;
   pieceWidthMm: number;
   pieceLengthMm: number;

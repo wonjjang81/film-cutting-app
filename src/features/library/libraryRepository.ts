@@ -140,6 +140,7 @@ function validateInput(value: unknown): SavedContinuousRollInput | undefined {
     || !finiteNonnegative(value.startEndMarginMm)
     || typeof value.allowRotation !== 'boolean') return undefined;
   if (value.maxLengthMm !== undefined && !finitePositive(value.maxLengthMm)) return undefined;
+  if (value.placementDeferred !== undefined && typeof value.placementDeferred !== 'boolean') return undefined;
   return {
     rollWidthMm: value.rollWidthMm,
     pieceWidthMm: value.pieceWidthMm,
@@ -149,6 +150,7 @@ function validateInput(value: unknown): SavedContinuousRollInput | undefined {
     sideMarginMm: value.sideMarginMm,
     startEndMarginMm: value.startEndMarginMm,
     allowRotation: value.allowRotation,
+    ...(value.placementDeferred === undefined ? {} : { placementDeferred: value.placementDeferred }),
     ...(value.sourcePieceWidthMm === undefined ? {} : { sourcePieceWidthMm: Number(value.sourcePieceWidthMm) }),
     ...(value.sourcePieceLengthMm === undefined ? {} : { sourcePieceLengthMm: Number(value.sourcePieceLengthMm) }),
     ...(value.cutAllowanceMm === undefined ? {} : { cutAllowanceMm: Number(value.cutAllowanceMm) }),
@@ -165,10 +167,10 @@ function validateRemnantSummary(value: unknown): SavedRemnantSummary | undefined
   return { id: value.id, widthMm: value.widthMm, lengthMm: value.lengthMm, quantity: value.quantity };
 }
 
-function validateResult(value: unknown): SavedCuttingResultSummary | undefined {
+function validateResult(value: unknown, deferred = false): SavedCuttingResultSummary | undefined {
   if (!isRecord(value)
     || !finiteNonnegative(value.newRollLengthMm)
-    || !positiveInteger(value.producedQuantity)
+    || !(deferred ? value.producedQuantity === 0 && value.newRollLengthMm === 0 : positiveInteger(value.producedQuantity))
     || !finiteNonnegative(value.overproduction)
     || !finiteNonnegative(value.utilizationPercent)
     || !finiteNonnegative(value.wastePercent)
@@ -177,7 +179,7 @@ function validateResult(value: unknown): SavedCuttingResultSummary | undefined {
       && value.optimizationStatus !== 'approximate')) return undefined;
   return {
     newRollLengthMm: value.newRollLengthMm,
-    producedQuantity: value.producedQuantity,
+    producedQuantity: Number(value.producedQuantity),
     overproduction: value.overproduction,
     utilizationPercent: value.utilizationPercent,
     wastePercent: value.wastePercent,
@@ -253,7 +255,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     || !value.remnantIds.every(validId)
     || !Array.isArray(value.remnantSummary)) return undefined;
   const input = validateInput(value.input);
-  const result = validateResult(value.result);
+  const result = validateResult(value.result, input?.placementDeferred === true);
   const remnantSummary = value.remnantSummary.map(validateRemnantSummary);
   const cuttingCompletedAt = value.cuttingCompletedAt === undefined ? undefined : normalizeTimestamp(value.cuttingCompletedAt);
   const inventoryConfirmedAt = value.inventoryConfirmedAt === undefined ? undefined : normalizeTimestamp(value.inventoryConfirmedAt);
