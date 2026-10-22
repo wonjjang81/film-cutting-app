@@ -8,7 +8,7 @@
     "dev": "expo start --web",
     "dev:metro": "expo start --web",
     "build": "pnpm build:web",
-    "build:web": "npx expo export --platform web --output-dir dist",
+    "build:web": "npx expo export --platform web --output-dir dist && node scripts/prepare-pwa-build.mjs",
     "cloudflare:preflight": "node scripts/cloudflare-preflight.mjs",
     "auth:schema-check": "node scripts/auth-schema-check.mjs",
     "auth:migration-check": "node scripts/validate-auth-migration.mjs",
