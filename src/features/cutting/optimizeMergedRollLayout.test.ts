@@ -2,6 +2,42 @@ import { describe, expect, it } from 'vitest';
 import { optimizeMergedRollLayout } from './optimizeMergedRollLayout';
 
 describe('optimizeMergedRollLayout', () => {
+  it('places subgroup neighbors together when material usage ties', () => {
+    const input = { rollWidthMm: 200, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, pieces:
+      ['a1', 'b1', 'a2', 'b2'].map(sourceId => ({ sourceId, subgroupKey: sourceId[0], widthMm: 100, lengthMm: 100, quantity: 1, allowRotation: false })) };
+    const result = optimizeMergedRollLayout(input);
+    expect(result.usedLengthMm).toBe(200);
+    expect(result.producedQuantity).toBe(4);
+    for (const group of ['a', 'b']) {
+      const pieces = result.placements.filter(p => p.sourceId.startsWith(group));
+      expect(pieces[0]!.y).toBe(pieces[1]!.y);
+    }
+  });
+
+  it('never spends extra material to group subgroups, preserving quantity and rotation constraints', () => {
+    const pieces = [
+      { sourceId: 'a1', subgroupKey: 'a', widthMm: 180, lengthMm: 300, quantity: 2, allowRotation: false },
+      { sourceId: 'b1', subgroupKey: 'b', widthMm: 120, lengthMm: 200, quantity: 3, allowRotation: true },
+      { sourceId: 'a2', subgroupKey: 'a', widthMm: 120, lengthMm: 100, quantity: 2, allowRotation: false },
+    ];
+    for (const maxLengthMm of [undefined, 600]) {
+      const input = { rollWidthMm: 300, gapMm: 0, sideMarginMm: 0, startEndMarginMm: 0, maxLengthMm, pieces };
+      const baseline = optimizeMergedRollLayout({ ...input, pieces: pieces.map(({subgroupKey, ...p}) => p) });
+      const result = optimizeMergedRollLayout(input);
+      expect(result.producedQuantity).toBeGreaterThanOrEqual(baseline.producedQuantity);
+      if (result.producedQuantity === baseline.producedQuantity) expect(result.usedLengthMm).toBeLessThanOrEqual(baseline.usedLengthMm);
+      for (const source of pieces) {
+        const placed = result.placements.filter(p => p.sourceId === source.sourceId);
+        expect(placed.length).toBeLessThanOrEqual(source.quantity);
+        expect(new Set(placed.map(p => p.instanceIndex)).size).toBe(placed.length);
+        if (!source.allowRotation) expect(placed.every(p => !p.rotated)).toBe(true);
+      }
+      result.placements.forEach((p, i) => result.placements.slice(i+1).forEach(q => {
+        expect(p.x >= q.x+q.width || q.x >= p.x+p.width || p.y >= q.y+q.height || q.y >= p.y+p.height).toBe(true);
+      }));
+    }
+  });
+
   it('places different piece sizes on one mixed roll without overlap', () => {
     const result = optimizeMergedRollLayout({ rollWidthMm: 1220, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, pieces: [
       { sourceId: 'g1-p1', widthMm: 600, lengthMm: 400, quantity: 1, allowRotation: false },
