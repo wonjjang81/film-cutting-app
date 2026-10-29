@@ -36,6 +36,10 @@ import { applyPatternFixed } from '../../src/features/library/groupSettings';
 import { DEFAULT_CUT_ALLOWANCE_MM, inheritCutAllowance, normalizeCutAllowance, restoreCutAllowanceDimensions, summarizeCutAllowances } from '../../src/features/cutting/cutAllowance';
 import { applyFixedProductionDefaults, DEFAULT_GAP_MM, DEFAULT_SIDE_MARGIN_MM, DEFAULT_START_END_MARGIN_MM, FIXED_ROLL_WIDTH_MM, normalizeProductionMargin } from '../../src/features/cutting/productionConditions';
 import { CURRENT_PROJECT_CONTEXT_STORAGE_KEY, serializeCurrentProjectContext } from '../../src/features/library/currentProjectContext';
+import { useAuthSession } from '../../src/features/auth/AuthSession';
+import type { InputDraftBackup } from '../../src/features/library/inputDraftBackup';
+import { loadInputDraft, saveInputDraft, startInputBackup } from '../../src/features/library/inputDraftStorage';
+import { installInputReloadGuard } from '../../src/features/library/inputReloadGuard';
 
 const repository = createAppLibraryRepository();
 const emptyLibrary: LibraryDocument = { version: 1, presets: [], jobs: [], remnants: [], mergedJobs: [] };
@@ -100,6 +104,7 @@ const statusCopy = {
 } as const;
 
 export default function FilmCutInputScreen() {
+  const auth = useAuthSession();
   const pageScroll = useRef<ScrollView>(null);
   const pageViewport = useRef<View>(null);
   const subgroupAnchor = useRef<View>(null);
@@ -144,6 +149,23 @@ export default function FilmCutInputScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const draftOwner = auth.state === 'local' ? 'local' : auth.user?.id ?? null;
+  const requestedProject = Array.isArray(routeProjectId) ? routeProjectId[0] : routeProjectId;
+  const requestedJob = Array.isArray(routeJobId) ? routeJobId[0] : routeJobId;
+  const draftRoute = JSON.stringify([draftOwner, requestedProject, requestedJob, routeNewProject]);
+  const [hydratedDraftRoute, setHydratedDraftRoute] = useState<string | null>(null);
+  const initializedDraft = useRef(false);
+  const previousDraftOwner = useRef<string | null>(null);
+  const latestDraft = useRef<InputDraftBackup | null>(null);
+  const inputReady = draftOwner !== null && hydratedDraftRoute === draftRoute
+    && (!requestedProject || routedProjectRef.current === requestedProject)
+    && (!requestedJob || routedJobRef.current === requestedJob)
+    && (routeNewProject !== '1' || routedProjectRef.current === 'new');
+  const draftToSave = useMemo<InputDraftBackup | null>(() => !inputReady || !draftOwner ? null : ({
+    version: 1, ownerId: draftOwner, updatedAt: new Date().toISOString(), projectId, projectName,
+    groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets,
+  }), [inputReady, draftOwner, projectId, projectName, groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets]);
+  latestDraft.current = draftToSave;
   const identifiersReady = form.brand.trim().length > 0;
   const activeSourceId = `${activeGroupId}-${activePieceId}`;
   const activeMergedPlan = useMemo(
@@ -663,6 +685,63 @@ export default function FilmCutInputScreen() {
   };
   useEffect(() => { void refreshLibrary().catch((caught) => setError(messageOf(caught))); }, [refreshLibrary]);
   useEffect(() => {
+    if (!draftOwner) return;
+    let active = true;
+    routedProjectRef.current = null;
+    routedJobRef.current = null;
+    const firstOpen = !initializedDraft.current;
+    initializedDraft.current = true;
+    if (previousDraftOwner.current && previousDraftOwner.current !== draftOwner) {
+      const fresh = newGroupDraft(1);
+      setProjectId(null); setProjectName('새 프로젝트'); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form);
+      setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setDiagramTargets({}); setUseRemnants(false);
+    }
+    previousDraftOwner.current = draftOwner;
+    void (async () => {
+      try {
+        const reload = Platform.OS === 'web' && typeof performance !== 'undefined'
+          && (performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined)?.type === 'reload';
+        const skipDraft = !!requestedJob || (routeNewProject === '1' && (!firstOpen || !reload));
+        const restored = skipDraft ? { draft: null, recovered: false } : await loadInputDraft(draftOwner, requestedProject ?? (routeNewProject === '1' ? null : undefined));
+        if (!active) return;
+        const draft = restored.draft;
+        if (draft) {
+          const group = draft.groups.find(item => item.id === draft.activeGroupId) ?? draft.groups[0]!;
+          const piece = group.pieces.find(item => item.id === draft.activePieceId) ?? group.pieces[0];
+          setProjectId(draft.projectId); setProjectName(draft.projectName); setGroups(draft.groups);
+          setActiveGroupId(group.id); setActivePieceId(piece?.id ?? ''); setForm(piece?.form ?? group.form);
+          setUseRemnants(draft.useRemnants); setDiagramPart(draft.diagramPart); setDiagramTargets(draft.diagramTargets);
+          setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false);
+          if (requestedProject) routedProjectRef.current = requestedProject;
+          if (routeNewProject === '1') routedProjectRef.current = 'new';
+          setNotice(restored.recovered ? '최근 1분 자동 백업에서 입력을 복구했습니다. 배치는 다시 계산해 주세요.' : '임시저장된 입력을 복원했습니다. 배치는 다시 계산해 주세요.');
+        }
+        setHydratedDraftRoute(draftRoute);
+      } catch (caught) { if (active) setError(messageOf(caught)); }
+    })();
+    return () => { active = false; };
+  }, [draftOwner, draftRoute, requestedProject, requestedJob, routeNewProject]);
+  useEffect(() => {
+    if (!draftToSave || busy) return;
+    void saveInputDraft(draftToSave).catch(caught => setError(`입력 임시저장 실패: ${messageOf(caught)} 새로고침 전에 프로젝트를 저장해 주세요.`));
+  }, [draftToSave, busy]);
+  useEffect(() => startInputBackup(() => latestDraft.current, caught => setError(`1분 로컬 백업 실패: ${messageOf(caught)}`)), []);
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined') return installInputReloadGuard(window);
+  }, []);
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+    const flush = () => {
+      if (latestDraft.current) void saveInputDraft(latestDraft.current).catch(caught => setError(`입력 백업 실패: ${messageOf(caught)}`));
+    };
+    const hide = () => { if (document.visibilityState === 'hidden') flush(); };
+    window.addEventListener('pagehide', flush);
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', hide);
+    return () => { window.removeEventListener('pagehide', flush); window.removeEventListener('beforeunload', flush); document.removeEventListener('visibilitychange', hide); };
+  }, []);
+  useEffect(() => {
+    if (hydratedDraftRoute !== draftRoute) return;
     const id = Array.isArray(routeProjectId) ? routeProjectId[0] : routeProjectId;
     if (!id || routedProjectRef.current === id) return;
     // The input tab stays mounted while switching tabs. A project created
@@ -676,23 +755,25 @@ export default function FilmCutInputScreen() {
     if (!project) return;
     routedProjectRef.current = id;
     restoreProject(project, library);
-  }, [library, refreshLibrary, restoreProject, routeProjectId]);
+  }, [library, refreshLibrary, restoreProject, routeProjectId, hydratedDraftRoute, draftRoute]);
   useEffect(() => {
+    if (hydratedDraftRoute !== draftRoute) return;
     if (routeNewProject !== '1' || routedProjectRef.current === 'new') return;
     routedProjectRef.current = 'new';
     const fresh = newGroupDraft(1);
     setProjectId(null); setProjectName('새 프로젝트'); setGroups([fresh]); setActiveGroupId(fresh.id); setActivePieceId(fresh.pieces[0]!.id); setForm(fresh.form); setPlan(null); setPlanRequest(null); setDraftJob(null); setPendingBatchSave(null); setBatchPlans(null); setMergedGroupPlans([]); setSavedGroupPlanViews({}); setCandidateComparison([]); setConfirmed(false); setCuttingComplete(false); setManualPlacements(null); setCheckedPlacementIds([]);
-  }, [routeNewProject]);
+  }, [routeNewProject, hydratedDraftRoute, draftRoute]);
   useEffect(() => {
-    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups, projectId)));
-  }, [groups, projectId]);
+    if (!inputReady || busy) return;
+    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups, projectId))).catch(caught => setError(`견적 입력 백업 실패: ${messageOf(caught)}`));
+  }, [groups, projectId, inputReady, busy]);
   useEffect(() => {
-    if (!projectId || !projectName.trim()) return;
+    if (!inputReady || !projectId || !projectName.trim()) return;
     void AsyncStorage.setItem(
       CURRENT_PROJECT_CONTEXT_STORAGE_KEY,
       serializeCurrentProjectContext({ id: projectId, name: projectName }),
     );
-  }, [projectId, projectName]);
+  }, [projectId, projectName, inputReady]);
   useEffect(() => {
     void AsyncStorage.getItem(AUTO_SAVE_HISTORY_STORAGE_KEY).then((stored) => setAutoSaveHistory(parseAutoSaveHistory(stored))).catch(() => setAutoSaveHistory(false));
   }, []);
@@ -951,13 +1032,14 @@ export default function FilmCutInputScreen() {
   };
   const loadJob = (job: SavedCuttingJob) => void calculate(formFromSavedJob(job), useRemnants, Boolean(job.isCuttingComplete), job.completedPlacementIds ?? [], job.id);
   useEffect(() => {
+    if (hydratedDraftRoute !== draftRoute) return;
     const id = Array.isArray(routeJobId) ? routeJobId[0] : routeJobId;
     if (!id || routedJobRef.current === id) return;
     const job = library.jobs.find((item) => item.id === id);
     if (!job) return;
     routedJobRef.current = id;
     loadJob(job);
-  }, [library.jobs, loadJob, routeJobId]);
+  }, [library.jobs, loadJob, routeJobId, hydratedDraftRoute, draftRoute]);
   const deletePreset = async (id: string) => withBusy(async () => { await repository.deletePreset(id); await refreshLibrary(); }, setBusy, setError);
   const ensurePendingBatchSaved = async (): Promise<LibraryDocument> => {
     if (!pendingBatchSave) return library;
@@ -1184,8 +1266,9 @@ export default function FilmCutInputScreen() {
   };
 
   const plannedUses: PlannedRemnantSummary[] = plan?.remnantUses.map((use) => ({ remnantId: use.remnantId, producedQuantity: use.producedQuantity, savedNewRollLengthMm: use.savedNewRollLengthMm, optimizationStatus: use.result.optimizationStatus })) ?? [];
+  if (!inputReady) return <View style={{ padding: 24 }}><Text accessibilityLiveRegion="polite">{error ?? '입력 백업을 확인하고 있습니다…'}</Text></View>;
   return (
-    <View ref={pageViewport} style={{ flex: 1 }} collapsable={false}><ScrollView ref={pageScroll} onScroll={e => { pageScrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={16} style={styles.page} contentContainerStyle={[styles.pageContent, width < 420 && styles.pageContentSmall]} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+    <View ref={pageViewport} style={{ flex: 1, ...(Platform.OS === 'web' ? { overscrollBehaviorY: 'none' } as object : {}) }} collapsable={false}><ScrollView ref={pageScroll} onScroll={e => { pageScrollY.current = e.nativeEvent.contentOffset.y; }} scrollEventThrottle={16} style={styles.page} contentContainerStyle={[styles.pageContent, width < 420 && styles.pageContentSmall]} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
       <View style={styles.header}>
         <View style={styles.headerCopy}><Text style={styles.eyebrow}>CONTINUOUS ROLL WORKSPACE</Text><Text style={styles.title} accessibilityRole="header">필름 재단 생산 계획</Text><Text style={styles.description}>자투리를 먼저 사용하고 부족한 수량만 새 연속 롤에서 계산합니다.</Text></View>
         <View style={styles.headerActions}><View style={styles.modeBadge}><Text style={styles.modeText}>원단 절약 우선</Text></View><TouchableOpacity accessibilityRole="button" onPress={reset} disabled={busy} style={[styles.resetButton, busy && styles.disabled]}><Text style={styles.resetText}>입력 초기화</Text></TouchableOpacity></View>
