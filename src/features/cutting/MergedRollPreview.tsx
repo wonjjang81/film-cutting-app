@@ -11,8 +11,8 @@ import { runPlacementPopupAction } from './placementPopupAction';
 import type { PlacementEdgeDirection } from './moveMergedPlacement';
 import { dragAutoScrollStep } from './dragAutoScroll';
 import { MAX_NEW_ROLL_LENGTH_MM } from './rollLengthLimit';
+import { subgroupColor, sizeStroke } from './placementAppearance';
 
-const COLORS = ['#2563eb', '#0f766e', '#c2410c', '#7c3aed', '#be123c', '#0369a1'];
 
 type Props = {
   plan: MergedGroupPlan;
@@ -57,9 +57,8 @@ type Props = {
   onSelectPlacement?(placementId: number): void;
 };
 
-function colorFor(sourceId: string, sourceIds: readonly string[]): string {
-  const index = Math.max(0, sourceIds.indexOf(sourceId));
-  return COLORS[index % COLORS.length] ?? '#2563eb';
+function colorFor(sourceId: string, sourceIds: readonly string[], subgroups?: Record<string,string>, majorGroups?: Record<string,string>): string {
+  return subgroupColor(sourceId, subgroups, majorGroups);
 }
 
 export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onRotatePlacement, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups, focusedPlacementId, focusRequestKey = 0, onFocusedPlacementY }: Props) {
@@ -126,10 +125,10 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         {majorLengthGridPositions.map((y) => <Line key={`grid-major-y-${y}`} x1={0} y1={y} x2={1220} y2={y} stroke="#64748b" strokeWidth={3.2} strokeDasharray="18 8" opacity={0.62} />)}
       </G>
       {result.placements.map((placement) => {
-        const color = colorFor(placement.sourceId, sourceIds);
+        const color = colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups);
         const active = selectedId === placement.id || focusedPlacementId === placement.id;
         return <G key={placement.id} onPress={() => { setMoveError(null); setSelectedId((current) => current === placement.id ? null : placement.id); }} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
-          <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} />
+          <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}22`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : 2} strokeDasharray={sizeStroke(placement.width, placement.height)} />
           <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)} color={color} />
         </G>;
       })}
@@ -182,9 +181,10 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           {lastMovedToRollIndex !== null && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`마지막 이동 위치 ${lastMovedToRollIndex + 1}롤로 바로가기`} onPress={() => { selectRoll(lastMovedToRollIndex); setSelectedId(null); setDraggingId(null); }} style={[styles.controlButton, styles.controlButtonPrimary]}><Text style={[styles.controlButtonText, styles.controlButtonPrimaryText]}>이동 위치 · {lastMovedToRollIndex + 1}롤</Text></TouchableOpacity>}
         </View>}
       </View>}
-      {!hideLegend && <View style={styles.legend}>
-        {sourceIds.map((sourceId, index) => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: COLORS[index % COLORS.length] }]} /><Text style={styles.legendText}>{labelBySource.get(sourceId)}</Text></View>)}
-      </View>}
+      <Text style={styles.legendText}>색상: 소그룹 · 테두리 패턴: 크기 구분(반복) · 정확한 크기: 조각 치수(mm)</Text>
+      <View style={styles.legend}>
+        {sourceIds.filter((id, index) => !hideLegend || sourceIds.findIndex(other => (sourceSubgroups?.[other] ?? other) === (sourceSubgroups?.[id] ?? id) && sourceMajorGroups?.[other] === sourceMajorGroups?.[id]) === index).map(sourceId => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: colorFor(sourceId, sourceIds, sourceSubgroups, sourceMajorGroups) }]} /><Text style={styles.legendText}>{hideLegend ? [sourceMajorGroups?.[sourceId], sourceSubgroups?.[sourceId] ?? labelBySource.get(sourceId)].filter(Boolean).join(' · ') : labelBySource.get(sourceId)}</Text></View>)}
+      </View>
       {!hideRollTabs && rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { selectRoll(index); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
       {learnedLayoutApplied && <Text style={styles.learnedBadge}>우수 수동 배치 학습 적용</Text>}
       <View style={styles.utilizationComparison} accessibilityLabel={`자동 배치 공간 활용 ${utilization.automatic}퍼센트, 수동 배치 공간 활용 ${utilization.current}퍼센트`}>
@@ -229,9 +229,9 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
                 const centerY = placement.y + placement.height / 2;
                 const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
                 return <G key={placement.id}>
-                <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds)}22`} stroke={colorFor(placement.sourceId, sourceIds)} strokeWidth={2} />
+                <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)}22`} stroke={colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)} strokeWidth={2} strokeDasharray={sizeStroke(placement.width, placement.height)} />
                 <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
-                  <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds)}>{annotation.label}</SvgText>
+                  <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)}>{annotation.label}</SvgText>
                   <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
                 </G>
               </G>;
@@ -327,7 +327,7 @@ export function MergedRollPlacementList({ plan, job, busy = false, completedPlac
           {!collapsed && group.items.map((placement) => {
             const completed = completedPlacementIds.has(placement.id);
             return <View key={placement.id} style={[styles.item, selectedId === placement.id && styles.itemActive, completed && styles.itemDone]}>
-              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 도면에서 보기`} onPress={() => { setSelectedId(placement.id); onSelectPlacement?.(placement.id); }} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {placement.pieceName ?? labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel={`병합 조각 ${placement.id} 도면에서 보기`} onPress={() => { setSelectedId(placement.id); onSelectPlacement?.(placement.id); }} style={styles.itemMain}><View style={[styles.itemDot, { backgroundColor: colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups) }]} /><Text style={styles.itemText}>#{placement.id} · {rollNumberByPlacementId.get(placement.id) ?? 1}롤 · {placement.pieceName ?? labelBySource.get(placement.sourceId) ?? placement.sourceId} · {placement.width}×{placement.height}mm{placement.rotated ? ' · ↻' : ''}</Text></TouchableOpacity>
               <TouchableOpacity accessibilityRole="checkbox" accessibilityLabel={`병합 조각 ${placement.id} 재단 완료`} accessibilityState={{ checked: completed, disabled: !onTogglePlacementComplete || busy }} disabled={!onTogglePlacementComplete || busy} onPress={() => onTogglePlacementComplete?.(placement.id)} style={[styles.checkButton, completed && styles.checkButtonDone]}><Text style={[styles.checkText, completed && styles.checkTextDone]}>{completed ? '✓' : ''}</Text></TouchableOpacity>
             </View>;
           })}

@@ -4,6 +4,20 @@ import { planGroupedPieces, planMergedGroups, type GroupedPieceRequest } from '.
 const base = { rollWidthMm: 1220, pieceWidthMm: 100, pieceLengthMm: 100, quantity: 1, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true };
 
 describe('planGroupedPieces', () => {
+  it('propagates subgroup identity into the automatic mixed-roll planner', () => {
+    const requests: GroupedPieceRequest[] = ['a1', 'b1', 'a2', 'b2'].map(pieceId => ({
+      groupId: 'g1', groupName: '그룹 1', pieceId, pieceName: pieceId, subgroupName: pieceId[0],
+      request: { brand: '영림', productNumber: '', remnants: [], ...base, rollWidthMm: 200, sideMarginMm: 0, startEndMarginMm: 0, allowRotation: false },
+    }));
+    const [plan] = planMergedGroups(requests, 200, [], false);
+    expect(plan!.result.producedQuantity).toBe(4);
+    expect(plan!.result.usedLengthMm).toBe(200);
+    for (const subgroup of ['a', 'b']) {
+      const placements = plan!.result.placements.filter(p => p.sourceId.startsWith(`g1-${subgroup}`));
+      expect(placements[0]!.y).toBe(placements[1]!.y);
+    }
+  });
+
   it('labels each location independently without multiplying quantities again', () => {
     const requests: GroupedPieceRequest[] = [
       { groupId: 'g1', groupName: '그룹 1', pieceId: 'p1', pieceName: '입구방문_01', subgroupName: '입구방문', siteCount: 2, request: { brand: '영림', productNumber: '', remnants: [], ...base, quantity: 4 } },

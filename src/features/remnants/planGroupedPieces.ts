@@ -1,5 +1,5 @@
 import type { FilmRemnant } from '../library/models';
-import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
+import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollPiece, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
 import { boundedNewRollLength } from '../cutting/rollLengthLimit';
 import { consolidateRolls } from '../cutting/consolidateRolls';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
@@ -176,9 +176,10 @@ function piecesFor(entries: readonly GroupedPieceRequest[], remaining: ReadonlyM
   return entries.filter((entry) => (remaining.get(sourceId(entry)) ?? 0) > 0);
 }
 
-function mergedPieces(entries: readonly GroupedPieceRequest[], remaining: ReadonlyMap<string, number>): { sourceId: string; widthMm: number; lengthMm: number; quantity: number; allowRotation: boolean }[] {
+function mergedPieces(entries: readonly GroupedPieceRequest[], remaining: ReadonlyMap<string, number>): MergedRollPiece[] {
   return piecesFor(entries, remaining).map((entry) => ({
     sourceId: sourceId(entry),
+    ...(entry.subgroupName ? { subgroupKey: JSON.stringify([entry.groupId, entry.subgroupName]) } : {}),
     widthMm: entry.request.pieceWidthMm,
     lengthMm: entry.request.pieceLengthMm,
     quantity: remaining.get(sourceId(entry)) ?? 0,
