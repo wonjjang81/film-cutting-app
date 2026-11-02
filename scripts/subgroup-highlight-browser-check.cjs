@@ -28,18 +28,23 @@ const server = http.createServer((req,res)=>{
       localStorage.setItem('film-cutting-current-group-estimate',JSON.stringify({pieces:[{id:'g1',name:'대그룹1',pieces:[{id:'p1',name:'상부',form},{id:'p2',name:'하부',form}],subgroups:[{id:'s1',name:'상부장',pieceIds:['p1'],siteCount:1},{id:'s2',name:'하부장',pieceIds:['p2'],siteCount:1}]}]}));
     });
     await page.goto(`http://127.0.0.1:${server.address().port}/planning`);
-    const button=page.getByRole('button',{name:'대그룹1 · 상부장 조각 강조',exact:true});
-    await button.waitFor();
+    const combo=page.getByRole('combobox',{name:'소그룹 강조 선택',exact:true});
+    await combo.waitFor();
     const pieces=page.locator('g[aria-label^="병합 제품"]');
     const before=await pieces.evaluateAll(items=>items.map(item=>{const r=item.querySelector('rect');return ['x','y','width','height'].map(a=>r.getAttribute(a));}));
     assert.equal(before.length,4);
-    await button.click();
+    await combo.selectOption({label:'대그룹1 · 상부장 · 2개'});
     assert.equal(await pieces.locator('xpath=self::*[@opacity="0.12"]').count(),2);
     assert.equal(await page.getByText('소그룹 강조 · 대그룹1 · 상부장 (2개)',{exact:true}).count(),1);
     const after=await pieces.evaluateAll(items=>items.map(item=>{const r=item.querySelector('rect');return ['x','y','width','height'].map(a=>r.getAttribute(a));}));
     assert.deepEqual(after,before,'highlight must preserve geometry');
     await page.getByRole('button',{name:'소그룹 강조 전체 보기'}).click();
+    assert.equal(await combo.inputValue(),'');
     assert.equal(await pieces.locator('xpath=self::*[@opacity="0.12"]').count(),0);
-    console.log('PASS: subgroup button dims only other pieces; all view restores opacity; geometry unchanged.');
+    assert.equal(await combo.locator('option').filter({hasText:'전체'}).count(),0,'all is a separate button, not a combo option');
+    await page.setViewportSize({width:390,height:844});
+    await combo.selectOption({label:'대그룹1 · 하부장 · 2개'});
+    assert.equal(await pieces.locator('xpath=self::*[@opacity="0.12"]').count(),2);
+    console.log('PASS: subgroup combo highlights pieces; separate All restores view; mobile-width selection works; geometry unchanged.');
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});

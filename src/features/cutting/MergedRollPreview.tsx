@@ -12,6 +12,7 @@ import type { PlacementEdgeDirection } from './moveMergedPlacement';
 import { dragAutoScrollStep } from './dragAutoScroll';
 import { MAX_NEW_ROLL_LENGTH_MM } from './rollLengthLimit';
 import { subgroupHighlightOptions, subgroupHighlightStyle } from './subgroupHighlight';
+import { SubgroupHighlightSelect } from './SubgroupHighlightSelect';
 import { subgroupColor, sizeStroke } from './placementAppearance';
 
 
@@ -187,12 +188,12 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           {lastMovedToRollIndex !== null && <TouchableOpacity accessibilityRole="button" accessibilityLabel={`마지막 이동 위치 ${lastMovedToRollIndex + 1}롤로 바로가기`} onPress={() => { selectRoll(lastMovedToRollIndex); setSelectedId(null); setDraggingId(null); }} style={[styles.controlButton, styles.controlButtonPrimary]}><Text style={[styles.controlButtonText, styles.controlButtonPrimaryText]}>이동 위치 · {lastMovedToRollIndex + 1}롤</Text></TouchableOpacity>}
         </View>}
       </View>}
-      {highlightOptions.length > 0 && <View accessibilityLabel="소그룹 강조 선택" style={{ marginTop: 10, gap: 6 }}>
+      {highlightOptions.length > 0 && <View style={{ marginTop: 10, gap: 6 }}>
         <Text style={styles.legendText}>소그룹 강조 · {highlight ? `${highlight.title} (${highlight.count}개)` : '전체 보기'}</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator contentContainerStyle={{ flexDirection: 'row', gap: 6, paddingBottom: 5 }}>
-          <TouchableOpacity accessibilityRole="button" accessibilityLabel="소그룹 강조 전체 보기" accessibilityState={{ selected: !highlight }} onPress={() => setHighlightedSubgroup(null)} style={[styles.rollTab, !highlight && styles.rollTabActive]}><Text style={[styles.rollTabText, !highlight && styles.rollTabTextActive]}>전체</Text></TouchableOpacity>
-          {highlightOptions.map(option => <TouchableOpacity key={option.id} accessibilityRole="button" accessibilityLabel={`${option.title} 조각 강조`} accessibilityState={{ selected: highlight?.id === option.id }} onPress={() => { setHighlightedSubgroup(current => current === option.id ? null : option.id); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, highlight?.id === option.id && styles.rollTabActive]}><Text style={[styles.rollTabText, highlight?.id === option.id && styles.rollTabTextActive]}>{option.title} · {option.count}개</Text></TouchableOpacity>)}
-        </ScrollView>
+        <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+          <View style={{ flex: 1, minWidth: 0 }}><SubgroupHighlightSelect options={highlightOptions} value={highlight?.id ?? null} onChange={id => { setHighlightedSubgroup(id); setSelectedId(null); setDraggingId(null); }} /></View>
+          <TouchableOpacity accessibilityRole="button" accessibilityLabel="소그룹 강조 전체 보기" accessibilityState={{ selected: !highlight }} onPress={() => setHighlightedSubgroup(null)} style={[styles.rollTab, { minHeight: 40 }, !highlight && styles.rollTabActive]}><Text style={[styles.rollTabText, !highlight && styles.rollTabTextActive]}>전체</Text></TouchableOpacity>
+        </View>
         {highlight && <Text style={styles.legendText}>선택 외 조각은 흐리게 표시합니다. 배치 위치·수량은 변경되지 않습니다.</Text>}
       </View>}
       <Text style={styles.legendText}>색상: 소그룹 · 테두리 패턴: 크기 구분(반복) · 정확한 크기: 조각 치수(mm)</Text>
