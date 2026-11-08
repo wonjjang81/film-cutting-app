@@ -4,7 +4,7 @@ import { configuredCloudflareUrl } from '../library/libraryRepositoryFactory';
 
 export type AuthUser = { id: string; email: string; role: 'owner' | 'member' };
 type AuthState = 'loading' | 'local' | 'authenticated' | 'unauthenticated';
-type AuthContextValue = { state: AuthState; user: AuthUser | null; login(): void; logout(): Promise<void>; refresh(): Promise<void> };
+type AuthContextValue = { state: AuthState; user: AuthUser | null; login(returnTo?: string): void; logout(): Promise<void>; refresh(): Promise<void> };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -23,9 +23,9 @@ export function AuthSessionProvider({ children }: PropsWithChildren) {
     } catch { setUser(null); setState('unauthenticated'); }
   }, [baseUrl]);
   useEffect(() => { void refresh(); }, [refresh]);
-  const login = useCallback(() => {
+  const login = useCallback((target?: string) => {
     if (!baseUrl || Platform.OS !== 'web' || typeof window === 'undefined') return;
-    const returnTo = `${window.location.pathname}${window.location.search}`;
+    const returnTo = target ?? `${window.location.pathname}${window.location.search}`;
     window.location.assign(`${baseUrl.replace(/\/$/, '')}/api/auth/login?returnTo=${encodeURIComponent(returnTo)}`);
   }, [baseUrl]);
   const logout = useCallback(async () => {
