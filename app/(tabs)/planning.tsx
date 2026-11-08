@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
 import { router, useFocusEffect } from 'expo-router';
 import * as Sharing from 'expo-sharing';
-import { FileDown, RefreshCw, Scissors } from 'lucide-react-native';
+import { FileDown, RefreshCw, Scissors } from '../../src/ui/icons';
 import { AppState, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { createLayoutSvgMarkup } from '../../src/features/cutting/createLayoutSvgMarkup';

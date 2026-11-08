@@ -1,5 +1,5 @@
-import { Redirect, Tabs } from 'expo-router';
-import { ActivityIndicator, View } from 'react-native';
+import { Redirect, Tabs, usePathname, type Href } from 'expo-router';
+import { ActivityIndicator, Platform, View } from 'react-native';
 import { useAuthSession } from '../../src/features/auth/AuthSession';
 import {
   CircleHelp,
@@ -10,7 +10,7 @@ import {
   Scissors,
   Settings,
   SlidersHorizontal,
-} from 'lucide-react-native';
+} from '../../src/ui/icons';
 
 type TabIconProps = {
   color: string;
@@ -25,8 +25,13 @@ const TabIcon = ({ Icon, color, size }: TabIconProps & { Icon: typeof FolderOpen
 
 export default function TabsLayout() {
   const auth = useAuthSession();
+  const pathname = usePathname();
   if (auth.state === 'loading') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#2563eb" /></View>;
-  if (auth.state === 'unauthenticated') return <Redirect href="/login" />;
+  if (auth.state === 'unauthenticated') {
+    // 로그인 후 원래 보던 화면으로 돌아가도록 현재 경로를 넘깁니다.
+    const search = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.search : '';
+    return <Redirect href={{ pathname: '/login', params: { returnTo: `${pathname}${search}` } } as Href} />;
+  }
   return (
     <Tabs
       screenOptions={{
