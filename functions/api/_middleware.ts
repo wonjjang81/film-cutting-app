@@ -7,7 +7,7 @@ type SessionRow = SessionRecord & { tokenHash: string };
 export async function onRequest(context: PagesContext<CloudflareEnv, { auth?: AuthIdentity }>): Promise<Response> {
   const { request, env } = context;
   const path = new URL(request.url).pathname;
-  if (request.method === 'OPTIONS' || path === '/api/health' || path === '/api/auth/login' || path === '/api/auth/callback' || path === '/api/auth/logout') return context.next();
+  if (request.method === 'OPTIONS' || path === '/api/health' || path === '/api/auth/login' || path === '/api/auth/callback' || path === '/api/auth/cm-launch' || path === '/api/auth/logout') return context.next();
   try {
     if (!env.DB) throw new AuthError(503, '인증 데이터베이스가 설정되지 않았습니다.');
     if (!['GET', 'HEAD'].includes(request.method)) {
