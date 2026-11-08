@@ -49,6 +49,10 @@
         const worker = registration.installing;
         worker?.addEventListener('statechange', () => { if (worker.state === 'installed' && navigator.serviceWorker.controller) offer(worker); });
       });
+      // 앱을 켜 둔 채로 있어도 30분마다, 화면으로 돌아올 때 새 버전을 확인합니다.
+      const check = () => { if (document.visibilityState === 'visible' && navigator.onLine) registration.update().catch(() => {}); };
+      setInterval(check, 30 * 60 * 1000);
+      document.addEventListener('visibilitychange', check);
     }).catch(() => { help.textContent = '앱 설치 도움말'; });
   });
 })();
