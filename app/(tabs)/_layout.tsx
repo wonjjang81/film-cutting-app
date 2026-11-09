@@ -26,7 +26,7 @@ const TabIcon = ({ Icon, color, size }: TabIconProps & { Icon: typeof FolderOpen
 export default function TabsLayout() {
   const auth = useAuthSession();
   const pathname = usePathname();
-  if (auth.state === 'loading') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#2563eb" /></View>;
+  if (auth.state === 'loading') return <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator color="#6d28d9" /></View>;
   if (auth.state === 'unauthenticated') {
     // 로그인 후 원래 보던 화면으로 돌아가도록 현재 경로를 넘깁니다.
     const search = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.search : '';
@@ -36,7 +36,7 @@ export default function TabsLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563eb',
+        tabBarActiveTintColor: '#6d28d9',
         tabBarInactiveTintColor: '#64748b',
         tabBarLabelStyle: { fontSize: 11, fontWeight: '800' },
         tabBarStyle: {

@@ -21,7 +21,7 @@ export default function GuideScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#f1f5f9' },
   content: { width: '100%', maxWidth: 900, alignSelf: 'center', padding: 24, paddingBottom: 70 },
-  eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' },
+  eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#6d28d9' },
   title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' },
   subtitle: { marginTop: 7, fontSize: 14, color: '#64748b' },
   card: { marginTop: 24, padding: 22, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
