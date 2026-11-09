@@ -3,7 +3,7 @@
 인테리어 필름 시공용 재단·배치 계획 앱입니다. 자투리를 먼저 쓰고 부족한 수량만 새 연속 롤에서 계산하며, 모눈 도면, 배치 계획, 견적, 팀 관리 화면을 제공합니다.
 
 - 운영: https://film-cutting-app.pages.dev (Cloudflare Pages + Pages Functions + D1, Google 로그인)
-- 로컬 모드: API 주소가 설정되지 않은 빌드(예: GitHub Pages)는 서버 인증 없이 기기 저장소만 사용합니다.
+- 로컬 모드: API 주소가 설정되지 않은 빌드(로컬 실행 등)는 서버 인증 없이 기기 저장소만 사용합니다. (GitHub Pages 배포는 2026-11-09 중단)
 
 ## 구성
 

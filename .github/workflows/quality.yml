@@ -1,4 +1,6 @@
-name: Quality and Pages
+name: Quality
+
+# 운영 배포는 Cloudflare Pages(cloudflare-pages.yml)만 사용합니다. GitHub Pages 배포는 2026-11-09 중단.
 
 on:
   pull_request:
@@ -7,11 +9,9 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages-${{ github.ref }}
+  group: quality-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -31,19 +31,3 @@ jobs:
       - run: pnpm test
       - run: pnpm run auth:schema-check
       - run: pnpm build:web
-      - uses: actions/upload-pages-artifact@v3
-        if: github.event_name == 'push'
-        with:
-          path: dist
-
-  deploy:
-    if: github.event_name == 'push'
-    needs: verify
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
