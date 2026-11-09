@@ -20,7 +20,7 @@ const configuredWebBaseUrl = process.env.EXPO_PUBLIC_WEB_BASE_URL?.trim();
 const webBaseUrl = configuredWebBaseUrl || (process.env.CF_PAGES === "1" ? "/" : "/film-cutting-app");
 
 const env = {
-  appName: "필름 재단 계산기",
+  appName: "필름견적",
   appSlug: "film-cutting-app",
   scheme: schemeFromBundleId,
   iosBundleId: bundleId,

@@ -77,7 +77,7 @@ const styles = StyleSheet.create({
   body: { fontSize: 15, lineHeight: 22, color: '#475569' },
   inviteRow: { flexDirection: 'row', gap: 8 },
   input: { flex: 1, minHeight: 46, borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 10, paddingHorizontal: 12, backgroundColor: '#fff' },
-  primary: { minWidth: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#2563eb', paddingHorizontal: 16 },
+  primary: { minWidth: 72, alignItems: 'center', justifyContent: 'center', borderRadius: 10, backgroundColor: '#6d28d9', paddingHorizontal: 16 },
   primaryText: { color: '#fff', fontWeight: '700' },
   message: { color: '#0369a1' },
   memberRow: { flexDirection: 'row', alignItems: 'center', padding: 14, borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 12, backgroundColor: '#fff' },

@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "필름 재단 계산기",
-  "short_name": "필름재단",
+  "name": "필름견적",
+  "short_name": "필름견적",
   "description": "필름 재단 입력, 자동 배치와 견적을 관리하는 작업 앱",
   "lang": "ko",
   "start_url": "./projects?source=pwa",

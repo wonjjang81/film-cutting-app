@@ -56,7 +56,7 @@ export default function SettingsScreen() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>앱 정보</Text>
         <Text style={styles.info}>현재 버전 {APP_VERSION}</Text>
-        <Text style={styles.info}>필름 재단 계산기 · 연속 롤 원단 절약 버전</Text>
+        <Text style={styles.info}>필름견적 · 연속 롤 원단 절약 버전</Text>
         <Text style={styles.info}>원본 롤 폭 1,220mm · 기본 여백 0mm · 생산 설정에서 변경 가능</Text>
         <TouchableOpacity accessibilityRole="button" onPress={() => void Linking.openURL('https://wonjjang81.github.io/film-cutting-app/guide')} style={styles.link}><Text style={styles.linkText}>온라인 사용 안내 열기</Text></TouchableOpacity>
         <TouchableOpacity accessibilityRole="button" onPress={() => void checkUpdate()} style={styles.updateButton}><Text style={styles.updateButtonText}>최신 버전 확인</Text></TouchableOpacity>
@@ -70,7 +70,7 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: '#f1f5f9' },
   content: { width: '100%', maxWidth: 900, alignSelf: 'center', padding: 24 },
-  eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#2563eb' },
+  eyebrow: { fontSize: 11, letterSpacing: 1.8, fontWeight: '800', color: '#6d28d9' },
   title: { marginTop: 7, fontSize: 30, fontWeight: '800', color: '#0f172a' },
   subtitle: { marginTop: 7, fontSize: 14, color: '#64748b' },
   card: { marginTop: 24, padding: 20, borderRadius: 18, backgroundColor: '#fff', shadowColor: '#0f172a', shadowOpacity: 0.07, shadowRadius: 20, shadowOffset: { width: 0, height: 8 }, elevation: 2 },
@@ -83,8 +83,8 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 15, fontWeight: '800', color: '#1e293b' },
   info: { marginTop: 8, fontSize: 13, color: '#64748b' },
   link: { alignSelf: 'flex-start', marginTop: 16, paddingVertical: 8 },
-  linkText: { fontSize: 13, fontWeight: '800', color: '#2563eb' },
-  updateButton: { alignSelf: 'flex-start', minHeight: 40, marginTop: 10, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#2563eb' },
+  linkText: { fontSize: 13, fontWeight: '800', color: '#6d28d9' },
+  updateButton: { alignSelf: 'flex-start', minHeight: 40, marginTop: 10, justifyContent: 'center', paddingHorizontal: 12, borderRadius: 8, backgroundColor: '#6d28d9' },
   updateButtonText: { fontSize: 11, fontWeight: '800', color: '#fff' },
   disabled: { opacity: 0.45 },
 });

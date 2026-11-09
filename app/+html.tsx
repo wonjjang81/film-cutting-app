@@ -13,7 +13,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="theme-color" content="#6d28d9" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <meta name="apple-mobile-web-app-title" content="필름재단" />
+        <meta name="apple-mobile-web-app-title" content="필름견적" />
         <link rel="manifest" href={`${base}manifest.webmanifest`} />
         {/* 공통 디자인 기준: Pretendard 글꼴·공통 변수, 이 앱의 식별색은 보라 */}
         <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="" />

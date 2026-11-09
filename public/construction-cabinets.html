@@ -302,9 +302,9 @@
        continue;
      }
      const label=s.role==='empty'?'Empty':customId(s)+' '+customRole(s);
-     const stroke=chosen?'#2563eb':'#278c9a';
+     const stroke=chosen?'#6d28d9':'#278c9a';
      const face=rectangular?`<rect x="${x}" y="${y}" width="${w}" height="${h}" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`:`<path d="${pixels}" stroke="none"/><path d="${edges}" fill="none" stroke="${stroke}" stroke-width="${chosen?2:0.8}"/>`;
-     const separator=gap>0?`<path data-member-separator d="${edges}" fill="none" stroke="${chosen?'#2563eb':'light-dark(#f7faff,#182438)'}" stroke-width="${gap}" pointer-events="none"/>`:'';
+     const separator=gap>0?`<path data-member-separator d="${edges}" fill="none" stroke="${chosen?'#6d28d9':'light-dark(#f7faff,#182438)'}" stroke-width="${gap}" pointer-events="none"/>`:'';
      let divider='',text='';
      for(const component of customComponents(s)){
        const xs=component.map(i=>i%cols),ys=component.map(i=>Math.floor(i/cols));
