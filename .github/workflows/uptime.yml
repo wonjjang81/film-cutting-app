@@ -20,9 +20,10 @@ jobs:
           set -u
           failed=0
           check() {
+            # 로그인 화면으로 넘기는 303 등 리다이렉트는 따라가서 최종 화면을 확인합니다.
             name="$1"; url="$2"
             for attempt in 1 2 3; do
-              code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 20 -A "uptime-check (github actions)" "$url" || echo 000)
+              code=$(curl -sL -o /tmp/body -w "%{http_code}" --max-time 20 -A "uptime-check (github actions)" "$url" || echo 000)
               if [ "$code" -ge 200 ] && [ "$code" -lt 400 ] && grep -qi "<html" /tmp/body; then
                 echo "OK   $name $code"; return 0
               fi
