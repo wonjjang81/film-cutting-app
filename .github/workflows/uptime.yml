@@ -1,0 +1,38 @@
+name: Uptime check
+
+# 30분마다 인테리어 웹앱 5개 주소를 확인합니다. 하나라도 응답이 없으면 실패로 표시되어 GitHub 알림 메일이 옵니다.
+# (공개 저장소라 Actions 사용량이 무료입니다. 2026-11-09 E-샘플북 저장소에서 옮겨 옴. 저장소에 60일간 활동이 없으면 GitHub가 예약 실행을 멈추니, 알림 메일이 오면 다시 켜 주세요.)
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check apps
+        run: |
+          set -u
+          failed=0
+          check() {
+            name="$1"; url="$2"
+            for attempt in 1 2 3; do
+              code=$(curl -s -o /tmp/body -w "%{http_code}" --max-time 20 -A "uptime-check (github actions)" "$url" || echo 000)
+              if [ "$code" -ge 200 ] && [ "$code" -lt 400 ] && grep -qi "<html" /tmp/body; then
+                echo "OK   $name $code"; return 0
+              fi
+              sleep 20
+            done
+            echo "::error::$name 응답 없음 ($url, HTTP $code)"; failed=1
+          }
+          check "건설매니저" "https://construction-manager.tubebluemoon.workers.dev/"
+          check "자금관리"   "https://money.auto-axis.uk/"
+          check "E-샘플북"   "https://ebook-sample-book.tubebluemoon.workers.dev/"
+          check "도배견적"   "https://dobaee-estimate.pages.dev/"
+          check "필름견적"   "https://film-cutting-app.pages.dev/login"
+          exit $failed
