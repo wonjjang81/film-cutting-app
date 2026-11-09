@@ -10,7 +10,7 @@
   panel.style.cssText = 'position:fixed;right:12px;bottom:calc(82px + env(safe-area-inset-bottom));z-index:10000;max-width:min(340px,calc(100vw - 24px));padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff;color:#183047;box-shadow:0 4px 20px #0002;font:13px/1.5 system-ui;display:none';
   const text = document.createElement('p'); text.style.margin = '0 0 8px';
   const action = document.createElement('button'); action.type = 'button';
-  action.style.cssText = 'min-height:40px;padding:8px 12px;border:0;border-radius:7px;background:#2563eb;color:white;font:inherit;cursor:pointer';
+  action.style.cssText = 'min-height:40px;padding:8px 12px;border:0;border-radius:7px;background:#6d28d9;color:white;font:inherit;cursor:pointer';
   const close = document.createElement('button'); close.type = 'button'; close.textContent = '닫기'; close.setAttribute('aria-label', '설치 안내 닫기');
   close.style.cssText = 'margin-left:8px;min-height:40px;padding:8px;border:0;background:transparent;color:#475569;font:inherit;cursor:pointer';
   close.onclick = () => { panel.style.display = 'none'; };
@@ -35,7 +35,7 @@
   };
   // Keep an installation entry available even when the browser suppresses prompts.
   const help = document.createElement('button'); help.type = 'button'; help.textContent = '앱 설치 안내';
-  help.style.cssText = 'position:fixed;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:9999;min-height:36px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#1d4ed8;font:12px system-ui;cursor:pointer';
+  help.style.cssText = 'position:fixed;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:9999;min-height:36px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;background:#fff;color:#5b21b6;font:12px system-ui;cursor:pointer';
   help.onclick = () => { show('기기에 설치하면 브라우저 탭 대신 별도 앱 창으로 실행합니다. 로그인·서버 프로젝트에는 인터넷이 필요합니다.', installEvent ? '앱 설치' : '설치 방법'); };
   if (!standalone()) document.body.append(help);
   navigator.serviceWorker.addEventListener('controllerchange', () => {
