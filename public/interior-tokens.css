@@ -1,0 +1,33 @@
+/*
+ * 인테리어 웹앱 공통 디자인 변수 (5개 앱 동일 파일)
+ * 기준 문서: "인테리어 웹앱 공통 디자인 기준" (2026-11-09 초안)
+ * 앱마다 다른 값은 --interior-app-accent 하나뿐입니다. (각 앱 index.css에서 지정)
+ */
+:root {
+  --interior-font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Segoe UI", "Noto Sans KR", sans-serif;
+
+  /* 회색 */
+  --interior-text: #0f172a;
+  --interior-text-muted: #475569;
+  --interior-text-faint: #94a3b8;
+  --interior-border: #e2e8f0;
+  --interior-page: #f8fafc;
+  --interior-surface: #ffffff;
+
+  /* 상태색: 항상 아이콘·단어와 함께 */
+  --interior-success: #15803d;
+  --interior-warning: #b45309;
+  --interior-danger: #b91c1c;
+
+  /* 앱별 식별색 */
+  --interior-construction-manager: #1e3a8a;
+  --interior-money: #047857;
+  --interior-wallpaper: #c2410c;
+  --interior-film: #6d28d9;
+  --interior-samplebook: #0369a1;
+
+  /* 모서리·누르는 영역 */
+  --interior-radius-control: 8px;
+  --interior-radius-card: 12px;
+  --interior-touch-target: 44px;
+}
