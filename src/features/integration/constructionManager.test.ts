@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFilmEstimateSubmission, parseConstructionManagerContext } from './constructionManager';
+import { buildFilmEstimateSubmission, parseConstructionManagerContext, buildFilmBreakdown } from './constructionManager';
 
 describe('construction manager film integration', () => {
   it('builds film-estimate/v1 from a normalized launch context', () => {
@@ -10,5 +10,19 @@ describe('construction manager film integration', () => {
   it('rejects missing links', () => {
     expect(parseConstructionManagerContext({ canonicalProjectId: ' ' })).toBeNull();
     expect(() => buildFilmEstimateSubmission({ context: { canonicalProjectId: 'c', projectName: '' }, externalEntityId: '', sourceUpdatedAt: '', materialCost: 1, constructionCost: 1, discount: 0, total: 2 })).toThrow('프로젝트 ID');
+  });
+});
+
+describe('자동 견적서 세부내역', () => {
+  it('sends material length, construction area and discount as typed rows', () => {
+    expect(buildFilmBreakdown({ materialCost: 900000, constructionCost: 5175000, discount: 150000, quantities: { materialLengthM: 60.04, materialAreaM2: 72.36 } })).toEqual([
+      { name: '필름 시공', amount: 5175000, kind: 'labor', spec: '필름 시공', unit: '㎡', quantity: 72.4 },
+      { name: '필름 원단', amount: 900000, kind: 'mainMaterial', spec: '인테리어 필름', unit: 'm', quantity: 60 },
+      { name: '할인', amount: -150000, kind: 'discount' },
+    ]);
+  });
+
+  it('keeps the old two rows when quantities are not given', () => {
+    expect(buildFilmBreakdown({ materialCost: 1, constructionCost: 2, discount: 0 })).toEqual([{ name: '필름 원단', amount: 1 }, { name: '필름 시공', amount: 2 }]);
   });
 });
