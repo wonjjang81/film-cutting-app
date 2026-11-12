@@ -118,7 +118,7 @@ export default function EstimateScreen() {
     if (!canExportEstimate || !constructionManagerContext) return;
     setSubmittingToConstructionManager(true); setError(null);
     try {
-      const payload = buildFilmEstimateSubmission({ context: constructionManagerContext, externalEntityId: activeProject?.id ?? currentProjectId ?? '', sourceUpdatedAt: activeProject?.updatedAt ?? new Date().toISOString(), materialCost: projectEstimate.materialCost, constructionCost: projectEstimate.constructionCost, discount: projectEstimate.discount, total: projectEstimate.total });
+      const payload = buildFilmEstimateSubmission({ context: constructionManagerContext, externalEntityId: activeProject?.id ?? currentProjectId ?? '', sourceUpdatedAt: activeProject?.updatedAt ?? new Date().toISOString(), materialCost: projectEstimate.materialCost, constructionCost: projectEstimate.constructionCost, discount: projectEstimate.discount, total: projectEstimate.total, quantities: { materialLengthM: projectEstimate.materialLengthM, materialAreaM2: projectEstimate.materialAreaM2 } });
       const response = await fetch('/api/integrations/construction-manager/estimate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error((await response.json().catch(() => null))?.error ?? '건설매니저 제출에 실패했습니다.');
       setError('건설매니저에 견적 검토본을 제출했습니다.');
