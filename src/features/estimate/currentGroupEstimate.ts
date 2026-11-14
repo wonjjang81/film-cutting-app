@@ -68,7 +68,7 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     mergeGroupId: group.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
     filmName: group.filmName,
     subgroupName: subgroup?.name,
-    cutGroupOrder: subgroup?.cutGroupOrder,
+    cutGroupOrder: subgroup ? subgroup.cutGroupOrder ?? 1 : undefined,
     siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount),
     difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
     diagramShapeKey: subgroup?.diagramShapeKey, installationPart: subgroup?.installationPart,

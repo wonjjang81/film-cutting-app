@@ -154,7 +154,8 @@ export function planMergedGroups(
       ids.push(piece.id);
       groups.set(order, ids);
     }
-    const planned = groups.size ? packCutGroups(base, entries, [...groups].sort((a, b) => a[0] - b[0]).map(([, ids]) => ids)) : base;
+    const orderedGroups = [...groups].sort(([left], [right]) => left - right);
+    const planned = orderedGroups.length ? packCutGroups(base, entries, orderedGroups.map(([, ids]) => ids), orderedGroups.map(([order]) => order)) : base;
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
   });

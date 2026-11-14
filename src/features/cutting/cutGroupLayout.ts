@@ -4,6 +4,14 @@ import { boundedNewRollLength } from './rollLengthLimit';
 
 export const hasCutGroups = (plan: MergedGroupPlan) => plan.result.placements.some(piece => piece.cutGroup !== undefined);
 
+export function cutGroupId(order: number): string {
+  let label = '';
+  for (let value = order; value > 0; value = Math.floor((value - 1) / 26)) {
+    label = String.fromCharCode(65 + (value - 1) % 26) + label;
+  }
+  return label;
+}
+
 export function cutGroupEndLines(roll: MergedRollResult, laterRolls: readonly MergedRollResult[] = []) {
   const continues = new Set(laterRolls.flatMap(next => next.placements.map(piece => piece.cutGroup)));
   const ends = new Map<number, number>();
@@ -11,11 +19,11 @@ export function cutGroupEndLines(roll: MergedRollResult, laterRolls: readonly Me
     if (piece.cutGroup === undefined || continues.has(piece.cutGroup)) continue;
     ends.set(piece.cutGroup, Math.max(ends.get(piece.cutGroup) ?? 0, piece.y + piece.height));
   }
-  return [...ends].sort((a, b) => a[1] - b[1]).map(([group, endY]) => ({ group, endY, label: `그룹 ${group} 끝 · ${endY.toLocaleString('ko-KR')}mm` }));
+  return [...ends].sort((a, b) => a[1] - b[1]).map(([group, endY]) => ({ group, endY, label: `그룹 ${cutGroupId(group)} 끝 · ${endY.toLocaleString('ko-KR')}mm` }));
 }
 
 /** Repack only this compatible new-roll pool. Identity, quantity and remnant usage are unchanged. */
-export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedPieceRequest[], groups: readonly (readonly number[])[]): MergedGroupPlan {
+export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedPieceRequest[], groups: readonly (readonly number[])[], orders?: readonly number[]): MergedGroupPlan {
   const original = plan.result.placements;
   const pieces = new Map(original.map(piece => [piece.id, piece]));
   const specs = new Map(requests.map(entry => [`${entry.groupId}-${entry.pieceId}`, entry.request]));
@@ -78,7 +86,7 @@ export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedP
         const queue = queues.get(position.sourceId)!;
         const original = queue.pieces[queue.used++]!;
         const spec = specs.get(position.sourceId)!;
-        const piece = { ...original, x: side + position.x, y: start + position.y, width: position.rotated ? spec.pieceLengthMm : spec.pieceWidthMm, height: position.rotated ? spec.pieceWidthMm : spec.pieceLengthMm, rotated: position.rotated, cutGroup: index < groups.length ? index + 1 : undefined };
+        const piece = { ...original, x: side + position.x, y: start + position.y, width: position.rotated ? spec.pieceLengthMm : spec.pieceWidthMm, height: position.rotated ? spec.pieceWidthMm : spec.pieceLengthMm, rotated: position.rotated, cutGroup: index < groups.length ? (orders?.[index] ?? index + 1) : undefined };
         onRoll.push(piece);
         end = Math.max(end, piece.y + piece.height);
       }
