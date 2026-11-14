@@ -55,7 +55,7 @@ export function DetailedFilmEstimatePanel({ detail, editable, onChange, onExpens
     {filmEstimateCategories(detail).map(category => <View key={category.id} style={styles.category}>
       {category.id === 'labor' ? <>
         <Text style={styles.label}>인건비 · {estimateWon(category.amount)}</Text>
-        {section('preparation', '기초작업', detail.preparation, extras('preparation'))}
+        {section('preparation', '기초작업', detail.preparation, <>{detail.referencePrep.map(row => <Line key={row.id} {...row} />)}{extras('preparation')}</>)}
         {section('attachment', '필름부착', detail.constructionCost - detail.preparation, detail.labor.map((row, i) => <Line key={i} {...row} />))}
       </> : category.id === 'material' ? <>
         <Text style={styles.label}>자재비 · {estimateWon(category.amount)}</Text>

@@ -1,3 +1,4 @@
+import { LABOR_COST_PER_UNIT } from './installationLabor';
 import type { ProjectEstimate } from './calculateProjectEstimate';
 import { buildEstimateGroupBreakdown, majorGroupEstimateLabel } from './estimateBreakdownModel';
 
@@ -84,10 +85,16 @@ export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: read
   const minimum = (estimate.installationLaborLines ?? []).reduce((sum,line) => sum + (line.minimumSupplement ?? 0), 0);
   if (minimum > 0) labor.push({ name: '단독시공 최소 품수 보정', basis: '전체 합산 인건비에 한 번 적용', amount: minimum });
   // Preserve old manual expense inputs for reference, but do not charge them in addition to the percentage.
+  const referencePrep = (estimate.installationLaborLines ?? []).flatMap(line => {
+    if (!line.preparationCost) return [];
+    return [priceExtraEstimateItem({ id: 'reference-prep:' + line.id, kind: 'preparation', name: line.subgroupName + ' · 밑작업',
+      unit: '품', quantity: String(line.preparationCost / LABOR_COST_PER_UNIT), rate: String(LABOR_COST_PER_UNIT), included: false })];
+  });
   const extras = items.filter(row => row.kind !== 'expense').map(priceExtraEstimateItem);
+  const preparationAmount = referencePrep.reduce((sum, row) => sum + row.amount, 0);
   const legacyExpenses = items.filter(row => row.kind === 'expense').map(priceExtraEstimateItem);
   const auxiliary = extras.filter(row => row.kind === 'auxiliary').reduce((sum,row) => sum + row.amount, 0);
-  const preparation = extras.filter(row => row.kind === 'preparation').reduce((sum,row) => sum + row.amount, 0);
+  const preparation = preparationAmount + extras.filter(row => row.kind === 'preparation').reduce((sum,row) => sum + row.amount, 0);
   const misc = extras.filter(row => row.kind === 'misc').reduce((sum,row) => sum + row.amount, 0);
   const directExtras = auxiliary + preparation + misc;
   const netBeforeExpense = estimate.total + directExtras;
@@ -96,7 +103,7 @@ export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: read
   const withExpense = (net: number) => net + directExtras + expenseForNet(net + directExtras, expenseRate);
   const totalRange = { min: withExpense(estimate.totalRange.min), max: withExpense(estimate.totalRange.max) };
   const valid = extras.every(row => row.valid) && Number.isSafeInteger(estimate.subtotal + additionalCost);
-  return { films: [...films.values()], labor, extras, legacyExpenses, auxiliary, preparation, misc, expense, expenseRate, netBeforeExpense, totalRange, valid,
+  return { films: [...films.values()], labor, extras, referencePrep, legacyExpenses, auxiliary, preparation, misc, expense, expenseRate, netBeforeExpense, totalRange, valid,
     materialCost: estimate.materialCost + auxiliary, constructionCost: estimate.constructionCost + preparation,
     subtotal: estimate.subtotal + additionalCost, total: estimate.total + additionalCost };
 }
@@ -116,7 +123,7 @@ export function detailedFilmEstimateText(detail: DetailedFilmEstimate): string {
     `${row.name} · ${row.basis} · ${row.included ? '추가 청구 없음' : estimateWon(row.amount)}`);
   return [
     `[인건비] ${estimateWon(detail.constructionCost)}`,
-    `기초작업 소계 ${estimateWon(detail.preparation)}`, ...extras('preparation'),
+    `기초작업 소계 ${estimateWon(detail.preparation)}`, ...detail.referencePrep.map(row => `${row.name} · ${row.basis} · ${estimateWon(row.amount)}`), ...extras('preparation'),
     `필름부착 소계 ${estimateWon(detail.constructionCost - detail.preparation)}`, ...detail.labor.map(row => `${row.name} · ${row.basis} · ${estimateWon(row.amount)}`),
     `[자재비] ${estimateWon(detail.materialCost)}`,
     `주자재비 소계 ${estimateWon(detail.materialCost - detail.auxiliary)}`, ...detail.films.map(row => `${row.name} · ${number(row.length)}m × ${estimateWon(row.rate)}/m · ${estimateWon(row.amount)}`),
