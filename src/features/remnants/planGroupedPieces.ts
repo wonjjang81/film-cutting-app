@@ -9,7 +9,16 @@ import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimat
 
 export const PLACEMENT_PRIORITIES = ['basic', 'subgroup', 'length'] as const;
 export type PlacementPriority = typeof PLACEMENT_PRIORITIES[number];
-export type PlacementPreference = { priority: PlacementPriority; saveMaterial: boolean };
+export type MaterialOptimization = { enabled: boolean; percent: number };
+export type PlacementPreference = {
+  priority: PlacementPriority;
+  saveMaterial: boolean;
+  optimization?: Partial<Record<'subgroup' | 'length', MaterialOptimization>>;
+};
+
+export function materialOptimization(preference: PlacementPreference, priority: 'subgroup' | 'length'): MaterialOptimization {
+  return preference.optimization?.[priority] ?? { enabled: false, percent: 50 };
+}
 export const DEFAULT_PLACEMENT_PREFERENCE: PlacementPreference = { priority: 'subgroup', saveMaterial: true };
 
 export function parsePlacementPreference(value: unknown): PlacementPreference {
@@ -17,6 +26,13 @@ export function parsePlacementPreference(value: unknown): PlacementPreference {
   return {
     priority: saved?.priority && PLACEMENT_PRIORITIES.includes(saved.priority) ? saved.priority : DEFAULT_PLACEMENT_PREFERENCE.priority,
     saveMaterial: saved?.saveMaterial !== false,
+    optimization: Object.fromEntries((['subgroup', 'length'] as const).map(priority => {
+      const option = saved?.optimization?.[priority];
+      return [priority, {
+        enabled: option?.enabled === true,
+        percent: Number.isFinite(option?.percent) ? Math.max(0, Math.min(100, Math.round(option!.percent))) : 50,
+      }];
+    })),
   };
 }
 
@@ -160,6 +176,8 @@ export function planMergedGroups(
     const showBoundaries = !preference || preference.priority === 'subgroup';
     const strictOrder = preference && (preference.priority === 'length' || (preference.priority === 'basic' && !preference.saveMaterial));
     const grouped = Boolean(strictOrder) || (showBoundaries && entries.some(entry => entry.cutGroupOrder !== undefined));
+    const optimization = preference && preference.priority !== 'basic' ? materialOptimization(preference, preference.priority) : undefined;
+    const ratio = optimization?.enabled ? optimization.percent / 100 : 0;
     const base = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants && !grouped ? working : []);
     const orders = new Map(entries.map((entry, index) => [sourceId(entry), strictOrder
       ? (preference.priority === 'length' ? -entry.request.pieceLengthMm : index)
@@ -173,7 +191,18 @@ export function planMergedGroups(
       groups.set(order, ids);
     }
     const orderedGroups = [...groups].sort(([left], [right]) => left - right);
-    const planned = orderedGroups.length ? packCutGroups(base, entries, orderedGroups.map(([, ids]) => ids), orderedGroups.map(([order]) => order), showBoundaries) : base;
+    const strict = orderedGroups.length ? packCutGroups(base, entries, orderedGroups.map(([, ids]) => ids), orderedGroups.map(([order]) => order), showBoundaries) : base;
+    let planned = strict;
+    if (ratio > 0 && orderedGroups.length > 1) {
+      const windowSize = 1 + Math.ceil(ratio * (orderedGroups.length - 1));
+      const windows = [];
+      for (let start = 0; start < orderedGroups.length; start += windowSize) {
+        windows.push(orderedGroups.slice(start, start + windowSize).flatMap(([, ids]) => ids));
+      }
+      // Mixed windows do not have a physical straight cut between their constituent groups.
+      const compact = ratio === 1 ? base : packCutGroups(base, entries, windows, undefined, false);
+      if (compact.result.usedLengthMm < strict.result.usedLengthMm) planned = compact;
+    }
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
   });
