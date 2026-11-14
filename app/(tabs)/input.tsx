@@ -1,3 +1,4 @@
+import { DEFAULT_MATERIAL_COST_PER_M } from '../../src/features/estimate/calculateEstimate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConstructionDiagram } from '../../src/features/diagrams/ConstructionDiagram';
 import type { DiagramSelection } from '../../src/features/diagrams/diagramState';
@@ -1069,7 +1070,7 @@ export default function FilmCutInputScreen() {
       const allMergedJobs = [...preservedMergedJobs, ...mergedJobs];
       const project: SavedProject = {
         id, name, jobIds: allJobs.map((job) => job.id), mergedJobIds: allMergedJobs.map((job) => job.id),
-        materialCostPerM: optionalCost(groups[0]?.materialCostPerM) ?? 10_000,
+        materialCostPerM: optionalCost(groups[0]?.materialCostPerM) ?? DEFAULT_MATERIAL_COST_PER_M,
         constructionCostPerM2: optionalCost(groups[0]?.constructionCostPerM2) ?? 15_000,
         createdAt: existing?.createdAt ?? new Date(nowMs).toISOString(), updatedAt: new Date(nowMs).toISOString(),
       };

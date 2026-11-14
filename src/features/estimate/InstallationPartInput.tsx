@@ -49,7 +49,7 @@ export function InstallationPartInput({ part, rate, onChange }: {
     <Modal visible={visible} transparent animationType="fade" onRequestClose={() => setVisible(false)}>
       <View style={styles.backdrop}><View style={styles.dialog}>
         <View style={styles.row}><Text style={styles.title}>시공 부위 · 인건비 설정</Text><TouchableOpacity accessibilityRole="button" onPress={() => setVisible(false)}><Text style={styles.label}>닫기</Text></TouchableOpacity></View>
-        <Text style={styles.hint}>기본 단가는 전체 시공 범위의 중간값입니다. 이 소그룹에 배분된 필름 사용 길이(m)에 적용하며, 단독 시공은 참고 범위를 보고 직접 조정해 주세요.</Text>
+        <Text style={styles.hint}>부착 인건비 단가를 소그룹에 배분된 원단 길이(m)에 적용합니다. 단독시공은 전체 합산 인건비에 최소 0.5품을 적용합니다.</Text>
         <ScrollView style={styles.options}>
           <TouchableOpacity accessibilityRole="button" onPress={() => { onChange(undefined, undefined); setVisible(false); }} style={styles.option}><Text>부위 미선택 · 기존 난이도 적용</Text></TouchableOpacity>
           {installationPartOptions(custom).map((item) => <TouchableOpacity key={item.name} accessibilityRole="button" onPress={() => { setName(item.name); setCost(String(item.costPerM)); setError(''); }} style={[styles.option, name === item.name && styles.selected]}><View style={styles.optionCopy}><Text>{item.name}</Text>{item.reference && <Text style={styles.hint}>{item.reference}</Text>}</View><Text>{item.costPerM.toLocaleString('ko-KR')}원/m</Text></TouchableOpacity>)}

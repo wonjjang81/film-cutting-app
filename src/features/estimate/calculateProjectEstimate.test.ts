@@ -5,6 +5,78 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('prices equal fitted areas by their actual workload and applies the solo floor once', () => {
+    const base = job('plate', 12_000);
+    const flat = { ...base, groupId: 'group-1', subgroupName: '평판', input: { ...base.input, quantity: 40 } };
+    const complex = { ...flat, id: 'complex', subgroupName: '세부 마감' };
+    const installationWorkloads = {
+      'group-1::평판': { enabled: true, sheets: '4', finishingM: '8', details: '0' },
+      'group-1::세부 마감': { enabled: true, sheets: '12', finishingM: '20', details: '8' },
+    };
+    const options = { netInstallationArea: true, installationMode: 'whole' as const, installationWorkloads };
+    const result = calculateProjectEstimate([flat, complex], 9_000, 15_000, 0, [], options);
+    expect(result.installationLaborLines?.map(line => [line.workloadMinutes, line.constructionCost])).toEqual([[168, 87_500], [288, 150_000]]);
+    expect(result.materialCost).toBe(216_000);
+    expect(result.constructionCostRange).toEqual({ min: 237_500, max: 237_500 });
+    expect(calculateProjectEstimate([flat], 9_000, 15_000, 0, [], { ...options, installationMode: 'standalone' }).constructionCost).toBe(125_000);
+    expect(calculateProjectEstimate([flat, complex], 9_000, 15_000, 0, [], { ...options, installationMode: 'standalone' }).constructionCost).toBe(237_500);
+    expect(calculateProjectEstimate([flat], 9_000, 15_000, 0, [], { ...options, rateMode: 'global' }).constructionCost).toBe(150_000);
+  });
+
+  it('keeps existing labor on incomplete workload input and counts a merged subgroup only once', () => {
+    const base = job('a', 6000);
+    const first = { ...base, subgroupName: '평판', groupId: 'group-1' };
+    const second = { ...first, id: 'b' };
+    const merged = {
+      id: 'merged', name: '롤', mergeGroupId: 'auto', groupNames: ['그룹 1'], sourceJobIds: ['a', 'b'],
+      createdAt: base.createdAt, updatedAt: base.updatedAt, rollWidthMm: 1220, usedLengthMm: 10_000,
+      producedQuantity: 40, utilizationPercent: 80, wastePercent: 20, placements: [],
+    };
+    const workload = { enabled: true, sheets: '4', finishingM: '8', details: '0' };
+    const calculate = (details: string) => calculateProjectEstimate([first, second], 9_000, 15_000, 0, [merged], {
+      netInstallationArea: true, installationMode: 'whole',
+      installationWorkloads: { 'group-1::평판': { ...workload, details } },
+    });
+    expect(calculate('').constructionCost).toBe(150_000);
+    const result = calculate('0');
+    expect(result.constructionCost).toBe(87_500);
+    expect(result.materialCost).toBe(90_000);
+    expect(result.mergedJobs[0]?.sourceDetails?.map(line => line.estimate.constructionCost)).toEqual([43_750, 43_750]);
+  });
+
+  it('excludes deferred pieces from the quoted quantities and material', () => {
+    const active = job('active', 1000);
+    const deferred = job('deferred', 3000);
+    const result = calculateProjectEstimate([active, { ...deferred, input: { ...deferred.input, placementDeferred: true } }]);
+    expect(result.inputPieceCount).toBe(active.input.quantity);
+    expect(result.materialLengthM).toBe(1);
+    expect(result.materialCost).toBe(9_000);
+  });
+
+  it('uses net fitted area and the standard film rate when no rate is saved', () => {
+    const base = job('panel', 2000);
+    const panel = { ...base, subgroupName: '패널', difficulty: 'medium' as const,
+      input: { ...base.input, sourcePieceWidthMm: 200, sourcePieceLengthMm: 300, cutAllowanceMm: 50, quantity: 2 } };
+    const estimate = calculateProjectEstimate([panel], undefined, 15_000, 0, [], { netInstallationArea: true });
+    expect(estimate.materialCost).toBe(18_000);
+    expect(estimate.constructionCost).toBe(1_800);
+    expect(estimate.constructionCostRange).toEqual({ min: 1_020, max: 3_000 });
+    expect(calculateProjectEstimate([{ ...panel, materialCostPerM: 17_000 }]).materialCost).toBe(34_000);
+  });
+
+  it('uses catalog rates for matching parts and preserves a same-part subgroup override', () => {
+    const source = { ...job('molding', 1000), groupId: 'group-1', subgroupName: '천장 몰딩2' };
+    const options = { installationMode: 'whole' as const, installationPartRates: [
+      { name: '몰딩', costPerM: 18_000 }, { name: '중문', costPerM: 17_000 },
+    ] };
+    expect(calculateProjectEstimate([source], undefined, undefined, 0, [], options).constructionCost).toBe(18_000);
+    const saved = { ...source, installationPart: '몰딩', constructionCostPerM: 16_000 };
+    expect(calculateProjectEstimate([saved], undefined, undefined, 0, [], options).constructionCost).toBe(16_000);
+    expect(calculateProjectEstimate([saved], undefined, undefined, 0, [], {
+      ...options, installationPartsBySubgroupId: { 'group-1::천장 몰딩2': '중문' },
+    }).constructionCost).toBe(17_000);
+  });
+
   it('applies the standalone half-unit minimum to all subgroup labor combined exactly once', () => {
     const sources = [
       { ...job('a', 1000), groupId: 'group-1', subgroupName: '책장', installationPart: '책장' },

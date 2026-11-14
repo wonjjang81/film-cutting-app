@@ -1,3 +1,4 @@
+import { DEFAULT_INSTALLATION_PARTS, type InstallationPartRate } from './installationPartPricing';
 import type { SavedCuttingJob } from '../library/models';
 
 export const LABOR_COST_PER_UNIT = 250_000;
@@ -22,11 +23,21 @@ export function installationSubgroupKey(job: SavedCuttingJob): string {
   return `${job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류'}::${job.subgroupName?.trim() || '미분류'}`;
 }
 
-export function resolveInstallationPart(job: SavedCuttingJob, overrides: Readonly<Record<string, string | undefined>> = {}): string | undefined {
+export function resolveInstallationPart(job: SavedCuttingJob, overrides: Readonly<Record<string, string | undefined>> = {}, parts = DEFAULT_INSTALLATION_PARTS): string | undefined {
   const override = overrides[installationSubgroupKey(job)];
   if (override !== undefined) return override || undefined;
   if (job.installationPart?.trim()) return job.installationPart.trim();
-  return INSTALLATION_LABOR_REFERENCES.find((part) => part.name === job.subgroupName?.trim())?.name;
+  const exactName = job.subgroupName?.trim();
+  if (parts.some((part) => part.name === exactName)) return exactName;
+  const name = exactName?.replace(/(?:\s*\d+|[A-Z])$/, '').trim();
+  const aliases: Record<string, string> = { 천장몰딩: '몰딩', 천정몰딩: '몰딩', 현관문: '현관문 안쪽' };
+  return parts.find((part) => part.name === name)?.name ?? parts.find((part) => part.name === aliases[name?.replace(/\s/g, '') ?? ''])?.name;
+}
+
+export function calculateConfiguredInstallationLabor(job: SavedCuttingJob, part: string, lengthM: number, mode: InstallationMode, parts?: readonly InstallationPartRate[]) {
+  const savedRate = job.installationPart?.trim() === part || (!parts && !job.installationPart) ? job.constructionCostPerM : undefined;
+  const rate = parts?.find((entry) => entry.name === part)?.costPerM;
+  return calculateInstallationLabor(part, lengthM, mode, savedRate, parts ? savedRate ?? rate : undefined);
 }
 
 export type InstallationLaborCalculation = {
@@ -46,12 +57,13 @@ export type InstallationLaborCalculation = {
 const format = (number: number) => number.toLocaleString('ko-KR', { maximumFractionDigits: 6 });
 
 /** Average reference units scale by length. The solo minimum is applied separately to the project sum. */
-export function calculateInstallationLabor(part: string, lengthM: number, mode: InstallationMode, customRate?: number): InstallationLaborCalculation | undefined {
-  const reference = INSTALLATION_LABOR_REFERENCES.find((item) => item.name === part);
+export function calculateInstallationLabor(part: string, lengthM: number, mode: InstallationMode, customRate?: number, catalogRate?: number): InstallationLaborCalculation | undefined {
+  const reference = catalogRate === undefined ? INSTALLATION_LABOR_REFERENCES.find((item) => item.name === part) : undefined;
+  const rate = customRate ?? catalogRate ?? DEFAULT_INSTALLATION_PARTS.find((item) => item.name === part)?.costPerM;
   const length = Number.isFinite(lengthM) ? Math.max(0, lengthM) : 0;
   const averageUnits = reference ? (reference.minUnits + reference.maxUnits) / 2 : undefined;
   const unitsPerM = reference ? averageUnits! / reference.lengthM
-    : customRate !== undefined && Number.isFinite(customRate) && customRate >= 0 ? customRate / LABOR_COST_PER_UNIT : undefined;
+    : rate !== undefined && Number.isFinite(rate) && rate >= 0 ? rate / LABOR_COST_PER_UNIT : undefined;
   if (unitsPerM === undefined) return undefined;
   const allocatedUnits = length * unitsPerM;
   const billedUnits = allocatedUnits;

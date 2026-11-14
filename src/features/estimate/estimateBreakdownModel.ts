@@ -1,5 +1,5 @@
 import type { SavedCuttingJob } from '../library/models';
-import type { Estimate } from './calculateEstimate';
+import { netInstallationAreaM2, type Estimate } from './calculateEstimate';
 import type { ProjectEstimate } from './calculateProjectEstimate';
 
 export type EstimateBreakdownAmounts = Pick<Estimate, 'materialLengthM' | 'materialAreaM2' | 'materialCost' | 'constructionCost' | 'subtotal'>;
@@ -11,6 +11,7 @@ export type SubgroupEstimateBreakdown = {
   inputQuantity: number;
   siteCount?: number;
   laborDescription?: string;
+  installationAreaM2?: number;
   amounts: EstimateBreakdownAmounts;
 };
 
@@ -78,8 +79,13 @@ export function buildEstimateGroupBreakdown(estimate: Pick<ProjectEstimate, 'job
     subgroup.pieceCount += 1;
     subgroup.inputQuantity += job.input.quantity;
     if (job.siteCount !== undefined) subgroup.siteCounts.add(job.siteCount);
-    if (rates.constructionCostPerM !== undefined) subgroup.laborDescriptions.add(`${rates.installationPart ?? job.installationPart} · ${rates.constructionCostPerM.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원/m`);
+    if (rates.workloadPriced) subgroup.laborDescriptions.add('작업량 기준 · 참고 산정');
+    else if (rates.constructionCostPerM !== undefined) subgroup.laborDescriptions.add(`${rates.installationPart ?? job.installationPart} · ${rates.constructionCostPerM.toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원/m`);
+    else if (rates.netInstallationArea) subgroup.laborDescriptions.add(`부착 면적 단가 ${rates.constructionCostPerM2.toLocaleString('ko-KR')}원/m²`);
     else subgroup.laborDescriptions.add(`${rates.constructionCostPerM2.toLocaleString('ko-KR')}원/m²`);
+    if (rates.netInstallationArea && rates.constructionCostPerM === undefined) {
+      subgroup.installationAreaM2 = (subgroup.installationAreaM2 ?? 0) + netInstallationAreaM2(job);
+    }
     addAmounts(group.amounts, amounts);
     addAmounts(subgroup.amounts, amounts);
     group.subgroups.set(subgroupName, subgroup);

@@ -1,11 +1,15 @@
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
-import { calculateEstimateAtRates, CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MIN, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M, type Estimate } from './calculateEstimate';
+import { calculateEstimateAtRates, CONSTRUCTION_PRICE_MAX, CONSTRUCTION_PRICE_MIN, DEFAULT_CONSTRUCTION_COST_PER_M2, DEFAULT_MATERIAL_COST_PER_M, netInstallationAreaM2, type Estimate } from './calculateEstimate';
 import { constructionRateForDifficulty } from './difficultyPricing';
 import { installationSubgroupKey, type InstallationMode } from './installationLabor';
 import { repriceInstallationLabor, type InstallationLaborLine } from './repriceInstallationLabor';
 
+import type { InstallationPartRate } from './installationPartPricing';
+
+import type { InstallationWorkload } from './installationWorkload';
+
 export type EstimateRateMode = 'group' | 'global';
-export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; constructionCostPerM?: number; installationPart?: string; mixed?: boolean };
+export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; netInstallationArea?: boolean; workloadPriced?: boolean; constructionCostPerM?: number; installationPart?: string; mixed?: boolean };
 export type ProjectEstimateLine<TJob> = {
   job: TJob;
   estimate: Estimate;
@@ -27,6 +31,10 @@ export type ProjectEstimate = Estimate & {
 
 export type RateOptions = {
   rateMode?: EstimateRateMode;
+  /** Use pre-allowance piece dimensions for area-priced installation. */
+  netInstallationArea?: boolean;
+  installationWorkloads?: Record<string, InstallationWorkload>;
+  installationPartRates?: readonly InstallationPartRate[];
   installationMode?: InstallationMode;
   installationPartsBySubgroupId?: Record<string, string | undefined>;
   /** Optional material rate entered once for every major group. */
@@ -40,14 +48,16 @@ function finiteRate(value: number | undefined, fallback: number): number {
 }
 
 function ratesForJob(job: SavedCuttingJob, materialCostPerM: number, constructionCostPerM2: number, mode: EstimateRateMode, options: RateOptions): EstimateRateSummary {
-  const hasDifficultyContext = job.difficulty !== undefined || job.subgroupName !== undefined;
+  const hasDifficultyContext = options.netInstallationArea
+    ? job.difficulty !== undefined && job.difficulty !== 'medium'
+    : job.difficulty !== undefined || job.subgroupName !== undefined;
   const effectiveConstructionCost = job.constructionCostPerM2 ?? (hasDifficultyContext ? constructionRateForDifficulty(job.difficulty) : constructionCostPerM2);
   const jobMaterialRate = options.materialRatesByJobId?.[job.id];
   const groupMaterialRate = job.groupId === undefined ? undefined : options.materialRatesByGroupId?.[job.groupId];
   const effectiveMaterialCost = jobMaterialRate ?? groupMaterialRate ?? job.materialCostPerM ?? materialCostPerM;
   return mode === 'global'
-    ? { materialCostPerM, constructionCostPerM2 }
-    : { materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2),
+    ? { materialCostPerM, constructionCostPerM2, netInstallationArea: options.netInstallationArea }
+    : { netInstallationArea: options.netInstallationArea, materialCostPerM: finiteRate(effectiveMaterialCost, materialCostPerM), constructionCostPerM2: finiteRate(effectiveConstructionCost, constructionCostPerM2),
       ...(options.installationPartsBySubgroupId?.[installationSubgroupKey(job)] !== '' && job.installationPart && job.constructionCostPerM !== undefined && Number.isFinite(job.constructionCostPerM) && job.constructionCostPerM >= 0 ? { constructionCostPerM: job.constructionCostPerM, installationPart: job.installationPart } : {}) };
 }
 
@@ -78,6 +88,7 @@ export function calculateProjectEstimate(
   mergedJobs: readonly SavedMergedCuttingJob[] = [],
   options: RateOptions = {},
 ): ProjectEstimate {
+  jobs = jobs.filter((job) => !job.input.placementDeferred);
   const rateMode = options.rateMode ?? 'group';
   const inputPieceCount = jobs.reduce((sum, job) => {
     const quantity = Number.isFinite(job.input.quantity) ? Math.max(0, Math.floor(job.input.quantity)) : 0;
@@ -86,7 +97,7 @@ export function calculateProjectEstimate(
   const mergedSourceIds = new Set(mergedJobs.flatMap((mergedJob) => mergedJob.sourceJobIds));
   const details = jobs.filter((job) => !mergedSourceIds.has(job.id)).map((job) => {
     const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
-    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, undefined, rates.constructionCostPerM) };
+    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, undefined, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined) };
   });
   const mergedDetails = mergedJobs.flatMap((mergedJob) => {
     const sources = mergedJob.sourceJobIds.map((sourceId) => jobs.find((job) => job.id === sourceId)).filter((job): job is SavedCuttingJob => Boolean(job));
@@ -107,7 +118,7 @@ export function calculateProjectEstimate(
         materialLengthMm: mergedJob.usedLengthMm * share,
         materialWidthMm: mergedJob.rollWidthMm,
         productAreaM2: requestedAreas[index]!,
-      }, rates.constructionCostPerM);
+      }, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined);
       return { job, estimate, rates };
     });
     const estimate = sumEstimates(sourceDetails.map((item) => item.estimate));
@@ -115,7 +126,7 @@ export function calculateProjectEstimate(
     return [{ job: mergedJob, estimate, rates, sourceDetails }];
   });
   const installationLaborLines = options.installationMode && rateMode !== 'global'
-    ? repriceInstallationLabor([...details, ...mergedDetails.flatMap((line) => line.sourceDetails)], options.installationMode, options.installationPartsBySubgroupId)
+    ? repriceInstallationLabor([...details, ...mergedDetails.flatMap((line) => line.sourceDetails)], options.installationMode, options.installationPartsBySubgroupId, options.installationPartRates, options.installationWorkloads)
     : undefined;
   if (installationLaborLines) mergedDetails.forEach((line) => {
     line.estimate = sumEstimates(line.sourceDetails.map((source) => source.estimate));
@@ -128,8 +139,8 @@ export function calculateProjectEstimate(
   const materialAreaM2 = allDetails.reduce((sum, item) => sum + item.estimate.materialAreaM2, 0);
   const constructionCost = allDetails.reduce((sum, item) => sum + item.estimate.constructionCost, 0);
   const pricedSources = [...details, ...mergedDetails.flatMap((line) => line.sourceDetails)];
-  const fixedLabor = pricedSources.filter((line) => line.rates.constructionCostPerM !== undefined).reduce((sum, line) => sum + line.estimate.constructionCost, 0);
-  const variableArea = pricedSources.filter((line) => line.rates.constructionCostPerM === undefined).reduce((sum, line) => sum + line.estimate.materialAreaM2, 0);
+  const fixedLabor = pricedSources.filter((line) => line.rates.workloadPriced || line.rates.constructionCostPerM !== undefined).reduce((sum, line) => sum + line.estimate.constructionCost, 0);
+  const variableArea = pricedSources.filter((line) => !line.rates.workloadPriced && line.rates.constructionCostPerM === undefined).reduce((sum, line) => sum + (options.netInstallationArea ? netInstallationAreaM2(line.job) : line.estimate.materialAreaM2), 0);
   const constructionCostRange = {
     min: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MIN)),
     max: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MAX)),

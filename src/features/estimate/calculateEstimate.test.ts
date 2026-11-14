@@ -19,8 +19,8 @@ describe('calculateEstimate', () => {
   });
   it('calculates default material, construction, and tier discount', () => {
     expect(calculateEstimate(job)).toEqual({
-      materialLengthM: 2, materialAreaM2: 2.44, materialCost: 20_000, productAreaM2: 2.5,
-      constructionCost: 36_600, subtotal: 56_600, discountRate: 0.05, discount: 2_830, total: 53_770,
+      materialLengthM: 2, materialAreaM2: 2.44, materialCost: 18_000, productAreaM2: 2.5,
+      constructionCost: 36_600, subtotal: 54_600, discountRate: 0.05, discount: 2_730, total: 51_870,
     });
   });
 

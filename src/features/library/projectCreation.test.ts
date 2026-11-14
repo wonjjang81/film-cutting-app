@@ -29,7 +29,7 @@ describe('createEmptyProject', () => {
       name: '현장 A',
       jobIds: [],
       mergedJobIds: [],
-      materialCostPerM: 10_000,
+      materialCostPerM: 9_000,
       constructionCostPerM2: 15_000,
       createdAt: '2026-09-05T12:00:00.000Z',
       updatedAt: '2026-09-05T12:00:00.000Z',

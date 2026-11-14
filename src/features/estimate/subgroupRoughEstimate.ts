@@ -1,7 +1,9 @@
 import type { ConstructionDifficulty } from './difficultyPricing';
 import { constructionRateForDifficulty } from './difficultyPricing';
 import type { SavedCuttingJob } from '../library/models';
-import { allocateLaborCost, calculateInstallationLabor, installationSubgroupKey, resolveInstallationPart, type InstallationMode, type InstallationLaborCalculation } from './installationLabor';
+import { allocateLaborCost, calculateConfiguredInstallationLabor, installationSubgroupKey, resolveInstallationPart, type InstallationMode, type InstallationLaborCalculation } from './installationLabor';
+
+import type { InstallationPartRate } from './installationPartPricing';
 
 export type SubgroupOverallDimensions = {
   widthMm: number;
@@ -92,12 +94,14 @@ export function buildSubgroupRoughEstimateLines(
     materialRatesByGroupId?: Record<string, number | undefined>;
     globalRateOverride?: boolean;
     installationMode?: InstallationMode;
+    netInstallationArea?: boolean;
+    installationPartRates?: readonly InstallationPartRate[];
     installationPartsBySubgroupId?: Record<string, string | undefined>;
   },
 ): SubgroupRoughEstimateLine[] {
   const unique = new Map<string, SavedCuttingJob>();
   for (const job of jobs) {
-    if (!hasSubgroupOverallDimensions(job.subgroupOverallDimensions)) continue;
+    if (job.input.placementDeferred || !hasSubgroupOverallDimensions(job.subgroupOverallDimensions)) continue;
     const groupId = job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류';
     const subgroupName = job.subgroupName?.trim() || '미분류';
     const key = `${groupId}::${subgroupName}`;
@@ -113,10 +117,10 @@ export function buildSubgroupRoughEstimateLines(
       : options.materialRatesByGroupId?.[groupId] ?? job.materialCostPerM ?? options.materialCostPerM;
     const constructionCostPerM2 = options.globalRateOverride
       ? options.constructionCostPerM2
-      : job.constructionCostPerM2;
-    const rough = calculateSubgroupRoughEstimate(dimensions, { siteCount, materialCostPerM, constructionCostPerM2, constructionCostPerM: !options.globalRateOverride && options.installationPartsBySubgroupId?.[installationSubgroupKey(job)] !== '' && job.installationPart ? job.constructionCostPerM : undefined, difficulty: job.difficulty });
-    const part = resolveInstallationPart(job, options.installationPartsBySubgroupId);
-    const installationLabor = !options.globalRateOverride && options.installationMode && part ? calculateInstallationLabor(part, rough.materialLengthM, options.installationMode, job.constructionCostPerM) : undefined;
+      : job.constructionCostPerM2 ?? (options.netInstallationArea && (!job.difficulty || job.difficulty === 'medium') ? options.constructionCostPerM2 : undefined);
+    const rough = calculateSubgroupRoughEstimate(dimensions, { siteCount, rollWidthMm: job.input.rollWidthMm, materialCostPerM, constructionCostPerM2, constructionCostPerM: !options.globalRateOverride && options.installationPartsBySubgroupId?.[installationSubgroupKey(job)] !== '' && job.installationPart ? job.constructionCostPerM : undefined, difficulty: job.difficulty });
+    const part = resolveInstallationPart(job, options.installationPartsBySubgroupId, options.installationPartRates);
+    const installationLabor = !options.globalRateOverride && options.installationMode && part ? calculateConfiguredInstallationLabor(job, part, rough.materialLengthM, options.installationMode, options.installationPartRates) : undefined;
     return {
       id,
       groupId,
