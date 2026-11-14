@@ -9,6 +9,23 @@ const request = (pieceId: string, width: number, length: number, quantity = 1): 
   request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity, gapMm: 3, sideMarginMm: 7, startEndMarginMm: 5, allowRotation: false, remnants: [] },
 });
 describe('cut group layout', () => {
+  it('uses input order with savings off, descending length, or explicit subgroup IDs', () => {
+    const entries = [
+      { ...request('short', 300, 250), cutGroupOrder: 2 },
+      { ...request('long', 310, 500), cutGroupOrder: 1 },
+      { ...request('middle', 300, 350), cutGroupOrder: 2 },
+    ];
+    const plan = (priority: 'basic' | 'length' | 'subgroup', saveMaterial = true) =>
+      planMergedGroups(entries, 1220, [], false, { priority, saveMaterial })[0]!;
+    const order = (priority: 'basic' | 'length', saveMaterial: boolean) =>
+      plan(priority, saveMaterial).result.placements.map(piece => piece.sourceId);
+    expect(order('basic', false)).toEqual(['g1-short', 'g1-long', 'g1-middle']);
+    expect(order('length', true)).toEqual(['g1-long', 'g1-middle', 'g1-short']);
+    expect(plan('basic').result.usedLengthMm).toBeLessThan(plan('basic', false).result.usedLengthMm);
+    expect(plan('length').result.placements.every(piece => piece.cutGroup === undefined)).toBe(true);
+    expect(plan('subgroup').result.placements.map(piece => piece.cutGroup)).toEqual([1, 2, 2]);
+  });
+
   it('applies ranked subgroup requests to all copies and keeps separate products apart', () => {
     const requests = [
       { ...request('a', 300, 500, 2), cutGroupOrder: 2 },

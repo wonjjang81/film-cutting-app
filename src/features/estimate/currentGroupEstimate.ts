@@ -1,6 +1,6 @@
 import { buildSavedCuttingJob, toRemnantPlanRequest } from '../library/uiWorkflowHelpers';
 import type { SavedCuttingJob, SavedMergedCuttingJob } from '../library/models';
-import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
+import { AUTO_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, parsePlacementPreference, type PlacementPreference, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from '../library/uiWorkflowHelpers';
 import { multiplyPieceQuantityBySiteCount, normalizeSubgroupSiteCount, subgroupPieceDisplayName } from '../library/subgroupCards';
 import { normalizeDifficulty, type ConstructionDifficulty } from './difficultyPricing';
@@ -22,7 +22,7 @@ export type CurrentEstimateGroupSource = {
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
-export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[]; projectId?: string };
+export type CurrentEstimateSnapshot = { pieces: CurrentEstimateGroupSource[]; projectId?: string; placementPreference?: PlacementPreference };
 export type CurrentEstimatePlan = {
   groupedPlans: GroupedPiecePlan[];
   mergedPlans: MergedGroupPlan[];
@@ -30,8 +30,8 @@ export type CurrentEstimatePlan = {
   subgroupNamesBySourceId: Record<string, string>;
 };
 
-export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[], projectId?: string | null): CurrentEstimateSnapshot {
-  return { ...(projectId ? { projectId } : {}), pieces: groups.map((group) => ({
+export function createCurrentEstimateSnapshot(groups: readonly CurrentEstimateGroupSource[], projectId?: string | null, placementPreference?: PlacementPreference): CurrentEstimateSnapshot {
+  return { ...(placementPreference ? { placementPreference } : {}), ...(projectId ? { projectId } : {}), pieces: groups.map((group) => ({
     ...group,
     subgroups: group.subgroups?.map((subgroup) => ({ ...subgroup, pieceIds: [...subgroup.pieceIds], ...(subgroup.overallDimensions === undefined ? {} : { overallDimensions: { ...subgroup.overallDimensions } }) })),
     pieces: group.pieces.map((piece) => ({ ...piece, form: { ...piece.form } })),
@@ -44,7 +44,7 @@ export function parseCurrentEstimateSnapshot(raw: string | null): CurrentEstimat
     const parsed = JSON.parse(raw) as Partial<CurrentEstimateSnapshot>;
     if (!Array.isArray(parsed.pieces) || parsed.pieces.length === 0) return null;
     const validGroups = parsed.pieces.filter((group): group is CurrentEstimateGroupSource => Boolean(group && typeof group.id === 'string' && typeof group.name === 'string' && Array.isArray(group.pieces)));
-    return validGroups.length > 0 ? { pieces: validGroups, ...(typeof parsed.projectId === 'string' && parsed.projectId.trim() ? { projectId: parsed.projectId.trim() } : {}) } : null;
+    return validGroups.length > 0 ? { pieces: validGroups, ...(parsed.placementPreference ? { placementPreference: parsePlacementPreference(parsed.placementPreference) } : {}), ...(typeof parsed.projectId === 'string' && parsed.projectId.trim() ? { projectId: parsed.projectId.trim() } : {}) } : null;
   } catch {
     return null;
   }
@@ -104,7 +104,7 @@ export function calculateCurrentGroupPlan(snapshot: CurrentEstimateSnapshot): Cu
   if (requests.length === 0) return { groupedPlans: [], mergedPlans: [], pieceNamesBySourceId: {}, subgroupNamesBySourceId: {} };
   // Compatible major groups share physical rolls; product/brand and cutting
   // conditions are checked by planMergedGroups before any pieces are mixed.
-  const mergedPlans = planMergedGroups(requests, 1_220, [], false);
+  const mergedPlans = planMergedGroups(requests, 1_220, [], false, snapshot.placementPreference);
   return { groupedPlans: planGroupedPieces(requests, []), mergedPlans, pieceNamesBySourceId, subgroupNamesBySourceId };
 }
 

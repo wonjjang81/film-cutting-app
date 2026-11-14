@@ -56,6 +56,16 @@ const server = http.createServer((req,res)=>{
     await button('배치계획으로 이동').click();
     await lineA.waitFor();
     assert.equal(await lineB.count(),0);
+    await button('재단계산에서 그룹화 변경').click();
+    await button('길이별').click();
+    await page.getByRole('switch',{ name: '기본 원단절약 우선' }).click();
+    await button('현재 그룹의 모든 조각 자동 배치 계산').click();
+    for (const label of ['기본', '소그룹별', '길이별']) {
+      await page.getByText(new RegExp('^' + label + '.*m · .*%$')).waitFor();
+    }
+    await button('배치계획으로 이동').click();
+    await button('완전히 빈 구간 제거').waitFor();
+    assert.equal(await lineA.count(),0);
     console.log('PASS: default A, create B, restore on reload, same-ID grouping, and alphabetical boundaries.');
   }finally{await browser.close();await new Promise(resolve=>server.close(resolve));}
 })().catch(error=>{console.error(error);process.exitCode=1;});
