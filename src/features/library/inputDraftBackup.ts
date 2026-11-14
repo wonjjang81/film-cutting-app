@@ -3,7 +3,7 @@ import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
 export type CuttingPieceDraft = { id: string; name: string; form: CuttingFormState };
 export type EditableSubgroupOverallDimensions = { widthMm: string; heightMm: string; depthMm: string; doorCount: string };
-export type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number };
+export type CuttingSubgroupDraft = { id: string; name: string; pieceIds: string[]; expanded: boolean; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number; cutGroupOrder?: number };
 export type CuttingGroupDraft = { id: string; displayId: string; name: string; form: CuttingFormState; pieces: CuttingPieceDraft[]; subgroups: CuttingSubgroupDraft[]; mergeGroupId?: string; filmName: string; materialCostPerM: string; constructionCostPerM2: string; patternFixed: boolean };
 
 export type InputDraftBackup = {
@@ -30,6 +30,7 @@ function validGroup(value: unknown): value is CuttingGroupDraft {
   if (new Set(value.pieces.map(piece => piece.id)).size !== value.pieces.length) return false;
   return Array.isArray(value.subgroups) && value.subgroups.every(subgroup => record(subgroup) && typeof subgroup.id === 'string' && typeof subgroup.name === 'string'
     && typeof subgroup.siteCount === 'string' && typeof subgroup.expanded === 'boolean' && typeof subgroup.difficulty === 'string'
+    && (subgroup.cutGroupOrder === undefined || (typeof subgroup.cutGroupOrder === 'number' && Number.isSafeInteger(subgroup.cutGroupOrder) && subgroup.cutGroupOrder > 0))
     && record(subgroup.overallDimensions) && ['widthMm', 'heightMm', 'depthMm', 'doorCount'].every(key => typeof (subgroup.overallDimensions as Record<string, unknown>)[key] === 'string')
     && Array.isArray(subgroup.pieceIds) && subgroup.pieceIds.every(id => typeof id === 'string' && (value.pieces as CuttingPieceDraft[]).some(piece => piece.id === id)));
 }

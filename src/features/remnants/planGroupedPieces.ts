@@ -2,6 +2,7 @@ import type { FilmRemnant } from '../library/models';
 import { optimizeMergedRollLayout, type MergedPlacement, type MergedRollPiece, type MergedRollResult } from '../cutting/optimizeMergedRollLayout';
 import { boundedNewRollLength } from '../cutting/rollLengthLimit';
 import { consolidateRolls } from '../cutting/consolidateRolls';
+import { packCutGroups } from '../cutting/cutGroupLayout';
 import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPlanRequest } from './planWithRemnants';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
@@ -14,6 +15,7 @@ export type GroupedPieceRequest = {
   mergeGroupId?: string;
   filmName?: string;
   subgroupName?: string;
+  cutGroupOrder?: number;
   /** Per-location piece quantity multiplier; defaults to one for legacy data. */
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
@@ -140,8 +142,19 @@ export function planMergedGroups(
     buckets.set(key, bucket);
   }
   let working = inventory.map((item) => ({ ...item }));
-  return [...buckets.values()].filter((entries) => entries.length > 1 || entries.some((entry) => (entry.siteCount ?? 1) > 1)).map((entries) => {
-    const planned = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants ? working : []);
+  return [...buckets.values()].filter((entries) => entries.length > 1 || entries.some((entry) => (entry.siteCount ?? 1) > 1 || entry.cutGroupOrder !== undefined)).map((entries) => {
+    const grouped = entries.some(entry => entry.cutGroupOrder !== undefined);
+    const base = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants && !grouped ? working : []);
+    const orders = new Map(entries.map(entry => [sourceId(entry), entry.cutGroupOrder]));
+    const groups = new Map<number, number[]>();
+    for (const piece of base.result.placements) {
+      const order = orders.get(piece.sourceId);
+      if (order === undefined) continue;
+      const ids = groups.get(order) ?? [];
+      ids.push(piece.id);
+      groups.set(order, ids);
+    }
+    const planned = groups.size ? packCutGroups(base, entries, [...groups].sort((a, b) => a[0] - b[0]).map(([, ids]) => ids)) : base;
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
   });

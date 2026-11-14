@@ -88,6 +88,7 @@ export type BuildSavedCuttingJobOptions = {
   materialCostPerM?: number;
   constructionCostPerM2?: number;
   subgroupName?: string;
+  cutGroupOrder?: number;
   siteCount?: number;
   difficulty?: ConstructionDifficulty;
   subgroupOverallDimensions?: SubgroupOverallDimensions;
@@ -109,6 +110,7 @@ export function buildSavedCuttingJob({
   materialCostPerM,
   constructionCostPerM2,
   subgroupName,
+  cutGroupOrder,
   siteCount,
   difficulty,
   subgroupOverallDimensions,
@@ -158,6 +160,7 @@ export function buildSavedCuttingJob({
     ...(materialCostPerM === undefined ? {} : { materialCostPerM }),
     ...(constructionCostPerM2 === undefined ? {} : { constructionCostPerM2 }),
     ...(subgroupName?.trim() ? { subgroupName: subgroupName.trim() } : {}),
+    ...(cutGroupOrder === undefined ? {} : { cutGroupOrder }),
     ...(siteCount === undefined ? {} : { siteCount }),
     ...(difficulty === undefined ? {} : { difficulty }),
     ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions: { ...subgroupOverallDimensions } }),

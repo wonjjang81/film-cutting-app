@@ -284,6 +284,7 @@ function validateJob(value: unknown): SavedCuttingJob | undefined {
     createdAt, updatedAt, input,
     ...(value.filmName === undefined ? {} : { filmName: value.filmName }),
     ...(value.subgroupName === undefined ? {} : { subgroupName: value.subgroupName }),
+    ...(typeof value.cutGroupOrder === 'number' && Number.isSafeInteger(value.cutGroupOrder) && value.cutGroupOrder > 0 ? { cutGroupOrder: value.cutGroupOrder } : {}),
     ...(value.siteCount === undefined ? {} : { siteCount: value.siteCount }),
     ...(value.difficulty === undefined ? {} : { difficulty: value.difficulty }),
     ...(subgroupOverallDimensions === undefined ? {} : { subgroupOverallDimensions }),

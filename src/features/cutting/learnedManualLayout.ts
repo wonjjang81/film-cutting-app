@@ -29,6 +29,7 @@ export function selectBestLearnedManualLayout(
 ): LearnedManualLayoutResult {
   let best = automatic;
   for (const example of examples) {
+    if (automatic.result.placements.some(piece => piece.cutGroup !== undefined)) break;
     if (example.rolls.some(roll => roll.placements.some(piece => piece.cutGroup !== undefined))) continue;
     const restored = restoreManualMergedLayout(automatic, planIndex, requests, { ...example, planIndex });
     if (restored && isBetter(restored, best)) best = restored;
