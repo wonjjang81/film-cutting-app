@@ -99,8 +99,8 @@ export function captureManualMergedLayout(plan: MergedGroupPlan, planIndex: numb
     planIndex,
     geometrySignature: mergedLayoutGeometrySignature(plan, requests),
     rolls: (plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => ({
-      placements: roll.placements.map(({ id, sourceId: placementSourceId, instanceIndex, x, y, width, height, rotated }) => ({
-        id, sourceIndex: plan.sourceIds.indexOf(placementSourceId), instanceIndex, x, y, width, height, rotated,
+      placements: roll.placements.map(({ id, sourceId: placementSourceId, instanceIndex, x, y, width, height, rotated, cutGroup }) => ({
+        id, sourceIndex: plan.sourceIds.indexOf(placementSourceId), instanceIndex, x, y, width, height, rotated, ...(cutGroup === undefined ? {} : { cutGroup }),
       })),
     })),
   };
@@ -152,7 +152,8 @@ export function restoreManualMergedLayout(
         || position.x < request.sideMarginMm || position.y < request.startEndMarginMm
         || position.x + width > request.rollWidthMm - request.sideMarginMm
         || position.y + height + request.startEndMarginMm > boundedNewRollLength(request.maxLengthMm)) return null;
-      const candidate = { ...base, id: position.id, x: position.x, y: position.y, width, height, rotated: position.rotated };
+      if (position.cutGroup !== undefined && (!Number.isSafeInteger(position.cutGroup) || position.cutGroup < 1)) return null;
+      const candidate = { ...base, id: position.id, x: position.x, y: position.y, width, height, rotated: position.rotated, cutGroup: position.cutGroup };
       if (placements.some((item) => overlaps(candidate, item, Math.max(request.gapMm, requestBySource.get(item.sourceId)?.gapMm ?? 0)))) return null;
       placements.push(candidate);
       rollWidthMm = request.rollWidthMm;
@@ -161,6 +162,21 @@ export function restoreManualMergedLayout(
     rollResults.push(rollMetrics(placements, rollWidthMm, endMarginMm));
   }
   if (seen.size !== basePlacements.size) return null;
+  if (rollResults.some(roll => roll.placements.some(piece => piece.cutGroup !== undefined))) {
+    let previousGroup = 0;
+    for (const roll of rollResults) {
+      let previousEnd = 0;
+      let groupEnd = 0;
+      for (const piece of [...roll.placements].sort((a, b) => a.y - b.y)) {
+        const group = piece.cutGroup ?? Infinity;
+        if (group < previousGroup) return null;
+        if (group !== previousGroup) previousEnd = groupEnd;
+        if (piece.y < previousEnd) return null;
+        previousGroup = group;
+        groupEnd = Math.max(groupEnd, piece.y + piece.height);
+      }
+    }
+  }
   let offset = 0;
   const combinedPlacements = rollResults.flatMap((roll) => {
     const shifted = roll.placements.map((placement) => ({ ...placement, y: placement.y + offset }));

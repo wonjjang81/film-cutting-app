@@ -155,7 +155,7 @@ export type SavedProject = {
 export type SavedManualMergedLayout = {
   planIndex: number;
   geometrySignature: string;
-  rolls: { placements: (Pick<SavedMergedPlacement, 'id' | 'instanceIndex' | 'x' | 'y' | 'width' | 'height' | 'rotated'> & { sourceIndex: number })[] }[];
+  rolls: { placements: (Pick<SavedMergedPlacement, 'id' | 'instanceIndex' | 'x' | 'y' | 'width' | 'height' | 'rotated'> & { sourceIndex: number; cutGroup?: number })[] }[];
 };
 
 export type LibraryDocument = {

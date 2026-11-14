@@ -12,6 +12,7 @@ export type LayoutSvgOptions = {
   ariaLabel?: string;
   showDimensions?: boolean;
   gridIntervalMm?: number;
+  cutGroupLines?: readonly { endY: number; label: string }[];
 };
 
 function escapeXml(value: string): string {
@@ -41,6 +42,7 @@ export function createLayoutSvgMarkup({
   ariaLabel = '필름 자동배치 도면',
   showDimensions = false,
   gridIntervalMm,
+  cutGroupLines = [],
 }: LayoutSvgOptions): string {
   if (!Number.isFinite(rollWidthMm) || rollWidthMm <= 0
     || !Number.isFinite(displayLengthMm) || displayLengthMm <= 0
@@ -84,5 +86,7 @@ export function createLayoutSvgMarkup({
     })
     .join('');
 
-  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(ariaLabel)}" viewBox="0 0 ${numeric(rollWidthMm)} ${numeric(displayLengthMm)}" preserveAspectRatio="xMidYMin meet"><rect x="0" y="0" width="${numeric(rollWidthMm)}" height="${numeric(displayLengthMm)}" fill="#f8fafc" stroke="#334155" stroke-width="${numeric(Math.max(1, rollWidthMm / 350))}" rx="4" />${grid}${margin}${separators}${placements}</svg>`;
+  const cutLines = cutGroupLines.filter(line => finiteNonnegative(line.endY) && line.endY <= displayLengthMm)
+    .map(line => `<line x1="0" x2="${numeric(rollWidthMm)}" y1="${numeric(line.endY)}" y2="${numeric(line.endY)}" stroke="#6d28d9" stroke-width="${numeric(strokeWidth * 2)}" stroke-dasharray="20 12" /><text x="${numeric(rollWidthMm - 5)}" y="${numeric(Math.max(fontSize, line.endY - 5))}" text-anchor="end" fill="#5b21b6" font-size="${numeric(fontSize)}">${escapeXml(line.label)}</text>`).join('');
+  return `<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(ariaLabel)}" viewBox="0 0 ${numeric(rollWidthMm)} ${numeric(displayLengthMm)}" preserveAspectRatio="xMidYMin meet"><rect x="0" y="0" width="${numeric(rollWidthMm)}" height="${numeric(displayLengthMm)}" fill="#f8fafc" stroke="#334155" stroke-width="${numeric(Math.max(1, rollWidthMm / 350))}" rx="4" />${grid}${margin}${separators}${placements}${cutLines}</svg>`;
 }

@@ -417,7 +417,9 @@ function validateManualLayouts(value: unknown): SavedManualMergedLayout[] | unde
           || !finiteNonnegative(position.x)
           || !finiteNonnegative(position.y) || !finitePositive(position.width)
           || !finitePositive(position.height) || typeof position.rotated !== 'boolean') return undefined;
+        if (position.cutGroup !== undefined && !positiveInteger(position.cutGroup)) return undefined;
         placements.push({ id: position.id, sourceIndex: position.sourceIndex, instanceIndex: position.instanceIndex,
+          ...(typeof position.cutGroup === 'number' ? { cutGroup: position.cutGroup } : {}),
           x: position.x, y: position.y, width: position.width, height: position.height, rotated: position.rotated });
       }
       rolls.push({ placements });

@@ -13,6 +13,7 @@ import { dragAutoScrollStep } from './dragAutoScroll';
 import { MAX_NEW_ROLL_LENGTH_MM } from './rollLengthLimit';
 import { subgroupHighlightOptions, subgroupHighlightStyle } from './subgroupHighlight';
 import { SubgroupHighlightSelect } from './SubgroupHighlightSelect';
+import { cutGroupEndLines, hasCutGroups } from './cutGroupLayout';
 import { subgroupColor, sizeStroke } from './placementAppearance';
 
 
@@ -69,6 +70,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
+  const grouped = hasCutGroups(plan);
   const utilization = layoutUtilizationComparison(automaticUtilizationPercent ?? result.utilizationPercent, result.utilizationPercent);
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [highlightedSubgroup, setHighlightedSubgroup] = React.useState<string | null>(null);
@@ -88,7 +90,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
-  const dragging = result.placements.find((placement) => placement.id === draggingId) ?? null;
+  const dragging = grouped ? null : result.placements.find((placement) => placement.id === draggingId) ?? null;
   const [workspaceLengths, setWorkspaceLengths] = React.useState<Record<number, number>>({});
   const safeLength = Math.max(result.usedLengthMm, Math.min(MAX_NEW_ROLL_LENGTH_MM, Math.max(workspaceLengths[selectedRollIndex] ?? 0, dragging ? result.usedLengthMm + 1000 : 0)), 1);
   const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
@@ -139,6 +141,10 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
           <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)} color={color} />
         </G>;
       })}
+      {cutGroupEndLines(result, rolls.slice(selectedRollIndex + 1)).map(line => <G key={line.group} accessibilityLabel={line.label} pointerEvents="none">
+        <Line x1={0} x2={1220} y1={line.endY} y2={line.endY} stroke="#6d28d9" strokeWidth={4} strokeDasharray="20 12" />
+        <SvgText x={1205} y={Math.max(28, line.endY - 10)} textAnchor="end" fontSize={30} fill="#5b21b6" stroke="#fff" strokeWidth={0.8}>{line.label}</SvgText>
+      </G>)}
     </Svg>
     {dragging && (() => {
       const scaleX = viewportWidth / viewBoxWidth;
