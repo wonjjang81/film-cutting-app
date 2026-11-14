@@ -26,7 +26,7 @@ import { updateGroupIdentity } from '../../src/features/library/groupIdentity';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
-import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
+import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, PLACEMENT_PRIORITIES, DEFAULT_PLACEMENT_PREFERENCE, parsePlacementPreference, type PlacementPreference, type PlacementPriority, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { cutGroupId } from '../../src/features/cutting/cutGroupLayout';
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
@@ -91,6 +91,9 @@ function editableSubgroupOverallDimensions(value: SubgroupOverallDimensions | un
 function storedSubgroupOverallDimensions(value: { [K in keyof EditableSubgroupOverallDimensions]: string | number }): SubgroupOverallDimensions {
   return normalizeSubgroupOverallDimensions({ widthMm: Number(value.widthMm), heightMm: Number(value.heightMm), depthMm: Number(value.depthMm), doorCount: Number(value.doorCount) });
 }
+const placementPreferenceKey = 'film-cutting-placement-preference-v1';
+const placementLabels: Record<PlacementPriority, string> = { basic: '기본', subgroup: '소그룹별', length: '길이별' };
+
 function newGroupDraft(index: number, withInitialPieces = true): CuttingGroupDraft {
   // The legacy app opened each group with three editable piece rows. Keep
   // those rows available while allowing untouched 0×0 rows to be ignored by
@@ -144,6 +147,9 @@ export default function FilmCutInputScreen() {
   const [checkedPlacementIds, setCheckedPlacementIds] = useState<number[]>([]);
   const [candidateComparison, setCandidateComparison] = useState<ContinuousRollCandidateComparison[]>([]);
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
+  const [placementPreference, setPlacementPreference] = useState(DEFAULT_PLACEMENT_PREFERENCE);
+  const [placementComparisons, setPlacementComparisons] = useState<{ signature: string; rows: { priority: PlacementPriority; length: number; utilization: number }[] }>();
+  const placementSignature = JSON.stringify([groups, useRemnants, placementPreference.saveMaterial]);
   const [mergedGroupPlans, setMergedGroupPlans] = useState<MergedGroupPlan[]>([]);
   const [autoSaveHistory, setAutoSaveHistory] = useState(false);
   const [pendingBatchSave, setPendingBatchSave] = useState<PendingBatchSave | null>(null);
@@ -767,8 +773,8 @@ export default function FilmCutInputScreen() {
   }, [routeNewProject, hydratedDraftRoute, draftRoute]);
   useEffect(() => {
     if (!inputReady || busy) return;
-    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups, projectId))).catch(caught => setError(`견적 입력 백업 실패: ${messageOf(caught)}`));
-  }, [groups, projectId, inputReady, busy]);
+    void AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY, JSON.stringify(createCurrentEstimateSnapshot(groups, projectId, placementPreference))).catch(caught => setError(`견적 입력 백업 실패: ${messageOf(caught)}`));
+  }, [groups, projectId, inputReady, busy, placementPreference]);
   useEffect(() => {
     if (!inputReady || !projectId || !projectName.trim()) return;
     void AsyncStorage.setItem(
@@ -838,6 +844,23 @@ export default function FilmCutInputScreen() {
     } finally { setBusy(false); }
   }, [autoSaveHistory, computeAgainst, form, refreshLibrary, useRemnants]);
 
+  useEffect(() => {
+    let active = true;
+    void AsyncStorage.getItem(placementPreferenceKey).then(raw => {
+      if (active && raw) setPlacementPreference(parsePlacementPreference(JSON.parse(raw)));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  const changePlacementPreference = (next: PlacementPreference) => {
+    setPlacementPreference(next);
+    void AsyncStorage.setItem(placementPreferenceKey, JSON.stringify(next)).catch(() => setError('배치 우선순위를 저장하지 못했습니다.'));
+    setPendingBatchSave(null); setMergedGroupPlans([]); setBatchPlans(null); setSavedGroupPlanViews({});
+    setDraftJob(null); setPlan(null); setPlanRequest(null); setManualPlacements(null); setCheckedPlacementIds([]);
+    setConfirmed(false); setCuttingComplete(false);
+    setNotice('우선순위를 변경했습니다. 현재 조각 배치를 다시 실행해 주세요.');
+  };
+
   const calculateGroup = async () => {
     setBusy(true); setError(null); setNotice(null);
     try {
@@ -853,20 +876,25 @@ export default function FilmCutInputScreen() {
         && Number.isFinite(request.pieceLengthMm) && request.pieceLengthMm > 0
         && Number.isInteger(request.quantity) && request.quantity > 0);
       if (requests.length === 0) throw new Error('재단 폭·길이·수량이 입력된 조각이 없습니다.');
-      const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM, nextInventory(latest, useRemnants), useRemnants);
-      const mergedSourceIds = new Set(merged.flatMap((entry) => entry.sourceIds));
-      const mergedInventory = nextInventory(latest, useRemnants);
-      const mergedConsumedIds = new Set(merged.flatMap((entry) => entry.inventoryDelta.removeIds));
-      // Keep independent pieces from consuming merged-roll residuals before
-      // the merged physical roll is confirmed. They can be planned on a later
-      // calculation after those residuals are persisted.
-      const independentInventory = mergedInventory.filter((item) => !mergedConsumedIds.has(item.id));
+      const inventory = nextInventory(latest, useRemnants);
+      const comparisons = PLACEMENT_PRIORITIES.map(priority => {
+        const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM, inventory, useRemnants, { ...placementPreference, priority });
+        const mergedSourceIds = new Set(merged.flatMap(entry => entry.sourceIds));
+        const consumed = new Set(merged.flatMap(entry => entry.inventoryDelta.removeIds));
+        const independent = planGroupedPieces(requests.filter(entry => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`)), inventory.filter(item => !consumed.has(item.id)));
+        const rolls = [...merged.map(entry => ({ result: entry.result, width: FIXED_ROLL_WIDTH_MM })),
+          ...independent.flatMap(entry => entry.plan.newRollResult ? [{ result: entry.plan.newRollResult, width: entry.request.rollWidthMm }] : [])];
+        const length = rolls.reduce((sum, roll) => sum + roll.result.usedLengthMm, 0);
+        const filmArea = rolls.reduce((sum, roll) => sum + roll.width * roll.result.usedLengthMm, 0);
+        const pieceArea = rolls.reduce((sum, roll) => sum + roll.result.placements.reduce((area, piece) => area + piece.width * piece.height, 0), 0);
+        return { priority, merged, mergedSourceIds, independent, length, utilization: filmArea ? 100 * pieceArea / filmArea : 0 };
+      });
+      const { merged, mergedSourceIds, independent: independentPlans } = comparisons.find(row => row.priority === placementPreference.priority)!;
+      setPlacementComparisons({ signature: placementSignature, rows: comparisons.map(({ priority, length, utilization }) => ({ priority, length, utilization })) });
       // A merged source is saved as a normal job for history/estimates, but its
       // inventory is reserved by the merged-roll plan, never by the per-piece
       // confirmation transaction.
-      const independentRequests = requests.filter((entry) => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`));
       const mergedSourceRequests = requests.filter((entry) => mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`));
-      const independentPlans = planGroupedPieces(independentRequests, independentInventory);
       const mergedSourcePlans = planGroupedPieces(mergedSourceRequests, []);
       const plansBySourceId = new Map([...independentPlans, ...mergedSourcePlans].map((entry) => [`${entry.groupId}-${entry.pieceId}`, entry]));
       const planned = requests.map((entry) => plansBySourceId.get(`${entry.groupId}-${entry.pieceId}`)).filter((entry): entry is GroupedPiecePlan => entry !== undefined);
@@ -1292,6 +1320,35 @@ export default function FilmCutInputScreen() {
   setNotice('그룹화 ID ' + cutGroupId(order) + ' 적용. 현재 조각 배치를 다시 실행해 주세요.');
 }} onToggleDeferred={(groupId, piece) => { updatePieceForm(groupId, piece.id, current => ({ ...current, placementDeferred: !current.placementDeferred })); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false); setNotice("배치 보류 상태가 변경되었습니다. 다시 배치하면 반영됩니다."); }} onShowIllustration={showIllustration} groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId, overallAllowance) => addPiece(subgroupId, groupId, overallAllowance)} onAddSubgroup={(overallAllowance) => addSubgroup(overallAllowance)} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onDeleteSubgroup={deleteSubgroup} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeInstallationPart={updateSubgroupInstallationPart} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} /></View>
           <ProductionSettingsCard sideMargin={form.sideMargin} startEndMargin={form.startEndMargin} useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onChangeSideMargin={(value) => updateProductionMargin('sideMargin', value)} onChangeStartEndMargin={(value) => updateProductionMargin('startEndMargin', value)} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
+          <View style={styles.overallDimensionsBody}>
+            <Text style={styles.overallDimensionsTitle}>배치 우선순위</Text>
+            <View style={[styles.subgroupHeader, styles.subgroupHeaderWrap]}>
+              {PLACEMENT_PRIORITIES.map(priority => {
+                const selected = placementPreference.priority === priority;
+                return <TouchableOpacity key={priority} accessibilityRole="button" accessibilityState={{ selected }} disabled={busy}
+                  style={[styles.difficultyOption, selected && styles.difficultyOptionActive]}
+                  onPress={() => !selected && changePlacementPreference({ ...placementPreference, priority })}>
+                  <Text style={[styles.difficultyOptionText, selected && styles.difficultyOptionTextActive]}>{placementLabels[priority]}</Text>
+                </TouchableOpacity>;
+              })}
+            </View>
+            <Text style={styles.overallDimensionsHint}>소그룹별은 그룹화 ID 순서, 길이별은 긴 치수부터 배치합니다.</Text>
+            <View style={[styles.subgroupHeader, styles.subgroupHeaderWrap]}>
+              <Text style={styles.overallDimensionsTitle}>기본 원단절약 우선</Text>
+              <TouchableOpacity accessibilityRole="switch" accessibilityLabel="기본 원단절약 우선"
+                accessibilityState={{ checked: placementPreference.saveMaterial }} disabled={busy}
+                style={styles.collapseButton} onPress={() => changePlacementPreference({ ...placementPreference, saveMaterial: !placementPreference.saveMaterial })}>
+                <Text style={styles.collapseButtonText}>{placementPreference.saveMaterial ? 'ON' : 'OFF'}</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.overallDimensionsHint}>기본 모드에서 OFF를 선택하면 입력 순서대로 배치합니다.</Text>
+            {placementComparisons?.signature === placementSignature && <>
+              <Text style={styles.overallDimensionsTitle}>새 원단 사용길이 · 활용률</Text>
+              {placementComparisons.rows.map(row => <Text key={row.priority} style={styles.overallDimensionsHint}>
+                {placementLabels[row.priority]}{row.priority === placementPreference.priority ? ' (선택)' : ''} · {(row.length / 1000).toFixed(3)}m · {row.length > 0 ? row.utilization.toFixed(1) + '%' : '사용 없음'}
+              </Text>)}
+            </>}
+          </View>
           <TouchableOpacity accessibilityRole="button" accessibilityLabel="현재 그룹의 모든 조각 자동 배치 계산" disabled={busy} onPress={() => void calculateGroup()} style={[styles.primaryButton, busy && styles.disabled]}><Text style={styles.primaryButtonText}>{busy ? '처리 중…' : '현재 조각 배치'}</Text><Text style={styles.arrow}>→</Text></TouchableOpacity>
         </View>
       </View>

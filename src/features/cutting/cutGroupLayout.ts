@@ -23,7 +23,7 @@ export function cutGroupEndLines(roll: MergedRollResult, laterRolls: readonly Me
 }
 
 /** Repack only this compatible new-roll pool. Identity, quantity and remnant usage are unchanged. */
-export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedPieceRequest[], groups: readonly (readonly number[])[], orders?: readonly number[]): MergedGroupPlan {
+export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedPieceRequest[], groups: readonly (readonly number[])[], orders?: readonly number[], showBoundaries = true): MergedGroupPlan {
   const original = plan.result.placements;
   const pieces = new Map(original.map(piece => [piece.id, piece]));
   const specs = new Map(requests.map(entry => [`${entry.groupId}-${entry.pieceId}`, entry.request]));
@@ -86,7 +86,7 @@ export function packCutGroups(plan: MergedGroupPlan, requests: readonly GroupedP
         const queue = queues.get(position.sourceId)!;
         const original = queue.pieces[queue.used++]!;
         const spec = specs.get(position.sourceId)!;
-        const piece = { ...original, x: side + position.x, y: start + position.y, width: position.rotated ? spec.pieceLengthMm : spec.pieceWidthMm, height: position.rotated ? spec.pieceWidthMm : spec.pieceLengthMm, rotated: position.rotated, cutGroup: index < groups.length ? (orders?.[index] ?? index + 1) : undefined };
+        const piece = { ...original, x: side + position.x, y: start + position.y, width: position.rotated ? spec.pieceLengthMm : spec.pieceWidthMm, height: position.rotated ? spec.pieceWidthMm : spec.pieceLengthMm, rotated: position.rotated, cutGroup: showBoundaries && index < groups.length ? (orders?.[index] ?? index + 1) : undefined };
         onRoll.push(piece);
         end = Math.max(end, piece.y + piece.height);
       }

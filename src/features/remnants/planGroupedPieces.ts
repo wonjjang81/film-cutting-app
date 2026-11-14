@@ -7,6 +7,19 @@ import { planWithRemnants, type InventoryDelta, type RemnantPlan, type RemnantPl
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
 
+export const PLACEMENT_PRIORITIES = ['basic', 'subgroup', 'length'] as const;
+export type PlacementPriority = typeof PLACEMENT_PRIORITIES[number];
+export type PlacementPreference = { priority: PlacementPriority; saveMaterial: boolean };
+export const DEFAULT_PLACEMENT_PREFERENCE: PlacementPreference = { priority: 'subgroup', saveMaterial: true };
+
+export function parsePlacementPreference(value: unknown): PlacementPreference {
+  const saved = value as Partial<PlacementPreference> | null;
+  return {
+    priority: saved?.priority && PLACEMENT_PRIORITIES.includes(saved.priority) ? saved.priority : DEFAULT_PLACEMENT_PREFERENCE.priority,
+    saveMaterial: saved?.saveMaterial !== false,
+  };
+}
+
 export type GroupedPieceRequest = {
   groupId: string;
   groupName: string;
@@ -129,6 +142,7 @@ export function planMergedGroups(
   rollWidthMm = 1220,
   inventory: readonly FilmRemnant[] = [],
   useRemnants = false,
+  preference?: PlacementPreference,
 ): MergedGroupPlan[] {
   requests = normalizeGroupProducts(requests).filter(entry => !entry.request.placementDeferred);
   requests.forEach(validateGroupedRequest);
@@ -143,9 +157,13 @@ export function planMergedGroups(
   }
   let working = inventory.map((item) => ({ ...item }));
   return [...buckets.values()].filter((entries) => entries.length > 1 || entries.some((entry) => (entry.siteCount ?? 1) > 1 || entry.cutGroupOrder !== undefined)).map((entries) => {
-    const grouped = entries.some(entry => entry.cutGroupOrder !== undefined);
+    const showBoundaries = !preference || preference.priority === 'subgroup';
+    const strictOrder = preference && (preference.priority === 'length' || (preference.priority === 'basic' && !preference.saveMaterial));
+    const grouped = Boolean(strictOrder) || (showBoundaries && entries.some(entry => entry.cutGroupOrder !== undefined));
     const base = planMergedGroup(entries, entries[0]!.mergeGroupId ?? AUTO_MERGE_GROUP_ID, rollWidthMm, useRemnants && !grouped ? working : []);
-    const orders = new Map(entries.map(entry => [sourceId(entry), entry.cutGroupOrder]));
+    const orders = new Map(entries.map((entry, index) => [sourceId(entry), strictOrder
+      ? (preference.priority === 'length' ? -entry.request.pieceLengthMm : index)
+      : showBoundaries ? entry.cutGroupOrder : undefined]));
     const groups = new Map<number, number[]>();
     for (const piece of base.result.placements) {
       const order = orders.get(piece.sourceId);
@@ -155,7 +173,7 @@ export function planMergedGroups(
       groups.set(order, ids);
     }
     const orderedGroups = [...groups].sort(([left], [right]) => left - right);
-    const planned = orderedGroups.length ? packCutGroups(base, entries, orderedGroups.map(([, ids]) => ids), orderedGroups.map(([order]) => order)) : base;
+    const planned = orderedGroups.length ? packCutGroups(base, entries, orderedGroups.map(([, ids]) => ids), orderedGroups.map(([order]) => order), showBoundaries) : base;
     working = applyInventoryDelta(working, planned.inventoryDelta);
     return { ...planned, inventoryAfter: working.map((item) => ({ ...item })) };
   });
