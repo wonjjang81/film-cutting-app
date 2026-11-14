@@ -14,6 +14,13 @@ describe('construction manager film integration', () => {
 });
 
 describe('자동 견적서 세부내역', () => {
+  it('preserves film quantities and reconciles the new costs and discount', () => {
+    const payload = buildFilmEstimateSubmission({ context: { canonicalProjectId: 'c', projectName: '' }, externalEntityId: 'film', sourceUpdatedAt: '2026-09-23T08:00:00.000Z', materialCost: 100, auxiliaryCost: 10, constructionCost: 200, preparationCost: 40, miscCost: 20, expenseCost: 10, discount: 30, total: 300, quantities: { materialLengthM: 3, materialAreaM2: 3.66 } });
+    expect(payload.summary.otherCost).toBe(30);
+    expect(payload.breakdown).toContainEqual({ name: '필름 원단', amount: 90, kind: 'mainMaterial', spec: '인테리어 필름', unit: 'm', quantity: 3 });
+    expect(payload.breakdown).toContainEqual({ name: '필름 시공', amount: 160, kind: 'labor', spec: '필름 시공', unit: '㎡', quantity: 3.7 });
+    expect(payload.breakdown.reduce((sum, row) => sum + row.amount, 0)).toBe(payload.summary.total);
+  });
   it('sends material length, construction area and discount as typed rows', () => {
     expect(buildFilmBreakdown({ materialCost: 900000, constructionCost: 5175000, discount: 150000, quantities: { materialLengthM: 60.04, materialAreaM2: 72.36 } })).toEqual([
       { name: '필름 시공', amount: 5175000, kind: 'labor', spec: '필름 시공', unit: '㎡', quantity: 72.4 },
