@@ -13,7 +13,6 @@ import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptim
 import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, manualLayoutScope, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restorePreferredManualLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { selectBestLearnedManualLayout } from '../../src/features/cutting/learnedManualLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
-import { CutGroupPanel } from '../../src/features/cutting/CutGroupPanel';
 import { cutGroupEndLines, hasCutGroups } from '../../src/features/cutting/cutGroupLayout';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, findPlacementById, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
@@ -615,14 +614,7 @@ export default function PlanningScreen() {
           const togglePlacement = (placementId: number) => void toggleMergedPlacementComplete(planKey, job?.id, placementId, placementIds);
           return planningView === 'drawing'
             ? <>
-              <CutGroupPanel key={planKey} plan={plan} requests={currentPlan.groupedPlans} labels={currentPlan.pieceNamesBySourceId} disabled={loading || savingManualLayout || completedPlacementIds.length > 0 || job?.isCuttingComplete === true} onApply={next => { installManualPlan(planKey, plan, next); setSelectedRollByPlan(current => ({ ...current, [planKey]: 0 })); setNotice('그룹화 배치를 적용했습니다. 배치·완료 저장으로 보관할 수 있습니다.'); }} />
-              {hasCutGroups(plan) && automaticPlan && <TouchableOpacity accessibilityRole="button" disabled={loading || savingManualLayout || completedPlacementIds.length > 0 || job?.isCuttingComplete === true} onPress={() => {
-                const next = applyPlacementIdRecords(automaticPlan, placementIdRecordsFromPlan(plan));
-                if (!next) { setError('현재 조각과 자동배치의 구성이 일치하지 않습니다.'); return; }
-                installManualPlan(planKey, plan, next);
-                setSelectedRollByPlan(current => ({ ...current, [planKey]: 0 }));
-                setNotice('일반 자동배치로 전환했습니다.');
-              }} style={styles.headerControlButton}><Text style={styles.headerControlText}>일반 자동배치로 전환</Text></TouchableOpacity>}
+              {hasCutGroups(plan) && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.headerControlButton}><Text style={styles.headerControlText}>재단계산에서 그룹화 변경</Text></TouchableOpacity>}
               <View onLayout={(event) => { drawingContentY.current = event.nativeEvent.layout.y; }}><MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} automaticUtilizationPercent={automaticUtilizationPercent} learnedLayoutApplied={learnedMergedPlanKeys.includes(planKey)} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} focusedPlacementId={focusedPlacement?.planKey === planKey ? focusedPlacement.placementId : null} focusRequestKey={focusedPlacement?.planKey === planKey ? focusedPlacement.requestKey : 0} onFocusedPlacementY={scrollToFocusedPlacement} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={hasCutGroups(plan) ? undefined : (placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementToNewRoll={hasCutGroups(plan) ? undefined : (placementId) => { const movedTo = moveMergedPlacementToNewRoll(planKey, placementId); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={hasCutGroups(plan) ? undefined : (placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onRotatePlacement={hasCutGroups(plan) ? undefined : (placementId) => rotateMergedPlacement(planKey, placementId)} onShiftPlacementToEdge={hasCutGroups(plan) ? undefined : (placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} onDragGestureChange={setDragGestureActive} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView /></View></>
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} onSelectPlacement={(placementId) => navigateToPlacement(placementId, planKey)} />;
         })()}
@@ -653,7 +645,7 @@ function mergedPlanKey(mergeGroupId: string, sourceIds: readonly string[]): stri
 }
 
 function mergedPlanGeometrySignature(plan: MergedGroupPlan): string {
-  return JSON.stringify((plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => roll.placements.map((item) => [item.sourceId, item.width, item.height]).sort()));
+  return JSON.stringify((plan.rollResults?.length ? plan.rollResults : [plan.result]).map((roll) => roll.placements.map((item) => [item.sourceId, item.width, item.height, item.cutGroup]).sort()));
 }
 
 function mergedPlanPlacementSignature(plan: MergedGroupPlan): string {

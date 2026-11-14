@@ -18,7 +18,7 @@ export type CurrentEstimateGroupSource = {
   filmName?: string;
   materialCostPerM?: string;
   constructionCostPerM2?: string;
-  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number }[];
+  subgroups?: { id: string; name: string; pieceIds: string[]; expanded?: boolean; difficulty?: ConstructionDifficulty; siteCount?: number | string; overallDimensions?: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number; cutGroupOrder?: number }[];
   pieces: { id: string; name: string; form: CuttingFormState }[];
 };
 
@@ -68,6 +68,7 @@ export function requestsFromSnapshot(snapshot: CurrentEstimateSnapshot): Grouped
     mergeGroupId: group.mergeGroupId ?? AUTO_MERGE_GROUP_ID,
     filmName: group.filmName,
     subgroupName: subgroup?.name,
+    cutGroupOrder: subgroup?.cutGroupOrder,
     siteCount: normalizeSubgroupSiteCount(subgroup?.siteCount),
     difficulty: subgroup ? normalizeDifficulty(subgroup.difficulty) : undefined,
     diagramShapeKey: subgroup?.diagramShapeKey, installationPart: subgroup?.installationPart,
@@ -121,6 +122,7 @@ export function calculateCurrentGroupEstimate(snapshot: CurrentEstimateSnapshot)
     inventory: [],
     filmName: entry.filmName,
     subgroupName: entry.subgroupName,
+    cutGroupOrder: entry.cutGroupOrder,
     siteCount: entry.siteCount,
     difficulty: entry.difficulty,
     subgroupOverallDimensions: entry.subgroupOverallDimensions,

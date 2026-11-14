@@ -90,7 +90,8 @@ export function mergedLayoutGeometrySignature(plan: MergedGroupPlan, requests: r
     const request = requestBySource.get(placement.sourceId)?.request;
     return [plan.sourceIds.indexOf(placement.sourceId), placement.instanceIndex,
       request?.pieceWidthMm, request?.pieceLengthMm, request?.rollWidthMm, request?.gapMm,
-      request?.sideMarginMm, request?.startEndMarginMm, request?.allowRotation, request?.maxLengthMm ?? null];
+      request?.sideMarginMm, request?.startEndMarginMm, request?.allowRotation, request?.maxLengthMm ?? null,
+      ...(requestBySource.get(placement.sourceId)?.cutGroupOrder === undefined ? [] : [requestBySource.get(placement.sourceId)?.cutGroupOrder])];
   }).sort((left, right) => Number(left[0]) - Number(right[0]) || Number(left[1]) - Number(right[1])));
 }
 

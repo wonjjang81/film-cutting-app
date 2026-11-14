@@ -9,6 +9,19 @@ const request = (pieceId: string, width: number, length: number, quantity = 1): 
   request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity, gapMm: 3, sideMarginMm: 7, startEndMarginMm: 5, allowRotation: false, remnants: [] },
 });
 describe('cut group layout', () => {
+  it('applies ranked subgroup requests to all copies and keeps separate products apart', () => {
+    const requests = [
+      { ...request('a', 300, 500, 2), cutGroupOrder: 2 },
+      { ...request('b', 310, 400, 2), cutGroupOrder: 1 },
+      request('c', 220, 250),
+      { ...request('d', 220, 250), cutGroupOrder: 3, request: { ...request('d', 220, 250).request, productNumber: 'P2' } },
+    ];
+    const [main, other] = planMergedGroups(requests, 1220, [], false);
+    expect(main!.result.placements.map(piece => [piece.sourceId, piece.cutGroup])).toEqual([
+      ['g1-b', 1], ['g1-b', 1], ['g1-a', 2], ['g1-a', 2], ['g1-c', undefined],
+    ]);
+    expect(other!.result.placements.map(piece => piece.sourceId)).toEqual(['g1-d']);
+  });
   it('packs selected groups in order with an exact boundary and leaves unselected pieces last', () => {
     const requests = [request('a', 300, 500, 2), request('b', 310, 400), request('c', 220, 250)];
     const [base] = planMergedGroups(requests, 1220, [], false);
