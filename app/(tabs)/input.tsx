@@ -26,7 +26,7 @@ import { updateGroupIdentity } from '../../src/features/library/groupIdentity';
 import { AUTO_SAVE_HISTORY_STORAGE_KEY, parseAutoSaveHistory } from '../../src/features/library/autoSaveHistory';
 import { buildSavedCuttingJob, createUniqueUiId, type CuttingFormState, toRemnantPlanRequest } from '../../src/features/library/uiWorkflowHelpers';
 import { planWithRemnants, type RemnantPlan, type RemnantPlanRequest } from '../../src/features/remnants/planWithRemnants';
-import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, PLACEMENT_PRIORITIES, DEFAULT_PLACEMENT_PREFERENCE, parsePlacementPreference, type PlacementPreference, type PlacementPriority, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
+import { AUTO_MERGE_GROUP_ID, DISABLED_MERGE_GROUP_ID, planGroupedPieces, planMergedGroups, PLACEMENT_PRIORITIES, DEFAULT_PLACEMENT_PREFERENCE, materialOptimization, parsePlacementPreference, type PlacementPreference, type PlacementPriority, type GroupedPiecePlan, type GroupedPieceRequest, type MergedGroupPlan } from '../../src/features/remnants/planGroupedPieces';
 import { RemnantInventoryPanel, type PlannedRemnantSummary, type RemnantDraft } from '../../src/features/remnants/RemnantInventoryPanel';
 import { cutGroupId } from '../../src/features/cutting/cutGroupLayout';
 import { createCurrentEstimateSnapshot, CURRENT_GROUP_ESTIMATE_STORAGE_KEY } from '../../src/features/estimate/currentGroupEstimate';
@@ -149,7 +149,9 @@ export default function FilmCutInputScreen() {
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
   const [placementPreference, setPlacementPreference] = useState(DEFAULT_PLACEMENT_PREFERENCE);
   const [placementComparisons, setPlacementComparisons] = useState<{ signature: string; rows: { priority: PlacementPriority; length: number; utilization: number }[] }>();
-  const placementSignature = JSON.stringify([groups, useRemnants, placementPreference.saveMaterial]);
+  const placementSignature = JSON.stringify([groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]);
+  const orderedPriority = placementPreference.priority === 'basic' ? undefined : placementPreference.priority;
+  const currentOptimization = orderedPriority ? materialOptimization(placementPreference, orderedPriority) : undefined;
   const [mergedGroupPlans, setMergedGroupPlans] = useState<MergedGroupPlan[]>([]);
   const [autoSaveHistory, setAutoSaveHistory] = useState(false);
   const [pendingBatchSave, setPendingBatchSave] = useState<PendingBatchSave | null>(null);
@@ -1334,14 +1336,21 @@ export default function FilmCutInputScreen() {
             </View>
             <Text style={styles.overallDimensionsHint}>소그룹별은 그룹화 ID 순서, 길이별은 긴 치수부터 배치합니다.</Text>
             <View style={[styles.subgroupHeader, styles.subgroupHeaderWrap]}>
-              <Text style={styles.overallDimensionsTitle}>기본 원단절약 우선</Text>
-              <TouchableOpacity accessibilityRole="switch" accessibilityLabel="기본 원단절약 우선"
-                accessibilityState={{ checked: placementPreference.saveMaterial }} disabled={busy}
-                style={styles.collapseButton} onPress={() => changePlacementPreference({ ...placementPreference, saveMaterial: !placementPreference.saveMaterial })}>
-                <Text style={styles.collapseButtonText}>{placementPreference.saveMaterial ? 'ON' : 'OFF'}</Text>
+              <Text style={styles.overallDimensionsTitle}>원단절약 우선</Text>
+              <TouchableOpacity accessibilityRole="switch" accessibilityLabel="원단절약 우선"
+                accessibilityState={{ checked: currentOptimization?.enabled ?? placementPreference.saveMaterial }} disabled={busy}
+                style={styles.collapseButton} onPress={() => changePlacementPreference(orderedPriority && currentOptimization
+                  ? { ...placementPreference, optimization: { ...placementPreference.optimization, [orderedPriority]: { ...currentOptimization, enabled: !currentOptimization.enabled } } }
+                  : { ...placementPreference, saveMaterial: !placementPreference.saveMaterial })}>
+                <Text style={styles.collapseButtonText}>{(currentOptimization?.enabled ?? placementPreference.saveMaterial) ? 'ON' : 'OFF'}</Text>
               </TouchableOpacity>
             </View>
-            <Text style={styles.overallDimensionsHint}>기본 모드에서 OFF를 선택하면 입력 순서대로 배치합니다.</Text>
+            {orderedPriority && currentOptimization?.enabled ? <>
+              <NumericField compact integer label="원단절약 최적화 비율" unit="%" min={0} value={String(currentOptimization.percent)}
+                onChange={value => changePlacementPreference({ ...placementPreference, optimization: { ...placementPreference.optimization,
+                  [orderedPriority]: { ...currentOptimization, percent: Math.min(100, Math.max(0, Number(value) || 0)) } } })} />
+              <Text style={styles.overallDimensionsHint}>0%는 순서 유지, 100%는 원단 절약 우선입니다. 그룹이 섞인 절약 배치에서는 그룹별 점선이 생략됩니다.</Text>
+            </> : !orderedPriority && <Text style={styles.overallDimensionsHint}>OFF는 입력 순서대로 배치합니다.</Text>}
             {placementComparisons?.signature === placementSignature && <>
               <Text style={styles.overallDimensionsTitle}>새 원단 사용길이 · 활용률</Text>
               {placementComparisons.rows.map(row => <Text key={row.priority} style={styles.overallDimensionsHint}>

@@ -58,7 +58,11 @@ const server = http.createServer((req,res)=>{
     assert.equal(await lineB.count(),0);
     await button('재단계산에서 그룹화 변경').click();
     await button('길이별').click();
-    await page.getByRole('switch',{ name: '기본 원단절약 우선' }).click();
+    await page.getByRole('switch',{ name: '원단절약 우선' }).click();
+    await page.getByRole('textbox',{name:'원단절약 최적화 비율'}).fill('100');
+    await page.waitForFunction(() => JSON.parse(localStorage.getItem('film-cutting-placement-preference-v1')).optimization.length.percent === 100);
+    await page.reload();
+    assert.equal(await page.getByRole('textbox',{name:'원단절약 최적화 비율'}).inputValue(),'100');
     await button('현재 그룹의 모든 조각 자동 배치 계산').click();
     for (const label of ['기본', '소그룹별', '길이별']) {
       await page.getByText(new RegExp('^' + label + '.*m · .*%$')).waitFor();

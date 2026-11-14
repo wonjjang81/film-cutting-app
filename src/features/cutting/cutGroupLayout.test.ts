@@ -9,6 +9,25 @@ const request = (pieceId: string, width: number, length: number, quantity = 1): 
   request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity, gapMm: 3, sideMarginMm: 7, startEndMarginMm: 5, allowRotation: false, remnants: [] },
 });
 describe('cut group layout', () => {
+  it('keeps strict priority when savings is off or at zero and uses shorter layouts at 100%', () => {
+    const entries = [
+      { ...request('a', 300, 250), cutGroupOrder: 1 },
+      { ...request('b', 310, 500), cutGroupOrder: 2 },
+      { ...request('c', 300, 350), cutGroupOrder: 3 },
+    ];
+    for (const priority of ['subgroup', 'length'] as const) {
+      const plan = (enabled: boolean, percent: number) => planMergedGroups(entries, 1220, [], false, {
+        priority, saveMaterial: true, optimization: { [priority]: { enabled, percent } },
+      })[0]!;
+      const strict = plan(false, 100);
+      expect(plan(true, 0)).toEqual(strict);
+      const optimized = plan(true, 100);
+      expect(optimized.result.usedLengthMm).toBeLessThan(strict.result.usedLengthMm);
+      expect(optimized.result.placements.map(piece => piece.sourceId).sort()).toEqual(strict.result.placements.map(piece => piece.sourceId).sort());
+      expect(optimized.result.placements.every(piece => piece.cutGroup === undefined)).toBe(true);
+    }
+  });
+
   it('uses input order with savings off, descending length, or explicit subgroup IDs', () => {
     const entries = [
       { ...request('short', 300, 250), cutGroupOrder: 2 },
