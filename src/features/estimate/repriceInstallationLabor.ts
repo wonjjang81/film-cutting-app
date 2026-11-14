@@ -1,10 +1,12 @@
 import type { SavedCuttingJob } from '../library/models';
 import { netInstallationAreaM2, type Estimate } from './calculateEstimate';
-import { estimateInstallationWorkload, type InstallationWorkload } from './installationWorkload';
+import { estimateInstallationWorkload, referencePreparationCost, type InstallationWorkload } from './installationWorkload';
 import type { EstimateRateSummary } from './calculateProjectEstimate';
 import { allocateLaborCost, calculateConfiguredInstallationLabor, installationSubgroupKey, resolveInstallationPart, type InstallationLaborCalculation, type InstallationMode } from './installationLabor';
 
 import type { InstallationPartRate } from './installationPartPricing';
+
+import { referenceAreaLength } from './referenceEstimate';
 
 type Source = { job: SavedCuttingJob; estimate: Estimate; rates: EstimateRateSummary };
 export type InstallationLaborLine = {
@@ -13,6 +15,8 @@ export type InstallationLaborLine = {
   minimumSupplement?: number;
   installationAreaM2: number;
   workloadMinutes?: number;
+  referenceMaterialM?: number;
+  preparationCost?: number;
 };
 
 /** Reprices newly-created estimate objects only; never alters saved jobs, placements or quantities. */
@@ -29,7 +33,8 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
     const areas = items.map((item) => netInstallationAreaM2(item.job));
     const installationAreaM2 = areas.reduce((sum, area) => sum + area, 0);
     const input = workloads?.[id];
-    const work = input?.enabled ? estimateInstallationWorkload(installationAreaM2, input) : undefined;
+    const preparationCost = input?.enabled ? referencePreparationCost(input) : undefined;
+    const work = input?.enabled && preparationCost !== undefined ? estimateInstallationWorkload(installationAreaM2, input) : undefined;
     const calculation = !work && part ? calculateConfiguredInstallationLabor(job, part, lengthM, mode, parts) : undefined;
     if (work || calculation) {
       // Allocate integer KRW with largest remainders so every subgroup/roll total reconciles.
@@ -43,7 +48,7 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
         item.estimate.total = item.estimate.subtotal;
       });
     }
-    return { id, groupId: job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류', subgroupName: job.subgroupName?.trim() || '미분류', part, lengthM, installationAreaM2, workloadMinutes: work?.minutes,
+    return { id, groupId: job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류', subgroupName: job.subgroupName?.trim() || '미분류', part, lengthM, installationAreaM2, workloadMinutes: work?.minutes, referenceMaterialM: work && 'referenceMaterialM' in work ? work.referenceMaterialM : input?.enabled && input.pattern ? referenceAreaLength(installationAreaM2, input.pattern) : undefined, preparationCost: work ? preparationCost : undefined,
       constructionCost: items.reduce((sum, item) => sum + item.estimate.constructionCost, 0), ...(calculation ? { calculation } : {}) };
   });
   const baseTotal = sources.reduce((sum, item) => sum + item.estimate.constructionCost, 0);

@@ -1,3 +1,5 @@
+import { buildDetailedFilmEstimate } from './detailedFilmEstimate';
+import { referenceAreaLength } from './referenceEstimate';
 import { describe, expect, it } from 'vitest';
 import { calculateProjectEstimate } from './calculateProjectEstimate';
 import type { SavedCuttingJob } from '../library/models';
@@ -5,6 +7,24 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('applies reference units and shape once while charging actual roll and separate preparation', () => {
+    const source = { ...job('door', 6_000), groupId: 'g1', subgroupName: '방문' };
+    const result = calculateProjectEstimate([source], 9_000, 15_000, 0, [], {
+      installationMode: 'whole',
+      installationWorkloads: { 'g1::방문': {
+        enabled: true, sheets: '', finishingM: '', details: '', referencePart: 'door',
+        quantity: '2', shape: '알판', prepUnits: '0.2',
+      } },
+    });
+    expect(result.constructionCost).toBe(312_500);
+    expect(result.materialCost).toBe(54_000);
+    expect(result.installationLaborLines?.[0]?.referenceMaterialM).toBe(14);
+    const detailed = buildDetailedFilmEstimate(result, []);
+    expect(detailed.preparation).toBe(50_000);
+    expect(detailed.constructionCost).toBe(362_500);
+    expect(referenceAreaLength(12.2, '대형 패턴')).toBeCloseTo(12);
+  });
+
   it('prices equal fitted areas by their actual workload and applies the solo floor once', () => {
     const base = job('plate', 12_000);
     const flat = { ...base, groupId: 'group-1', subgroupName: '평판', input: { ...base.input, quantity: 40 } };
