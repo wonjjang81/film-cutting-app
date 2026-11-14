@@ -1,6 +1,8 @@
 import type { SavedCuttingJob } from '../library/models';
 
-export const DEFAULT_MATERIAL_COST_PER_M = 10_000;
+import { restoreCutAllowanceDimensions } from '../cutting/cutAllowance';
+
+export const DEFAULT_MATERIAL_COST_PER_M = 9_000;
 export const DEFAULT_CONSTRUCTION_COST_PER_M2 = 15_000;
 export const CONSTRUCTION_PRICE_MIN = 8_500;
 export const CONSTRUCTION_PRICE_MAX = 25_000;
@@ -35,6 +37,7 @@ export function calculateEstimateAtRates(
   discountRateOverride?: number,
   usageOverride?: EstimateUsageOverride,
   constructionCostPerM?: number,
+  installationAreaM2?: number,
 ): Estimate {
   const materialLengthMm = Math.max(0, usageOverride?.materialLengthMm ?? job.result.newRollLengthMm);
   const materialWidthMm = Math.max(0, usageOverride?.materialWidthMm ?? job.input.rollWidthMm);
@@ -46,12 +49,17 @@ export function calculateEstimateAtRates(
   const materialCost = roundWon(materialLengthM * Math.max(0, materialCostPerM));
   const constructionCost = constructionCostPerM !== undefined && Number.isFinite(constructionCostPerM) && constructionCostPerM >= 0
     ? Math.floor(materialLengthM * constructionCostPerM)
-    : roundWon(materialAreaM2 * Math.max(0, constructionCostPerM2));
+    : roundWon((installationAreaM2 ?? materialAreaM2) * Math.max(0, constructionCostPerM2));
   const subtotal = materialCost + constructionCost;
   const automaticDiscountRate = materialAreaM2 >= 10 ? 0.15 : materialAreaM2 >= 5 ? 0.1 : materialAreaM2 >= 1 ? 0.05 : 0;
   const discountRate = discountRateOverride === undefined ? automaticDiscountRate : Math.min(1, Math.max(0, discountRateOverride));
   const discount = roundWon(subtotal * discountRate);
   return { materialLengthM, materialAreaM2, materialCost, productAreaM2, constructionCost, subtotal, discountRate, discount, total: subtotal - discount };
+}
+
+export function netInstallationAreaM2(job: SavedCuttingJob): number {
+  const { sourcePieceWidthMm, sourcePieceLengthMm } = restoreCutAllowanceDimensions(job.input);
+  return Math.max(0, sourcePieceWidthMm * sourcePieceLengthMm * job.input.quantity) / 1_000_000;
 }
 
 function roundWon(value: number): number {

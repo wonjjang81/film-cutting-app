@@ -1,6 +1,7 @@
 /** Updated reference ranges in KRW/m. Defaults use the whole-project range midpoint. */
 export type InstallationPartRate = { name: string; costPerM: number; reference?: string };
 export const INSTALLATION_PARTS_STORAGE_KEY = 'film-cutting-installation-parts-v1';
+const NEW_RATE_NOTE = '필름 부착 인건비 · 내부 기본 단가';
 export const DEFAULT_INSTALLATION_PARTS: readonly InstallationPartRate[] = [
   { name: '책장', costPerM: 26_500, reference: '최상 · 전체 25,000~28,000원/m · 단독 50,000원/m 이상' },
   { name: '화장대', costPerM: 20_000, reference: '상 · 전체 18,000~22,000원/m · 단독 70,000원/m 이상' },
@@ -13,6 +14,12 @@ export const DEFAULT_INSTALLATION_PARTS: readonly InstallationPartRate[] = [
   { name: '싱크대 상부장', costPerM: 11_750, reference: '하 · 전체 11,000~12,500원/m · 단독 45,000원/m 이상' },
   { name: '붙박이장', costPerM: 10_750, reference: '하 · 전체 10,000~11,500원/m · 단독 40,000원/m 이상' },
   { name: '아일랜드식탁', costPerM: 11_750, reference: '하 · 전체 11,000~12,500원/m · 단독 60,000원/m 이상' },
+  { name: '아트월', costPerM: 15_000, reference: NEW_RATE_NOTE },
+  { name: '중문', costPerM: 17_000, reference: NEW_RATE_NOTE },
+  { name: '몰딩', costPerM: 18_000, reference: NEW_RATE_NOTE },
+  { name: '걸레받이', costPerM: 15_000, reference: NEW_RATE_NOTE },
+  { name: '등박스', costPerM: 18_000, reference: NEW_RATE_NOTE },
+  { name: '현관문 안쪽', costPerM: 15_000, reference: NEW_RATE_NOTE },
   { name: '드레스룸', costPerM: 11_500, reference: '하 · 전체 11,000~12,000원/m · 단독불가 (다른 공정과 병행)' },
 ];
 

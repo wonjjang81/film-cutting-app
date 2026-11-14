@@ -1,13 +1,19 @@
 import { useState } from 'react';
 import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import type { ProjectEstimate } from './calculateProjectEstimate';
-import { INSTALLATION_LABOR_REFERENCES, type InstallationMode } from './installationLabor';
+import type { InstallationPartRate } from './installationPartPricing';
+import { type InstallationMode } from './installationLabor';
 import { buildEstimateGroupBreakdown } from './estimateBreakdownModel';
+
+import { InstallationWorkloadFields } from './InstallationWorkloadFields';
+import type { InstallationWorkload } from './installationWorkload';
 
 const number = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 
-export function InstallationLaborPanel({ estimate, mode, disabled, onChangeMode, onChangePart }: {
-  estimate: ProjectEstimate; mode: InstallationMode; disabled: boolean;
+export function InstallationLaborPanel({ estimate, mode, disabled, parts, workloads, onChangeWorkload, onChangeMode, onChangePart }: {
+  estimate: ProjectEstimate; mode: InstallationMode; disabled: boolean; parts: readonly InstallationPartRate[];
+  workloads?: Record<string, InstallationWorkload>;
+  onChangeWorkload?: (id: string, value: InstallationWorkload) => void;
   onChangeMode(mode: InstallationMode): void; onChangePart(id: string, part: string): void;
 }) {
   const [selectingId, setSelectingId] = useState<string | null>(null);
@@ -26,6 +32,7 @@ export function InstallationLaborPanel({ estimate, mode, disabled, onChangeMode,
         <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
         <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(materialCosts.get(line.id) ?? 0).toLocaleString('ko-KR')}원</Text>
         <Text style={styles.hint}>시공품수 {number(line.constructionCost / 250_000)}품</Text>
+        {onChangeWorkload && <InstallationWorkloadFields line={line} value={workloads?.[line.id]} onChange={(value) => onChangeWorkload(line.id, value)} />}
         {line.calculation ? <>
           {line.calculation.unavailable && <Text style={styles.warning}>표에서는 드레스룸 단독시공을 권장하지 않습니다. 다른 공정과 병행 여부를 확인해 주세요.</Text>}
           {line.part === '샷시 (내부)' && <Text style={styles.warning}>유리 실리콘 재코킹 인건비 별도</Text>}
@@ -35,7 +42,7 @@ export function InstallationLaborPanel({ estimate, mode, disabled, onChangeMode,
     </>}
     <Modal visible={selectingId !== null} transparent animationType="fade" onRequestClose={() => setSelectingId(null)}><View style={styles.backdrop}><View style={styles.dialog}>
       <View style={styles.row}><Text style={styles.title}>시공 부위 선택</Text><TouchableOpacity accessibilityRole="button" onPress={() => setSelectingId(null)}><Text>닫기</Text></TouchableOpacity></View>
-      <ScrollView style={styles.options}>{[{ name: '', label: '미선택 · 기존 단가 적용' }, ...INSTALLATION_LABOR_REFERENCES.map((part) => ({ name: part.name, label: part.name }))].map((part) => <TouchableOpacity key={part.name} accessibilityRole="button" onPress={() => { if (selectingId) onChangePart(selectingId, part.name); setSelectingId(null); }} style={styles.option}><Text>{part.label}</Text></TouchableOpacity>)}</ScrollView>
+      <ScrollView style={styles.options}>{[{ name: '', label: '미선택 · 기존 단가 적용' }, ...parts.map((part) => ({ name: part.name, label: `${part.name} · ${part.costPerM.toLocaleString('ko-KR')}원/m` }))].map((part) => <TouchableOpacity key={part.name} accessibilityRole="button" onPress={() => { if (selectingId) onChangePart(selectingId, part.name); setSelectingId(null); }} style={styles.option}><Text>{part.label}</Text></TouchableOpacity>)}</ScrollView>
     </View></View></Modal>
   </View>;
 }

@@ -1,3 +1,4 @@
+import { DEFAULT_MATERIAL_COST_PER_M } from '../estimate/calculateEstimate';
 import type { SavedProject } from './models';
 import { createUniqueUiId } from './uiWorkflowHelpers';
 import type { CurrentEstimateSnapshot } from '../estimate/currentGroupEstimate';
@@ -14,7 +15,7 @@ export function createEmptyProject(name: string, createdAt: string, existingIds:
     name: trimmedName,
     jobIds: [],
     mergedJobIds: [],
-    materialCostPerM: 10_000,
+    materialCostPerM: DEFAULT_MATERIAL_COST_PER_M,
     constructionCostPerM2: 15_000,
     createdAt,
     updatedAt: createdAt,

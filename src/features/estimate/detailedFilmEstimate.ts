@@ -67,11 +67,14 @@ export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: read
     supplements.set(line.groupId, group);
   }
   const labor = buildEstimateGroupBreakdown(estimate).flatMap(group => group.subgroups.map(sub => {
-    const calculation = estimate.installationLaborLines?.find(line => line.groupId === group.id && line.subgroupName === sub.name)?.calculation;
+    const line = estimate.installationLaborLines?.find(line => line.groupId === group.id && line.subgroupName === sub.name);
+    const calculation = line?.calculation;
     return {
       name: `${group.label} · ${sub.name}`,
       basis: [
-        calculation ? `시공품수 ${number(calculation.allocatedUnits)}품`
+        line?.workloadMinutes !== undefined ? `부착 ${number(line.workloadMinutes)}인분`
+          : calculation ? `시공품수 ${number(calculation.allocatedUnits)}품`
+          : sub.installationAreaM2 !== undefined ? `부착 면적 ${number(sub.installationAreaM2)}m²`
           : `원단 ${number(sub.amounts.materialLengthM)}m · 사용 면적 ${number(sub.amounts.materialAreaM2)}m²`,
         sub.laborDescription || '기존 시공 단가',
       ].join(' · '),
