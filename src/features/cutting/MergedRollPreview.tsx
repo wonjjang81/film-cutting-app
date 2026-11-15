@@ -5,7 +5,7 @@ import type { MergedGroupPlan } from '../remnants/planGroupedPieces';
 import type { SavedMergedCuttingJob } from '../library/models';
 import { horizontalFreeSpaceAtPoint, type HorizontalFreeSpace } from './horizontalFreeSpace';
 import { areAllPlacementListsCollapsed, toggleAllPlacementLists, groupPlacementsBySubgroup, layoutUtilizationComparison, placementCompletionControl } from './planningPlacementModel';
-import { formatPlacementInfo, formatPlacementPreview, gridLinePositions, placementTextMetrics } from './previewAnnotationModel';
+import { formatPlacementInfo, gridLinePositions } from './previewAnnotationModel';
 import { PlacementPreviewAnnotation } from './PlacementPreviewAnnotation';
 import { runPlacementPopupAction } from './placementPopupAction';
 import type { PlacementEdgeDirection } from './moveMergedPlacement';
@@ -44,7 +44,6 @@ type Props = {
   hideControls?: boolean;
   compact?: boolean;
   hidePlacementList?: boolean;
-  hideLegend?: boolean;
   continuousPageView?: boolean;
   automaticUtilizationPercent?: number;
   learnedLayoutApplied?: boolean;
@@ -64,7 +63,7 @@ function colorFor(sourceId: string, sourceIds: readonly string[], subgroups?: Re
   return subgroupColor(sourceId, subgroups, majorGroups);
 }
 
-export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onRotatePlacement, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, hideLegend = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups, focusedPlacementId, focusRequestKey = 0, onFocusedPlacementY }: Props) {
+export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, onTogglePlacementComplete, onMovePlacementToAnotherRoll, onMovePlacementToNewRoll, onMovePlacementWithinRoll, onRotatePlacement, onShiftPlacementToEdge, onReoptimize, onDragAutoScroll, onDragGestureChange, canUndo = false, canRedo = false, canReset = false, onUndo, onRedo, onReset, selectedRollIndex: controlledRollIndex, onSelectRoll, hideHeading = false, hideRollTabs = false, hideControls = false, compact = false, hidePlacementList = false, continuousPageView = false, automaticUtilizationPercent, learnedLayoutApplied = false, completedPlacementIds: completedPlacementIdsOverride, sourceLabels, sourceSubgroups, sourceMajorGroups, collapsedSubgroups, onChangeCollapsedSubgroups, focusedPlacementId, focusRequestKey = 0, onFocusedPlacementY }: Props) {
   const [localRollIndex, setLocalRollIndex] = React.useState(0);
   const selectedRollIndex = controlledRollIndex ?? localRollIndex;
   const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
@@ -73,7 +72,13 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const utilization = layoutUtilizationComparison(automaticUtilizationPercent ?? result.utilizationPercent, result.utilizationPercent);
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [highlightedSubgroup, setHighlightedSubgroup] = React.useState<string | null>(null);
-  const highlightOptions = subgroupHighlightOptions([...rolls.flatMap(roll => roll.placements), ...plan.remnantUses.flatMap(use => use.placements)], sourceSubgroups, sourceMajorGroups);
+  const highlightOptions = React.useMemo(() =>
+    subgroupHighlightOptions([...rolls.flatMap(roll => roll.placements), ...plan.remnantUses.flatMap(use => use.placements)], sourceSubgroups, sourceMajorGroups)
+      .sort((left, right) => left.title.localeCompare(right.title, 'ko', { numeric: true }))
+      .map((group, index) => ({ ...group, code: `G${index + 1}` })),
+    [rolls, plan.remnantUses, sourceSubgroups, sourceMajorGroups]);
+  const subgroupByPlacementId = React.useMemo(() => new Map(highlightOptions.flatMap(group =>
+    [...group.placementIds].map(id => [id, group] as const))), [highlightOptions]);
   const highlight = highlightOptions.find(option => option.id === highlightedSubgroup);
   const appearance = (id: number) => subgroupHighlightStyle(highlight ? highlight.placementIds.has(id) : null);
   const [selectedId, setSelectedId] = React.useState<number | null>(null);
@@ -137,7 +142,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         const emphasis = appearance(placement.id);
         return <G key={placement.id} opacity={emphasis.opacity} onPress={() => { setMoveError(null); setSelectedId((current) => current === placement.id ? null : placement.id); }} accessibilityLabel={`병합 제품 ${placement.id} 상세 보기`}>
           <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${color}${emphasis.fillAlpha}`} stroke={active ? '#0f172a' : color} strokeWidth={active ? 5 : emphasis.strokeWidth} strokeDasharray={sizeStroke(placement.width, placement.height)} />
-          <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)} color={color} />
+          <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)} color={color} subgroupCode={subgroupByPlacementId.get(placement.id)?.code} />
         </G>;
       })}
       {cutGroupEndLines(result, rolls.slice(selectedRollIndex + 1)).map(line => <G key={line.group} accessibilityLabel={line.label} pointerEvents="none">
@@ -201,9 +206,13 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
         </View>
         {highlight && <Text style={styles.legendText}>선택 외 조각은 흐리게 표시합니다. 배치 위치·수량은 변경되지 않습니다.</Text>}
       </View>}
-      <Text style={styles.legendText}>색상: 소그룹 · 테두리 패턴: 크기 구분(반복) · 정확한 크기: 조각 치수(mm)</Text>
+      <Text style={styles.legendText}>G 번호·색상은 소그룹, 테두리 패턴은 크기를 표시합니다.</Text>
       <View style={styles.legend}>
-        {sourceIds.filter((id, index) => !hideLegend || sourceIds.findIndex(other => (sourceSubgroups?.[other] ?? other) === (sourceSubgroups?.[id] ?? id) && sourceMajorGroups?.[other] === sourceMajorGroups?.[id]) === index).map(sourceId => <View key={sourceId} style={styles.legendItem}><View style={[styles.dot, { backgroundColor: colorFor(sourceId, sourceIds, sourceSubgroups, sourceMajorGroups) }]} /><Text style={styles.legendText}>{hideLegend ? [sourceMajorGroups?.[sourceId], sourceSubgroups?.[sourceId] ?? labelBySource.get(sourceId)].filter(Boolean).join(' · ') : labelBySource.get(sourceId)}</Text></View>)}
+        {highlightOptions.map(group => <View key={group.id} style={styles.legendItem}>
+          <View style={[styles.dot, { backgroundColor: colorFor(group.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups) }]} />
+          <Text style={styles.subgroupCode}>{group.code}</Text>
+          <Text style={styles.legendText}>{group.title}</Text>
+        </View>)}
       </View>
       {!hideRollTabs && rolls.length > 1 && <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rollTabs}>{rolls.map((roll, index) => <TouchableOpacity key={index} accessibilityRole="tab" accessibilityLabel={`새 롤 ${index + 1} 도면 보기`} accessibilityState={{ selected: selectedRollIndex === index }} onPress={() => { selectRoll(index); setSelectedId(null); setDraggingId(null); }} style={[styles.rollTab, selectedRollIndex === index && styles.rollTabActive]}><Text style={[styles.rollTabText, selectedRollIndex === index && styles.rollTabTextActive]}>{index + 1}롤 · {Math.round(roll.usedLengthMm).toLocaleString()}mm</Text></TouchableOpacity>)}</ScrollView>}
       {learnedLayoutApplied && <Text style={styles.learnedBadge}>우수 수동 배치 학습 적용</Text>}
@@ -244,16 +253,10 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
             <Svg width="100%" height={remnantHeight} viewBox={`0 0 ${Math.max(use.widthMm, 1)} ${Math.max(use.result.usedLengthMm, 1)}`} accessibilityLabel={`${use.remnantId} 자투리 배치 도면`}>
               <Rect x={0} y={0} width={use.widthMm} height={Math.max(use.result.usedLengthMm, 1)} fill="#f0fdfa" stroke="#0f766e" strokeWidth={2} rx={4} />
               {use.placements.map((placement) => {
-                const annotation = formatPlacementPreview(placement.id, placement.width, placement.height, placement.rotated);
-                const centerX = placement.x + placement.width / 2;
-                const centerY = placement.y + placement.height / 2;
-                const { labelFontSize, dimensionFontSize, rotateText } = placementTextMetrics(placement.width, placement.height, annotation);
                 return <G key={placement.id} opacity={appearance(placement.id).opacity}>
                 <Rect x={placement.x} y={placement.y} width={placement.width} height={placement.height} rx={3} fill={`${colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)}22`} stroke={colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)} strokeWidth={2} strokeDasharray={sizeStroke(placement.width, placement.height)} />
-                <G transform={rotateText ? `rotate(90 ${centerX} ${centerY})` : undefined}>
-                  <SvgText x={centerX} y={centerY - dimensionFontSize * 0.2} textAnchor="middle" fontSize={labelFontSize} fontWeight="900" fill={colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)}>{annotation.label}</SvgText>
-                  <SvgText x={centerX} y={centerY + labelFontSize * 0.8} textAnchor="middle" fontSize={dimensionFontSize} fontWeight="700" fill="#334155">{annotation.dimensions}</SvgText>
-                </G>
+                <PlacementPreviewAnnotation {...placement} completed={completedPlacementIds.has(placement.id)}
+                  color={colorFor(placement.sourceId, sourceIds, sourceSubgroups, sourceMajorGroups)} subgroupCode={subgroupByPlacementId.get(placement.id)?.code} />
               </G>;
               })}
             </Svg>
@@ -269,6 +272,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
               <Text style={styles.modalEyebrow}>PLACEMENT DETAIL</Text>
               <Text style={styles.modalTitle}>조각 정보 · #{selected.id}</Text>
               <Text style={styles.modalLabel}>{info.label}</Text>
+              {subgroupByPlacementId.has(selected.id) && <Text style={styles.modalMeta}>{subgroupByPlacementId.get(selected.id)?.code} · {subgroupByPlacementId.get(selected.id)?.title}</Text>}
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
               {selected.cutGroup !== undefined && <Text style={styles.modalMeta}>이동·회전은 그룹 순서를 유지할 수 있는 위치에 적용됩니다.</Text>}
@@ -368,6 +372,7 @@ const styles = StyleSheet.create({
   controlPanelActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, paddingHorizontal: 8, paddingBottom: 8 },
   controlButton: { minHeight: 32, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10, borderWidth: 1, borderColor: '#bfdbfe', borderRadius: 7, backgroundColor: '#fff' },
   controlButtonText: { fontSize: 10, fontWeight: '900', color: '#1e3a8a' }, controlButtonOptimize: { borderColor: '#0f766e', backgroundColor: '#0f766e' }, controlButtonOptimizeText: { color: '#fff' }, controlButtonDanger: { borderColor: '#fecaca', backgroundColor: '#fff7f7' }, controlButtonDangerText: { color: '#b91c1c' }, controlButtonPrimary: { borderColor: '#2563eb', backgroundColor: '#2563eb' }, controlButtonPrimaryText: { color: '#fff' },
+  subgroupCode: { color: '#0f172a', fontSize: 11, fontWeight: '900' },
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 10 }, legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 }, dot: { width: 9, height: 9, borderRadius: 5 }, legendText: { maxWidth: 220, fontSize: 10, color: '#475569' },
   zoomRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 10, marginBottom: 2 }, zoomLabel: { marginRight: 2, fontSize: 10, fontWeight: '800', color: '#475569' }, zoomButton: { width: 30, height: 30, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#cbd5e1', borderRadius: 7, backgroundColor: '#fff' }, zoomButtonText: { fontSize: 18, lineHeight: 20, color: '#0f172a' }, zoomValue: { minWidth: 42, textAlign: 'center', fontSize: 10, fontWeight: '800', color: '#0f766e' }, zoomFitButton: { minHeight: 30, paddingHorizontal: 9, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#99f6e4', borderRadius: 7, backgroundColor: '#f0fdfa' }, zoomFitText: { fontSize: 10, fontWeight: '800', color: '#0f766e' }, canvasFrame: { width: '100%', marginTop: 9, overflow: 'hidden', borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalScroll: { width: '100%', maxHeight: 400, borderRadius: 9, backgroundColor: '#f8fafc' }, canvasVerticalContent: { minHeight: 240, alignItems: 'center' }, canvas: { overflow: 'hidden', borderRadius: 9 },
   dragHandle: { position: 'absolute', alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderStyle: 'dashed', borderColor: '#2563eb', borderRadius: 4, backgroundColor: 'rgba(37, 99, 235, 0.24)' }, dragHandleText: { fontSize: 11, fontWeight: '900', color: '#1e3a8a', backgroundColor: '#eff6ff' }, dragHintRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 9, gap: 8 }, dragHintText: { flex: 1, fontSize: 11, fontWeight: '700', color: '#1d4ed8' }, dragCancelText: { paddingHorizontal: 8, paddingVertical: 4, fontSize: 11, fontWeight: '900', color: '#b91c1c' }, dragErrorText: { marginTop: 5, fontSize: 11, fontWeight: '700', color: '#b91c1c' },
