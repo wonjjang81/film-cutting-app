@@ -1,6 +1,6 @@
 import { LABOR_COST_PER_UNIT } from './installationLabor';
 
-import { referenceWork, referenceParts, filmLossFactors, shapeFactors, type ReferencePart, type ReferenceShape, type FilmPattern } from './referenceEstimate';
+import { referenceWork, referenceParts, isLinearReference, filmLossFactors, shapeFactors, type ReferencePart, type ReferenceShape, type FilmPattern } from './referenceEstimate';
 
 export type InstallationWorkload = {
   enabled: boolean;
@@ -27,7 +27,7 @@ export function estimateInstallationWorkload(areaM2: number, workload?: Installa
   if (!workload || !Number.isFinite(areaM2) || areaM2 <= 0) return undefined;
   const shape = workload.shape && Object.hasOwn(shapeFactors, workload.shape) ? shapeFactors[workload.shape] : 1;
   if (workload.referencePart) {
-    const linear = workload.referencePart === 'kitchen' || workload.referencePart === 'trim';
+    const linear = isLinearReference(workload.referencePart);
     const quantity = readQuantity(workload.quantity, !linear);
     const reference = quantity ? referenceWork(workload.referencePart, quantity) : undefined;
     if (!reference) return undefined;

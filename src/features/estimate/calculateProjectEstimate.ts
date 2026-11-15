@@ -9,7 +9,7 @@ import type { InstallationPartRate } from './installationPartPricing';
 import type { InstallationWorkload } from './installationWorkload';
 
 export type EstimateRateMode = 'group' | 'global';
-export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; netInstallationArea?: boolean; workloadPriced?: boolean; constructionCostPerM?: number; installationPart?: string; mixed?: boolean };
+export type EstimateRateSummary = { materialCostPerM: number; constructionCostPerM2: number; netInstallationArea?: boolean; workloadPriced?: boolean; difficultyFactor?: number; constructionCostPerM?: number; installationPart?: string; mixed?: boolean };
 export type ProjectEstimateLine<TJob> = {
   job: TJob;
   estimate: Estimate;
@@ -140,7 +140,7 @@ export function calculateProjectEstimate(
   const constructionCost = allDetails.reduce((sum, item) => sum + item.estimate.constructionCost, 0);
   const pricedSources = [...details, ...mergedDetails.flatMap((line) => line.sourceDetails)];
   const fixedLabor = pricedSources.filter((line) => line.rates.workloadPriced || line.rates.constructionCostPerM !== undefined).reduce((sum, line) => sum + line.estimate.constructionCost, 0);
-  const variableArea = pricedSources.filter((line) => !line.rates.workloadPriced && line.rates.constructionCostPerM === undefined).reduce((sum, line) => sum + (options.netInstallationArea ? netInstallationAreaM2(line.job) : line.estimate.materialAreaM2), 0);
+  const variableArea = pricedSources.filter((line) => !line.rates.workloadPriced && line.rates.constructionCostPerM === undefined).reduce((sum, line) => sum + (options.netInstallationArea ? netInstallationAreaM2(line.job) : line.estimate.materialAreaM2) * (line.rates.difficultyFactor ?? 1), 0);
   const constructionCostRange = {
     min: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MIN)),
     max: fixedLabor + Math.max(0, Math.round(variableArea * CONSTRUCTION_PRICE_MAX)),
