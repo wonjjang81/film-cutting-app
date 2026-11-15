@@ -50,10 +50,10 @@ const server = http.createServer((req,res)=>{
     const lineB=page.locator('g[aria-label^="그룹 B 끝"]');
     await lineA.waitFor();
     await lineB.waitFor();
-    for (const code of ['G1','G2']) {
-      await page.locator('svg text').filter({hasText: new RegExp('^#.* · ' + code)}).first().waitFor();
-      await page.getByText(code,{exact:true}).first().waitFor();
+    for (const name of ['상부장','하부장']) {
+      await page.locator('svg text').filter({hasText: new RegExp('^#.*' + name + '_')}).first().waitFor();
     }
+    assert.equal(await page.getByText('G1',{exact:true}).count(),0);
     await page.locator('g[aria-label$="상세 보기"]').first().click();
     await page.getByRole('button',{name:/현재 롤에서 수동 이동/}).waitFor();
     await page.getByRole('button',{name:/90도 수동 회전/}).waitFor();
