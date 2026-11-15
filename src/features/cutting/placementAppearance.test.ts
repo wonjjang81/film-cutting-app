@@ -1,12 +1,11 @@
 import { expect, it } from 'vitest';
-import { subgroupColor, sizeStroke } from './placementAppearance';
+import { subgroupAppearance, sizeStroke } from './placementAppearance';
 
-it('uses a stable subgroup color across sources and major groups', () => {
-  const groups = { a: '상부장', b: '상부장', c: '하부장' };
-  expect(subgroupColor('a', groups)).toBe(subgroupColor('b', groups));
-  expect(subgroupColor('a', groups)).not.toBe(subgroupColor('c', groups));
-  expect(subgroupColor('a', groups, { a: '대그룹1' })).not.toBe(subgroupColor('b', groups, { b: '대그룹2' }));
-  expect(subgroupColor('a')).toBe(subgroupColor('a'));
+it('assigns different colors before reuse, and keeps group colors stable when placements reorder', () => {
+  const titles = Array.from({ length: 16 }, (_, index) => `대그룹1 · 소그룹${index + 1}`);
+  const styles = subgroupAppearance(titles);
+  expect(new Set(styles.values()).size).toBe(titles.length);
+  expect(subgroupAppearance([...titles].reverse())).toEqual(styles);
 });
 
 it('keeps size patterns on rotation and provides multiple visual classes', () => {
