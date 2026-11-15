@@ -61,6 +61,12 @@ const server = http.createServer((req,res)=>{
     await lineA.waitFor();
     assert.equal(await lineB.count(),0);
     await button('재단계산에서 그룹화 변경').click();
+    await button('소그룹마다 별도 ID 지정').click();
+    await button('현재 그룹의 모든 조각 자동 배치 계산').click();
+    await button('배치계획으로 이동').click();
+    await lineA.waitFor();
+    await lineB.waitFor();
+    await button('재단계산에서 그룹화 변경').click();
     await button('길이별').click();
     await page.getByRole('switch',{ name: '원단절약 우선' }).click();
     await page.getByRole('textbox',{name:'원단절약 최적화 비율'}).fill('100');
