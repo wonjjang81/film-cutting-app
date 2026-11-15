@@ -21,7 +21,7 @@ export type InstallationLaborLine = {
 };
 
 /** Reprices newly-created estimate objects only; never alters saved jobs, placements or quantities. */
-export function repriceInstallationLabor(sources: Source[], mode: InstallationMode, overrides: Record<string, string | undefined> = {}, parts?: readonly InstallationPartRate[], workloads?: Record<string, InstallationWorkload>): InstallationLaborLine[] {
+export function repriceInstallationLabor(sources: Source[], mode: InstallationMode, overrides: Record<string, string | undefined> = {}, parts?: readonly InstallationPartRate[], workloads?: Record<string, InstallationWorkload>, installationLength?: (job: SavedCuttingJob) => number): InstallationLaborLine[] {
   const groups = new Map<string, Source[]>();
   for (const source of sources) {
     const key = installationSubgroupKey(source.job);
@@ -30,7 +30,8 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
   const lines = [...groups.entries()].map(([id, items]): InstallationLaborLine => {
     const job = items[0]!.job;
     const part = resolveInstallationPart(job, overrides, parts);
-    const lengthM = items.reduce((total, item) => total + item.estimate.materialLengthM, 0);
+    const lengths = items.map(item => installationLength?.(item.job) ?? item.estimate.materialLengthM);
+    const lengthM = lengths.reduce((total, length) => total + length, 0);
     const areas = items.map((item) => netInstallationAreaM2(item.job));
     const installationAreaM2 = areas.reduce((sum, area) => sum + area, 0);
     const widthMm = job.subgroupOverallDimensions?.widthMm;
@@ -49,7 +50,7 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
     } : baseCalculation;
     if (work || calculation) {
       // Allocate integer KRW with largest remainders so every subgroup/roll total reconciles.
-      const costs = allocateLaborCost(work?.cost ?? calculation!.constructionCost, work ? areas : items.map((item) => item.estimate.materialLengthM));
+      const costs = allocateLaborCost(work?.cost ?? calculation!.constructionCost, work ? areas : lengths);
       items.forEach((item, index) => {
         item.rates = work
           ? { ...item.rates, constructionCostPerM: undefined, workloadPriced: true, installationPart: effectivePart }

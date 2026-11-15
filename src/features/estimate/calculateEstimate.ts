@@ -21,7 +21,7 @@ export type Estimate = {
 };
 
 export type EstimateUsageOverride = {
-  /** Total physical new-roll length already calculated by the merged layout. */
+  /** New-roll length, or its area-equivalent length for placement-based billing. */
   materialLengthMm: number;
   /** Roll width used with the physical length for construction pricing. */
   materialWidthMm?: number;
@@ -38,6 +38,7 @@ export function calculateEstimateAtRates(
   usageOverride?: EstimateUsageOverride,
   constructionCostPerM?: number,
   installationAreaM2?: number,
+  installationLengthM?: number,
 ): Estimate {
   const materialLengthMm = Math.max(0, usageOverride?.materialLengthMm ?? job.result.newRollLengthMm);
   const materialWidthMm = Math.max(0, usageOverride?.materialWidthMm ?? job.input.rollWidthMm);
@@ -48,7 +49,7 @@ export function calculateEstimateAtRates(
     : Math.max(0, usageOverride.productAreaM2);
   const materialCost = roundWon(materialLengthM * Math.max(0, materialCostPerM));
   const constructionCost = constructionCostPerM !== undefined && Number.isFinite(constructionCostPerM) && constructionCostPerM >= 0
-    ? Math.floor(materialLengthM * constructionCostPerM)
+    ? Math.floor((installationLengthM ?? materialLengthM) * constructionCostPerM)
     : roundWon((installationAreaM2 ?? materialAreaM2) * Math.max(0, constructionCostPerM2));
   const subtotal = materialCost + constructionCost;
   const automaticDiscountRate = materialAreaM2 >= 10 ? 0.15 : materialAreaM2 >= 5 ? 0.1 : materialAreaM2 >= 1 ? 0.05 : 0;
