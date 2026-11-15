@@ -1,3 +1,4 @@
+import { hasOrderedCutBands } from './cutGroupLayout';
 import type { SavedManualMergedLayout, SavedMergedCuttingJob } from '../library/models';
 import type { CurrentEstimateSnapshot } from '../estimate/currentGroupEstimate';
 import type { GroupedPieceRequest, MergedGroupPlan } from '../remnants/planGroupedPieces';
@@ -164,21 +165,7 @@ export function restoreManualMergedLayout(
     rollResults.push(rollMetrics(placements, rollWidthMm, endMarginMm));
   }
   if (seen.size !== basePlacements.size) return null;
-  if (rollResults.some(roll => roll.placements.some(piece => piece.cutGroup !== undefined))) {
-    let previousGroup = 0;
-    for (const roll of rollResults) {
-      let previousEnd = 0;
-      let groupEnd = 0;
-      for (const piece of [...roll.placements].sort((a, b) => a.y - b.y)) {
-        const group = piece.cutGroup ?? Infinity;
-        if (group < previousGroup) return null;
-        if (group !== previousGroup) previousEnd = groupEnd;
-        if (piece.y < previousEnd) return null;
-        previousGroup = group;
-        groupEnd = Math.max(groupEnd, piece.y + piece.height);
-      }
-    }
-  }
+  if (!hasOrderedCutBands(rollResults)) return null;
   let offset = 0;
   const combinedPlacements = rollResults.flatMap((roll) => {
     const shifted = roll.placements.map((placement) => ({ ...placement, y: placement.y + offset }));

@@ -1,3 +1,4 @@
+import { parseProjectCutSettings, type ProjectCutSettings } from './projectCutSettings';
 import {
   type FilmPreset,
   type FilmRemnant,
@@ -48,7 +49,7 @@ export type LibraryRepository = {
   /** Saves one legacy-style project header and replaces its complete job bundle atomically. */
   saveProjectBundle(project: SavedProject, jobs: readonly SavedCuttingJob[], mergedJobs: readonly SavedMergedCuttingJob[]): Promise<void>;
   /** Persists adjusted layouts without replacing the project's cutting jobs. */
-  saveProjectManualLayouts(projectId: string, layouts: readonly SavedManualMergedLayout[], updatedAt: string): Promise<void>;
+  saveProjectManualLayouts(projectId: string, layouts: readonly SavedManualMergedLayout[], updatedAt: string, cutSettings?: ProjectCutSettings): Promise<void>;
   renameProject(id: string, name: string, updatedAt: string): Promise<void>;
   deleteProject(id: string): Promise<void>;
   renameJob(id: string, name: string, updatedAt: string): Promise<void>;
@@ -384,6 +385,7 @@ function validateProject(value: unknown): SavedProject | undefined {
     || !Array.isArray(value.mergedJobIds) || !value.mergedJobIds.every(validId)
     || !finiteNonnegative(value.materialCostPerM) || !finiteNonnegative(value.constructionCostPerM2)
     || createdAt === undefined || updatedAt === undefined) return undefined;
+  const cutSettings = parseProjectCutSettings(value.cutSettings);
   const manualLayouts = value.manualLayouts === undefined ? undefined : validateManualLayouts(value.manualLayouts);
   if (value.manualLayouts !== undefined && manualLayouts === undefined) return undefined;
   return {
@@ -396,6 +398,7 @@ function validateProject(value: unknown): SavedProject | undefined {
     createdAt,
     updatedAt,
     ...(manualLayouts === undefined ? {} : { manualLayouts }),
+    ...(cutSettings ? { cutSettings } : {}),
   };
 }
 
@@ -820,7 +823,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       });
     },
 
-    async saveProjectManualLayouts(projectId, layouts, updatedAt): Promise<void> {
+    async saveProjectManualLayouts(projectId, layouts, updatedAt, cutSettings): Promise<void> {
       assertId(projectId);
       const validLayouts = validateManualLayouts(layouts);
       const validUpdatedAt = normalizeTimestamp(updatedAt);
@@ -828,7 +831,7 @@ export function createLibraryRepository(adapter: KeyValueAdapter): LibraryReposi
       await mutate((document) => {
         const project = (document.projects ?? []).find((item) => item.id === projectId);
         if (!project) throw new Error('저장할 프로젝트를 찾지 못했습니다.');
-        document.projects = orderProjects(replaceById(document.projects ?? [], { ...project, manualLayouts: validLayouts, updatedAt: validUpdatedAt }));
+        document.projects = orderProjects(replaceById(document.projects ?? [], { ...project, ...(cutSettings ? { cutSettings: parseProjectCutSettings(cutSettings) } : {}), manualLayouts: validLayouts, updatedAt: validUpdatedAt }));
       });
     },
 

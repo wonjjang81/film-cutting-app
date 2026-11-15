@@ -13,7 +13,7 @@ import { dragAutoScrollStep } from './dragAutoScroll';
 import { MAX_NEW_ROLL_LENGTH_MM } from './rollLengthLimit';
 import { subgroupHighlightOptions, subgroupHighlightStyle } from './subgroupHighlight';
 import { SubgroupHighlightSelect } from './SubgroupHighlightSelect';
-import { cutGroupEndLines, hasCutGroups } from './cutGroupLayout';
+import { cutGroupEndLines } from './cutGroupLayout';
 import { subgroupColor, sizeStroke } from './placementAppearance';
 
 
@@ -70,7 +70,6 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const selectRoll = (rollIndex: number) => { setLocalRollIndex(rollIndex); onSelectRoll?.(rollIndex); };
   const rolls = plan.rollResults?.length ? plan.rollResults : [plan.result];
   const result = rolls[Math.min(selectedRollIndex, rolls.length - 1)]!;
-  const grouped = hasCutGroups(plan);
   const utilization = layoutUtilizationComparison(automaticUtilizationPercent ?? result.utilizationPercent, result.utilizationPercent);
   const sourceIds = [...new Set(result.placements.map((placement) => placement.sourceId))];
   const [highlightedSubgroup, setHighlightedSubgroup] = React.useState<string | null>(null);
@@ -90,7 +89,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
   const [viewportWidth, setViewportWidth] = React.useState(640);
   const [manualZoom, setManualZoom] = React.useState<number | null>(null);
   const selected = result.placements.find((placement) => placement.id === selectedId) ?? null;
-  const dragging = grouped ? null : result.placements.find((placement) => placement.id === draggingId) ?? null;
+  const dragging = result.placements.find((placement) => placement.id === draggingId) ?? null;
   const [workspaceLengths, setWorkspaceLengths] = React.useState<Record<number, number>>({});
   const safeLength = Math.max(result.usedLengthMm, Math.min(MAX_NEW_ROLL_LENGTH_MM, Math.max(workspaceLengths[selectedRollIndex] ?? 0, dragging ? result.usedLengthMm + 1000 : 0)), 1);
   const fitZoom = Math.max(0.75, (viewportWidth - 24) / viewportWidth);
@@ -272,6 +271,7 @@ export function MergedRollPreview({ plan, job, busy = false, onToggleComplete, o
               <Text style={styles.modalLabel}>{info.label}</Text>
               <Text style={styles.modalValue}>{info.dimensions}</Text>
               <Text style={styles.modalMeta}>{info.rotation} · {info.position}</Text>
+              {selected.cutGroup !== undefined && <Text style={styles.modalMeta}>이동·회전은 그룹 순서를 유지할 수 있는 위치에 적용됩니다.</Text>}
               {onShiftPlacementToEdge && <View style={styles.modalDirectionPad} accessibilityLabel="조각 상하좌우 끝 이동">
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 위쪽 끝으로 이동`} disabled={busy} onPress={() => { const error = onShiftPlacementToEdge(selected.id, 'top'); setMoveError(error); if (!error) setSelectedId(null); }} style={[styles.modalDirectionButton, styles.modalDirectionTop, busy && styles.disabled]}><Text style={styles.modalDirectionText}>↑</Text></TouchableOpacity>
                 <TouchableOpacity accessibilityRole="button" accessibilityLabel={`${info.label} 왼쪽 끝으로 이동`} disabled={busy} onPress={() => { const error = onShiftPlacementToEdge(selected.id, 'left'); setMoveError(error); if (!error) setSelectedId(null); }} style={[styles.modalDirectionButton, styles.modalDirectionLeft, busy && styles.disabled]}><Text style={styles.modalDirectionText}>←</Text></TouchableOpacity>

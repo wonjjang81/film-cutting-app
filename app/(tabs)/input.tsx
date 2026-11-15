@@ -1,3 +1,4 @@
+import { projectCutSettings, projectSubgroupKey } from '../../src/features/library/projectCutSettings';
 import { DEFAULT_MATERIAL_COST_PER_M } from '../../src/features/estimate/calculateEstimate';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConstructionDiagram } from '../../src/features/diagrams/ConstructionDiagram';
@@ -147,6 +148,7 @@ export default function FilmCutInputScreen() {
   const [checkedPlacementIds, setCheckedPlacementIds] = useState<number[]>([]);
   const [candidateComparison, setCandidateComparison] = useState<ContinuousRollCandidateComparison[]>([]);
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
+  const restoredPlacementPreference = useRef(false);
   const [placementPreference, setPlacementPreference] = useState(DEFAULT_PLACEMENT_PREFERENCE);
   const [placementComparisons, setPlacementComparisons] = useState<{ signature: string; rows: { priority: PlacementPriority; length: number; utilization: number }[] }>();
   const placementSignature = useMemo(() => JSON.stringify([groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]), [groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]);
@@ -173,8 +175,8 @@ export default function FilmCutInputScreen() {
     && (routeNewProject !== '1' || routedProjectRef.current === 'new');
   const draftToSave = useMemo<InputDraftBackup | null>(() => !inputReady || !draftOwner ? null : ({
     version: 1, ownerId: draftOwner, updatedAt: new Date().toISOString(), projectId, projectName,
-    groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets,
-  }), [inputReady, draftOwner, projectId, projectName, groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets]);
+    groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets, placementPreference,
+  }), [inputReady, draftOwner, projectId, projectName, groups, activeGroupId, activePieceId, useRemnants, diagramPart, diagramTargets, placementPreference]);
   latestDraft.current = draftToSave;
   const identifiersReady = form.brand.trim().length > 0;
   const activeSourceId = `${activeGroupId}-${activePieceId}`;
@@ -231,9 +233,17 @@ export default function FilmCutInputScreen() {
   }, []);
 
   const restoreProject = useCallback((project: SavedProject, document: LibraryDocument) => {
+    if (project.cutSettings) {
+      restoredPlacementPreference.current = true;
+      setPlacementPreference(project.cutSettings.preference);
+    }
     const savedJobs = project.jobIds
       .map((id) => document.jobs.find((job) => job.id === id))
       .filter((job): job is SavedCuttingJob => Boolean(job));
+    if (!project.cutSettings && savedJobs.some(job => (job.cutGroupOrder ?? 1) > 1)) {
+      restoredPlacementPreference.current = true;
+      setPlacementPreference(DEFAULT_PLACEMENT_PREFERENCE);
+    }
     if (savedJobs.length === 0) {
       // Projects can now be created from the project tab before the first
       // cutting calculation. Keep the persisted project identity while
@@ -270,7 +280,7 @@ export default function FilmCutInputScreen() {
       group.pieces.push({ id: uniquePieceId, name: uniquePieceId, form: formFromSavedJob(job) });
       const subgroupName = job.subgroupName?.trim() || 'A';
       const subgroups = subgroupByGroupName.get(groupName) ?? new Map<string, { pieceIds: string[]; cutGroupOrder?: number; difficulty: ConstructionDifficulty; siteCount: string; overallDimensions: EditableSubgroupOverallDimensions; diagramShapeKey?: string; installationPart?: string; constructionCostPerM?: number }>();
-      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], cutGroupOrder: job.cutGroupOrder, difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)), overallDimensions: editableSubgroupOverallDimensions(job.subgroupOverallDimensions), diagramShapeKey: job.diagramShapeKey, installationPart: job.installationPart, constructionCostPerM: job.constructionCostPerM };
+      const subgroup = subgroups.get(subgroupName) ?? { pieceIds: [], cutGroupOrder: project.cutSettings?.orders[projectSubgroupKey(groupName, subgroupName)] ?? job.cutGroupOrder, difficulty: normalizeDifficulty(job.difficulty), siteCount: String(normalizeSubgroupSiteCount(job.siteCount)), overallDimensions: editableSubgroupOverallDimensions(job.subgroupOverallDimensions), diagramShapeKey: job.diagramShapeKey, installationPart: job.installationPart, constructionCostPerM: job.constructionCostPerM };
       subgroup.pieceIds.push(uniquePieceId);
       subgroup.difficulty = normalizeDifficulty(job.difficulty ?? subgroup.difficulty);
       subgroups.set(subgroupName, subgroup);
@@ -716,6 +726,12 @@ export default function FilmCutInputScreen() {
         if (!active) return;
         const draft = restored.draft;
         if (draft) {
+          const preference = draft.placementPreference ??
+            (draft.groups.some(group => group.subgroups.some(subgroup => (subgroup.cutGroupOrder ?? 1) > 1)) ? DEFAULT_PLACEMENT_PREFERENCE : undefined);
+          if (preference) {
+            restoredPlacementPreference.current = true;
+            setPlacementPreference(preference);
+          }
           const group = draft.groups.find(item => item.id === draft.activeGroupId) ?? draft.groups[0]!;
           const piece = group.pieces.find(item => item.id === draft.activePieceId) ?? group.pieces[0];
           setProjectId(draft.projectId); setProjectName(draft.projectName); setGroups(draft.groups);
@@ -849,7 +865,7 @@ export default function FilmCutInputScreen() {
   useEffect(() => {
     let active = true;
     void AsyncStorage.getItem(placementPreferenceKey).then(raw => {
-      if (active && raw) setPlacementPreference(parsePlacementPreference(JSON.parse(raw)));
+      if (active && raw && !restoredPlacementPreference.current) setPlacementPreference(parsePlacementPreference(JSON.parse(raw)));
     }).catch(() => undefined);
     return () => { active = false; };
   }, []);
@@ -1139,6 +1155,7 @@ export default function FilmCutInputScreen() {
       const allJobs = [...preservedJobs, ...jobs];
       const allMergedJobs = [...preservedMergedJobs, ...mergedJobs];
       const project: SavedProject = {
+        cutSettings: projectCutSettings(groups, placementPreference),
         id, name, jobIds: allJobs.map((job) => job.id), mergedJobIds: allMergedJobs.map((job) => job.id),
         materialCostPerM: optionalCost(groups[0]?.materialCostPerM) ?? DEFAULT_MATERIAL_COST_PER_M,
         constructionCostPerM2: optionalCost(groups[0]?.constructionCostPerM2) ?? 15_000,

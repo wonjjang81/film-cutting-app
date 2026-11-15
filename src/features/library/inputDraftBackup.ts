@@ -1,3 +1,4 @@
+import { parsePlacementPreference, type PlacementPreference } from '../remnants/planGroupedPieces';
 import type { CuttingFormState } from './uiWorkflowHelpers';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 
@@ -10,6 +11,7 @@ export type InputDraftBackup = {
   version: 1; ownerId: string; updatedAt: string;
   projectId: string | null; projectName: string; groups: CuttingGroupDraft[];
   activeGroupId: string; activePieceId: string; useRemnants: boolean;
+  placementPreference?: PlacementPreference;
   diagramPart: string; diagramTargets: Record<string, string>;
 };
 
@@ -42,7 +44,8 @@ export function parseInputDraftBackup(raw: string | null, ownerId: string, proje
     if (!(value.projectId === null || typeof value.projectId === 'string') || (projectId !== undefined && value.projectId !== projectId) || typeof value.projectName !== 'string') return null;
     if (!Array.isArray(value.groups) || value.groups.length === 0 || !value.groups.every(validGroup) || new Set(value.groups.map(group => group.id)).size !== value.groups.length) return null;
     if (typeof value.activeGroupId !== 'string' || typeof value.activePieceId !== 'string' || typeof value.useRemnants !== 'boolean' || typeof value.diagramPart !== 'string' || !record(value.diagramTargets) || !Object.values(value.diagramTargets).every(target => typeof target === 'string')) return null;
-    return value as InputDraftBackup;
+    const draft = value as InputDraftBackup;
+    return value.placementPreference === undefined ? draft : { ...draft, placementPreference: parsePlacementPreference(value.placementPreference) };
   } catch { return null; }
 }
 /** One current temporary draft and one latest minute backup per project. */
