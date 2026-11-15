@@ -49,7 +49,7 @@ export function priceExtraEstimateItem(item: ExtraEstimateItem) {
     basis: item.included ? '기존 견적에 포함' : valid ? `${number(quantity!)}${item.unit.trim() || '식'} × ${estimateWon(rate!)}` : '항목명·수량·단가 확인' };
 }
 
-export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: readonly ExtraEstimateItem[], expenseRate: ExpenseRate = DEFAULT_EXPENSE_RATE) {
+export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: readonly ExtraEstimateItem[], expenseRate: ExpenseRate = DEFAULT_EXPENSE_RATE, breakdown = buildEstimateGroupBreakdown(estimate)) {
   const sources = [...estimate.jobs, ...estimate.mergedJobs.flatMap(line => line.sourceDetails ?? [])];
   const films = new Map<string, { name: string; length: number; rate: number; amount: number }>();
   for (const { job, estimate: amount, rates } of sources) {
@@ -67,7 +67,7 @@ export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: read
     group.set(line.subgroupName, (group.get(line.subgroupName) ?? 0) + line.minimumSupplement);
     supplements.set(line.groupId, group);
   }
-  const labor = buildEstimateGroupBreakdown(estimate).flatMap(group => group.subgroups.map(sub => {
+  const labor = breakdown.flatMap(group => group.subgroups.map(sub => {
     const line = estimate.installationLaborLines?.find(line => line.groupId === group.id && line.subgroupName === sub.name);
     const calculation = line?.calculation;
     return {
