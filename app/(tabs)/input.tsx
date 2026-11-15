@@ -863,6 +863,38 @@ export default function FilmCutInputScreen() {
     setNotice('우선순위를 변경했습니다. 현재 조각 배치를 다시 실행해 주세요.');
   };
 
+  const activateStrictSubgroupPlacement = () => changePlacementPreference({
+    ...placementPreference,
+    priority: 'subgroup',
+    optimization: {
+      ...placementPreference.optimization,
+      subgroup: { ...materialOptimization(placementPreference, 'subgroup'), enabled: false },
+    },
+  });
+
+  const separateSubgroupsForCutting = () => {
+    if (busy) return;
+    let order = 0;
+    setGroups(groups.map(group => group.mergeGroupId === DISABLED_MERGE_GROUP_ID ? group : {
+      ...group,
+      subgroups: group.subgroups.map(subgroup => subgroup.pieceIds.length
+        ? { ...subgroup, cutGroupOrder: ++order }
+        : subgroup),
+    }));
+    activateStrictSubgroupPlacement();
+    setNotice('소그룹마다 별도 그룹화 ID를 지정했습니다. 현재 조각 배치를 실행해 주세요.');
+  };
+
+  const openCurrentPlanning = async () => {
+    try {
+      await AsyncStorage.setItem(CURRENT_GROUP_ESTIMATE_STORAGE_KEY,
+        JSON.stringify(createCurrentEstimateSnapshot(groups, projectId, placementPreference)));
+      router.push('/planning');
+    } catch (caught) {
+      setError(`배치 설정을 저장하지 못했습니다: ${messageOf(caught)}`);
+    }
+  };
+
   const calculateGroup = async () => {
     setBusy(true); setError(null); setNotice(null);
     try {
@@ -1324,9 +1356,7 @@ export default function FilmCutInputScreen() {
 <View ref={subgroupAnchor} collapsable={false}><PieceInputPanel cutGroupingActive={placementPreference.priority === 'subgroup' && !materialOptimization(placementPreference, 'subgroup').enabled} onChangeCutGroup={(groupId, subgroupId, order) => {
   if (busy) return;
   setGroups(current => current.map(group => group.id === groupId ? { ...group, subgroups: group.subgroups.map(subgroup => subgroup.id === subgroupId ? { ...subgroup, cutGroupOrder: order } : subgroup) } : group));
-  changePlacementPreference({ ...placementPreference, priority: 'subgroup', optimization: {
-    ...placementPreference.optimization, subgroup: { ...materialOptimization(placementPreference, 'subgroup'), enabled: false },
-  } });
+  activateStrictSubgroupPlacement();
   setNotice('그룹화 ID ' + cutGroupId(order) + ' · 소그룹별 배치(원단절약 OFF) 적용. 현재 조각 배치를 실행해 주세요.');
 }} onToggleDeferred={(groupId, piece) => { updatePieceForm(groupId, piece.id, current => ({ ...current, placementDeferred: !current.placementDeferred })); setPlan(null); setPlanRequest(null); setDraftJob(null); setBatchPlans(null); setMergedGroupPlans([]); setPendingBatchSave(null); setSavedGroupPlanViews({}); setManualPlacements(null); setCheckedPlacementIds([]); setConfirmed(false); setCuttingComplete(false); setNotice("배치 보류 상태가 변경되었습니다. 다시 배치하면 반영됩니다."); }} onShowIllustration={showIllustration} groups={groups} groupOptions={groups.map((group) => ({ id: group.id, displayId: group.displayId }))} activePieceId={activePieceId} onSelect={(groupId, piece) => selectPiece(piece, groupId)} onAdd={(groupId, subgroupId, overallAllowance) => addPiece(subgroupId, groupId, overallAllowance)} onAddSubgroup={(overallAllowance) => addSubgroup(overallAllowance)} onDelete={(groupId, pieceId) => deletePiece(pieceId, groupId)} onDeleteSubgroup={deleteSubgroup} onRename={(groupId, pieceId, nextId) => renamePieceId(groupId, pieceId, nextId)} onRenameSubgroup={(groupId, subgroupId, name) => renameSubgroup(groupId, subgroupId, name)} onChangeInstallationPart={updateSubgroupInstallationPart} onChangeDifficulty={updateSubgroupDifficulty} onChangeSiteCount={updateSubgroupSiteCount} onChangeOverallDimensions={updateSubgroupOverallDimensions} onMoveSubgroup={moveSubgroupToGroup} onChangeForm={(groupId, pieceId, updater) => updatePieceForm(groupId, pieceId, updater)} onApplyAllAllowance={applyAllCutAllowance} onApplySubgroupAllowance={applySubgroupCutAllowance} /></View>
           <ProductionSettingsCard sideMargin={form.sideMargin} startEndMargin={form.startEndMargin} useRemnants={useRemnants} autoSaveHistory={autoSaveHistory} busy={busy} onChangeSideMargin={(value) => updateProductionMargin('sideMargin', value)} onChangeStartEndMargin={(value) => updateProductionMargin('startEndMargin', value)} onToggleRemnants={(value) => { setUseRemnants(value); void calculate(form, value); }} onToggleHistory={toggleAutoSaveHistory} />
@@ -1342,7 +1372,10 @@ export default function FilmCutInputScreen() {
                 </TouchableOpacity>;
               })}
             </View>
-            <Text style={styles.overallDimensionsHint}>소그룹별은 그룹화 ID 순서, 길이별은 긴 치수부터 배치합니다.</Text>
+            <Text style={styles.overallDimensionsHint}>같은 그룹화 ID는 함께 배치됩니다. 소그룹마다 구분하려면 아래 버튼으로 서로 다른 ID를 지정하세요.</Text>
+            <TouchableOpacity accessibilityRole="button" disabled={busy} onPress={separateSubgroupsForCutting} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>소그룹마다 별도 ID 지정</Text>
+            </TouchableOpacity>
             <View style={[styles.subgroupHeader, styles.subgroupHeaderWrap]}>
               <Text style={styles.overallDimensionsTitle}>원단절약 우선</Text>
               <TouchableOpacity accessibilityRole="switch" accessibilityLabel="원단절약 우선"
@@ -1370,7 +1403,7 @@ export default function FilmCutInputScreen() {
         </View>
       </View>
 
-      {plan && <View style={styles.resultMovedNotice}><Text style={styles.resultMovedTitle}>재단 결과가 배치계획으로 이동되었습니다.</Text><Text style={styles.resultMovedText}>통합 원단 사용 계획, 미리보기, 배치목록과 조각별 완료 체크를 배치계획 탭에서 관리합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="배치계획으로 이동" onPress={() => router.push('/planning')} style={styles.resultMovedButton}><Text style={styles.resultMovedButtonText}>배치계획 열기 →</Text></TouchableOpacity></View>}
+      {plan && <View style={styles.resultMovedNotice}><Text style={styles.resultMovedTitle}>재단 결과가 배치계획으로 이동되었습니다.</Text><Text style={styles.resultMovedText}>통합 원단 사용 계획, 미리보기, 배치목록과 조각별 완료 체크를 배치계획 탭에서 관리합니다.</Text><TouchableOpacity accessibilityRole="button" accessibilityLabel="배치계획으로 이동" onPress={() => void openCurrentPlanning()} style={styles.resultMovedButton}><Text style={styles.resultMovedButtonText}>배치계획 열기 →</Text></TouchableOpacity></View>}
       {plan && draftJob && <View style={styles.workflowCard}><Text style={styles.workflowTitle}>작업 상태</Text><Text style={styles.workflowText}>재단 완료와 재고 확정은 현재 작업에서 계속 관리할 수 있습니다.</Text><View style={[styles.completeBar, cuttingComplete ? styles.completeBarDone : styles.completeBarPending]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{cuttingComplete ? '재단 완료 체크됨' : '재단 완료 체크'}</Text><Text style={styles.confirmMeta}>{cuttingComplete ? '현장 재단 완료 상태가 프로젝트에 저장되었습니다.' : '실제 재단이 끝난 뒤 체크하면 작업 이력에 상태가 남습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="재단 완료 상태 변경" disabled={busy} onPress={() => void markCuttingComplete()} style={[styles.completeButton, busy && styles.disabled]}><Text style={styles.completeButtonText}>{cuttingComplete ? '완료 해제' : '재단 완료'}</Text></TouchableOpacity></View><View style={[styles.confirmBar, confirmed ? styles.confirmedBar : styles.tentativeBar]}><View style={styles.confirmCopy}><Text style={styles.confirmTitle}>{confirmed ? '재고 반영 완료' : '재고 미반영'}</Text><Text style={styles.confirmMeta}>{confirmed ? '작업 이력과 잔여 자투리를 저장했습니다.' : '계산만 완료된 상태입니다. 확정 전에는 재고가 바뀌지 않습니다.'}</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel="작업 확정 및 자투리 재고 반영" disabled={busy || confirmed} onPress={confirmJob} style={[styles.confirmButton, (busy || confirmed) && styles.disabled]}><Text style={styles.confirmButtonText}>{confirmed ? '확정 완료' : '작업 확정'}</Text></TouchableOpacity></View><View style={styles.exportRow}><TouchableOpacity accessibilityRole="button" accessibilityLabel="CSV 작업지시서 내보내기" disabled={busy} onPress={exportCsv} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>CSV 내보내기</Text></TouchableOpacity><TouchableOpacity accessibilityRole="button" accessibilityLabel="PDF 작업지시서 인쇄 또는 공유" disabled={busy} onPress={exportPdf} style={[styles.secondaryButton, busy && styles.disabled]}><Text style={styles.secondaryButtonText}>PDF·인쇄</Text></TouchableOpacity></View></View>}
 
       <View style={[styles.libraryGrid, libraryWide && styles.libraryGridWide]}>
