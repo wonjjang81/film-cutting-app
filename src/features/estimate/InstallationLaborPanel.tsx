@@ -12,16 +12,16 @@ import { EMPTY_WORKLOAD, type InstallationWorkload } from './installationWorkloa
 
 const number = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 
-export function InstallationLaborPanel({ estimate, mode, disabled, parts, workloads, onChangeWorkload, onChangeMode, onChangePart }: {
+export function InstallationLaborPanel({ estimate, mode, disabled, parts, breakdown, workloads, onChangeWorkload, onChangeMode, onChangePart }: {
   estimate: ProjectEstimate; mode: InstallationMode; disabled: boolean; parts: readonly InstallationPartRate[];
+  breakdown: ReturnType<typeof buildEstimateGroupBreakdown>;
   workloads?: Record<string, InstallationWorkload>;
   onChangeWorkload?: (id: string, value: InstallationWorkload) => void;
   onChangeMode(mode: InstallationMode): void; onChangePart(id: string, part: string): void;
 }) {
   const [selectingId, setSelectingId] = useState<string | null>(null);
   const lines = estimate.installationLaborLines ?? [];
-  const materialCosts = new Map(buildEstimateGroupBreakdown(estimate).flatMap((group) => group.subgroups.map((subgroup) => [subgroup.id, subgroup.amounts.materialCost] as const)));
-  const siteCounts = new Map(buildEstimateGroupBreakdown(estimate).flatMap((group) => group.subgroups.map((subgroup) => [subgroup.id, subgroup.siteCount ?? 1] as const)));
+  const subgroups = new Map(breakdown.flatMap(group => group.subgroups.map(subgroup => [subgroup.id, subgroup] as const)));
   const billed = estimate.constructionCost / 250_000;
   return <View style={styles.card}>
     <Text style={styles.title}>부위별 품수 · 인건비</Text>
@@ -31,8 +31,8 @@ export function InstallationLaborPanel({ estimate, mode, disabled, parts, worklo
       <Text style={styles.hint}>시공품수 {number(billed)}품</Text>
       {lines.some((line) => (line.minimumSupplement ?? 0) > 0) && <Text style={styles.warning}>전체 합산 인건비가 0.5품 미만이므로 총 125,000원으로 보정했습니다.</Text>}
       {lines.map((line) => <View key={line.id} style={styles.line}>
-        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{workloads?.[line.id]?.enabled && workloads[line.id]?.referencePart ? referenceParts[workloads[line.id]!.referencePart!] : line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
-        <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(materialCosts.get(line.id) ?? 0).toLocaleString('ko-KR')}원</Text>
+        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {subgroups.get(line.id)?.siteCount ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{workloads?.[line.id]?.enabled && workloads[line.id]?.referencePart ? referenceParts[workloads[line.id]!.referencePart!] : line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
+        <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(subgroups.get(line.id)?.amounts.materialCost ?? 0).toLocaleString('ko-KR')}원</Text>
         <Text style={styles.hint}>부착품수 {number((line.constructionCost - (line.minimumSupplement ?? 0)) / 250_000)}품
           {(line.minimumSupplement ?? 0) > 0 ? ' · 단독시공 보정 ' + number(line.minimumSupplement! / 250_000) + '품' : ''}</Text>
         {onChangeWorkload && <InstallationWorkloadFields line={line} value={workloads?.[line.id]} onChange={(value) => onChangeWorkload(line.id, value)} />}
@@ -53,7 +53,7 @@ export function InstallationLaborPanel({ estimate, mode, disabled, parts, worklo
         const width = lines.find(line => line.id === selectingId)?.totalSubgroupWidthM;
         const quantity = previous.referencePart === part ? previous.quantity : isLinearReference(part)
           ? width ? String(Number(width.toFixed(3))) : ''
-          : String(siteCounts.get(selectingId) ?? 1);
+          : String(subgroups.get(selectingId)?.siteCount ?? 1);
         onChangeWorkload(selectingId, { ...previous, enabled: true, referencePart: part, quantity });
         setSelectingId(null);
       }}><Text>{referenceParts[part]} · {Math.round(referenceWork(part, 1).units * LABOR_COST_PER_UNIT).toLocaleString('ko-KR')}원/{isLinearReference(part) ? '가로폭 m' : '개·세트'}</Text></TouchableOpacity>)}

@@ -149,7 +149,7 @@ export default function FilmCutInputScreen() {
   const [batchPlans, setBatchPlans] = useState<GroupedPiecePlan[] | null>(null);
   const [placementPreference, setPlacementPreference] = useState(DEFAULT_PLACEMENT_PREFERENCE);
   const [placementComparisons, setPlacementComparisons] = useState<{ signature: string; rows: { priority: PlacementPriority; length: number; utilization: number }[] }>();
-  const placementSignature = JSON.stringify([groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]);
+  const placementSignature = useMemo(() => JSON.stringify([groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]), [groups, useRemnants, placementPreference.saveMaterial, placementPreference.optimization]);
   const orderedPriority = placementPreference.priority === 'basic' ? undefined : placementPreference.priority;
   const currentOptimization = orderedPriority ? materialOptimization(placementPreference, orderedPriority) : undefined;
   const [mergedGroupPlans, setMergedGroupPlans] = useState<MergedGroupPlan[]>([]);
@@ -879,11 +879,17 @@ export default function FilmCutInputScreen() {
         && Number.isInteger(request.quantity) && request.quantity > 0);
       if (requests.length === 0) throw new Error('재단 폭·길이·수량이 입력된 조각이 없습니다.');
       const inventory = nextInventory(latest, useRemnants);
+      const independentCache = new Map<string, GroupedPiecePlan[]>();
       const comparisons = PLACEMENT_PRIORITIES.map(priority => {
         const merged = planMergedGroups(requests, FIXED_ROLL_WIDTH_MM, inventory, useRemnants, { ...placementPreference, priority });
         const mergedSourceIds = new Set(merged.flatMap(entry => entry.sourceIds));
         const consumed = new Set(merged.flatMap(entry => entry.inventoryDelta.removeIds));
-        const independent = planGroupedPieces(requests.filter(entry => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`)), inventory.filter(item => !consumed.has(item.id)));
+        const independentKey = JSON.stringify([[...mergedSourceIds].sort(), [...consumed].sort()]);
+        let independent = independentCache.get(independentKey);
+        if (!independent) {
+          independent = planGroupedPieces(requests.filter(entry => !mergedSourceIds.has(`${entry.groupId}-${entry.pieceId}`)), inventory.filter(item => !consumed.has(item.id)));
+          independentCache.set(independentKey, independent);
+        }
         const rolls = [...merged.map(entry => ({ result: entry.result, width: FIXED_ROLL_WIDTH_MM })),
           ...independent.flatMap(entry => entry.plan.newRollResult ? [{ result: entry.plan.newRollResult, width: entry.request.rollWidthMm }] : [])];
         const length = rolls.reduce((sum, roll) => sum + roll.result.usedLengthMm, 0);
