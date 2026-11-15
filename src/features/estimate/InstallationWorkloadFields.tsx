@@ -63,7 +63,7 @@ export function InstallationWorkloadFields({ line, value = EMPTY_WORKLOAD, onCha
       {!value.referencePart && <View style={styles.choices}>{(Object.keys(filmLossFactors) as FilmPattern[]).map(pattern => <Choice key={pattern}
         label={pattern + ' ' + Math.round(filmLossFactors[pattern] * 100) + '%'} selected={value.pattern === pattern}
         onPress={() => onChange({ ...value, pattern: value.pattern === pattern ? undefined : pattern })} />)}</View>}
-      {line.referenceMaterialM !== undefined && <Text style={styles.text}>참고 원단 {line.referenceMaterialM.toFixed(2)}m · 청구는 배치 사용량 기준</Text>}
+      {line.referenceMaterialM !== undefined && <Text style={styles.text}>참고 원단 {line.referenceMaterialM.toFixed(2)}m · 청구는 새 원단 조각 면적 기준</Text>}
       <TextInput accessibilityLabel={line.subgroupName + ' 밑작업 품수'} style={styles.input} keyboardType="decimal-pad"
         value={value.prepUnits ?? ''} onChangeText={prepUnits => onChange({ ...value, prepUnits })}
         placeholder="추가 밑작업 (품)" />

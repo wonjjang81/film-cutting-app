@@ -33,6 +33,8 @@ export type RateOptions = {
   rateMode?: EstimateRateMode;
   /** Use pre-allowance piece dimensions for area-priced installation. */
   netInstallationArea?: boolean;
+  /** Charge only the cut rectangles assigned to new film. */
+  placementAreaBilling?: boolean;
   installationWorkloads?: Record<string, InstallationWorkload>;
   installationPartRates?: readonly InstallationPartRate[];
   installationMode?: InstallationMode;
@@ -42,6 +44,24 @@ export type RateOptions = {
   /** Optional piece-level rates take precedence over the major-group rate. */
   materialRatesByJobId?: Record<string, number | undefined>;
 };
+
+function cutAreaM2(job: SavedCuttingJob, quantity = job.input.quantity): number {
+  return Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * quantity) / 1_000_000;
+}
+
+function independentUsage(job: SavedCuttingJob) {
+  const remnantQuantity = job.remnantSummary.reduce((total, item) => total + item.quantity, 0);
+  const quantity = Math.max(0, Math.min(job.input.quantity, job.result.producedQuantity) - remnantQuantity);
+  const width = job.input.rollWidthMm;
+  return {
+    materialLengthMm: job.result.newRollLengthMm > 0 && width > 0 ? cutAreaM2(job, quantity) * 1_000_000 / width : 0,
+    productAreaM2: cutAreaM2(job),
+  };
+}
+
+export function equivalentInstallationLengthM(job: SavedCuttingJob): number {
+  return job.input.rollWidthMm > 0 ? netInstallationAreaM2(job) * 1000 / job.input.rollWidthMm : 0;
+}
 
 function finiteRate(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) && value !== undefined && value >= 0 ? value : fallback;
@@ -97,28 +117,40 @@ export function calculateProjectEstimate(
   const mergedSourceIds = new Set(mergedJobs.flatMap((mergedJob) => mergedJob.sourceJobIds));
   const details = jobs.filter((job) => !mergedSourceIds.has(job.id)).map((job) => {
     const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
-    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, undefined, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined) };
+    return { job, rates, estimate: calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, options.placementAreaBilling ? independentUsage(job) : undefined, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined, options.placementAreaBilling ? equivalentInstallationLengthM(job) : undefined) };
   });
+  const sourceById = new Map(jobs.map(job => [job.id, job]));
   const mergedDetails = mergedJobs.flatMap((mergedJob) => {
-    const sources = mergedJob.sourceJobIds.map((sourceId) => jobs.find((job) => job.id === sourceId)).filter((job): job is SavedCuttingJob => Boolean(job));
+    const sources = mergedJob.sourceJobIds.flatMap((sourceId, index) => {
+      const job = sourceById.get(sourceId);
+      return job ? [{ job, sourceId: mergedJob.sourceIds?.[index] }] : [];
+    });
     if (sources.length === 0) return [];
-    const requestedAreas = sources.map((job) => Math.max(0, job.input.pieceWidthMm * job.input.pieceLengthMm * job.input.quantity) / 1_000_000);
-    const sourceIds = mergedJob.sourceIds ?? [];
-    const placementAreas = sources.map((_, index) => {
-      const sourceId = sourceIds[index];
+    const requestedAreas = sources.map(({ job }) => cutAreaM2(job));
+    const totalPlacedArea = mergedJob.placements.reduce((sum, piece) => sum + piece.width * piece.height, 0) / 1_000_000;
+    const placementAreas = sources.map(({ sourceId }) => {
       if (!sourceId) return 0;
       return mergedJob.placements.filter((placement) => placement.sourceId === sourceId).reduce((sum, placement) => sum + placement.width * placement.height, 0) / 1_000_000;
     });
-    const allocationBasis = placementAreas.some((area) => area > 0) ? placementAreas : requestedAreas;
+    const mappedPlacements = totalPlacedArea > 0 && sources.every(source => Boolean(source.sourceId));
+    const allocationBasis = mappedPlacements ? placementAreas : requestedAreas;
     const totalBasis = allocationBasis.reduce((sum, area) => sum + area, 0);
-    const sourceDetails = sources.map((job, index) => {
+    const sourceDetails = sources.map(({ job }, index) => {
       const share = totalBasis > 0 ? allocationBasis[index]! / totalBasis : 1 / sources.length;
+      const rollArea = mergedJob.usedLengthMm * mergedJob.rollWidthMm / 1_000_000;
+      const fallbackArea = totalPlacedArea || Math.min(rollArea, totalBasis);
+      const chargedArea = mergedJob.usedLengthMm <= 0 ? 0
+        : mappedPlacements ? placementAreas[index]!
+        : fallbackArea * share;
+      const materialLengthMm = options.placementAreaBilling && mergedJob.rollWidthMm > 0
+        ? chargedArea * 1_000_000 / mergedJob.rollWidthMm
+        : mergedJob.usedLengthMm * share;
       const rates = ratesForJob(job, materialCostPerM, constructionCostPerM2, rateMode, options);
       const estimate = calculateEstimateAtRates(job, rates.materialCostPerM, rates.constructionCostPerM2, 0, {
-        materialLengthMm: mergedJob.usedLengthMm * share,
+        materialLengthMm,
         materialWidthMm: mergedJob.rollWidthMm,
         productAreaM2: requestedAreas[index]!,
-      }, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined);
+      }, rates.constructionCostPerM, options.netInstallationArea ? netInstallationAreaM2(job) : undefined, options.placementAreaBilling ? equivalentInstallationLengthM(job) : undefined);
       return { job, estimate, rates };
     });
     const estimate = sumEstimates(sourceDetails.map((item) => item.estimate));
@@ -126,7 +158,7 @@ export function calculateProjectEstimate(
     return [{ job: mergedJob, estimate, rates, sourceDetails }];
   });
   const installationLaborLines = options.installationMode && rateMode !== 'global'
-    ? repriceInstallationLabor([...details, ...mergedDetails.flatMap((line) => line.sourceDetails)], options.installationMode, options.installationPartsBySubgroupId, options.installationPartRates, options.installationWorkloads)
+    ? repriceInstallationLabor([...details, ...mergedDetails.flatMap((line) => line.sourceDetails)], options.installationMode, options.installationPartsBySubgroupId, options.installationPartRates, options.installationWorkloads, options.placementAreaBilling ? equivalentInstallationLengthM : undefined)
     : undefined;
   if (installationLaborLines) mergedDetails.forEach((line) => {
     line.estimate = sumEstimates(line.sourceDetails.map((source) => source.estimate));

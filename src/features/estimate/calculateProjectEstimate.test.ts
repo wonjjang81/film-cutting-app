@@ -7,6 +7,36 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('bills a narrow placed piece by occupied film area and fitted labor area', () => {
+    const base = job('strip', 2010);
+    const strip = { ...base, installationPart: '몰딩', constructionCostPerM: 18_000,
+      input: { ...base.input, pieceWidthMm: 122, pieceLengthMm: 2000, sourcePieceWidthMm: 100, sourcePieceLengthMm: 1980, cutAllowanceMm: 22, quantity: 1 } };
+    const options = { netInstallationArea: true, placementAreaBilling: true, installationMode: 'whole' as const };
+    const result = calculateProjectEstimate([strip], 9_000, 15_000, 0, [], options);
+    expect(result.materialLengthM).toBeCloseTo(0.2);
+    expect(result.materialAreaM2).toBeCloseTo(0.244);
+    expect(result.materialCost).toBe(1800);
+    expect(result.constructionCost).toBe(2921);
+    const leftover = { ...strip, result: { ...strip.result, newRollLengthMm: 0 } };
+    expect(calculateProjectEstimate([leftover], 9_000, 15_000, 0, [], options)).toMatchObject({ materialCost: 0, constructionCost: 2921 });
+    expect(calculateProjectEstimate([strip], 9_000, 15_000, 0, [], { ...options, installationMode: 'standalone' }).constructionCost).toBe(125_000);
+  });
+
+  it('charges merged placements by the actual area assigned to each source', () => {
+    const base = job('a', 2000);
+    const jobs = [base, { ...base, id: 'b', materialCostPerM: 18_000 }];
+    const merged = { id: 'm', name: '혼합', mergeGroupId: 'auto', groupNames: ['그룹'], sourceJobIds: ['a', 'b'], sourceIds: ['one', 'two'],
+      createdAt: base.createdAt, updatedAt: base.updatedAt, rollWidthMm: 1220, usedLengthMm: 2000, producedQuantity: 2, utilizationPercent: 30, wastePercent: 70,
+      placements: [
+        { id: 1, sourceId: 'one', instanceIndex: 0, x: 0, y: 0, width: 122, height: 2000, rotated: false },
+        { id: 2, sourceId: 'two', instanceIndex: 0, x: 122, y: 0, width: 244, height: 2000, rotated: false },
+      ] };
+    const result = calculateProjectEstimate(jobs, 9_000, 15_000, 0, [merged], { placementAreaBilling: true });
+    expect(result.materialLengthM).toBeCloseTo(0.6);
+    expect(result.materialCost).toBe(9_000);
+    expect(result.mergedJobs[0]?.sourceDetails?.map(source => source.estimate.materialCost)).toEqual([1800, 7200]);
+  });
+
   it('prices individual door and kitchen units, sets and difficulty without changing film cost', () => {
     const source = { ...job('part', 7_000), groupId: 'g1', subgroupName: '대상' };
     const price = (referencePart: 'doorLeaf' | 'doorFrame' | 'door' | 'kitchenUpper' | 'kitchenLower' | 'kitchen', quantity: string) =>
