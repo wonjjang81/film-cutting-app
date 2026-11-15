@@ -1,6 +1,6 @@
 import { LABOR_COST_PER_UNIT } from './installationLabor';
 
-import { referenceWork, referenceParts, isLinearReference, filmLossFactors, shapeFactors, type ReferencePart, type ReferenceShape, type FilmPattern } from './referenceEstimate';
+import { referenceWork, referenceParts, isLinearReference, preparationRates, type PreparationDifficulty, filmLossFactors, shapeFactors, type ReferencePart, type ReferenceShape, type FilmPattern } from './referenceEstimate';
 
 export type InstallationWorkload = {
   enabled: boolean;
@@ -12,6 +12,7 @@ export type InstallationWorkload = {
   shape?: ReferenceShape;
   pattern?: FilmPattern;
   prepUnits?: string;
+  preparationDifficulty?: PreparationDifficulty;
 };
 
 export const EMPTY_WORKLOAD: InstallationWorkload = { enabled: false, sheets: '', finishingM: '', details: '' };
@@ -42,8 +43,11 @@ export function estimateInstallationWorkload(areaM2: number, workload?: Installa
   return { minutes, cost: Math.round(minutes / WORK_MINUTES_PER_UNIT * LABOR_COST_PER_UNIT) };
 }
 
-export function referencePreparationCost(workload: InstallationWorkload): number | undefined {
-  const units = workload.prepUnits?.trim() ? readQuantity(workload.prepUnits, false) : 0;
+export function referencePreparationCost(workload: InstallationWorkload, areaM2: number): number | undefined {
+  if (!workload.enabled || !workload.prepUnits?.trim()) {
+    return Math.round(areaM2 * preparationRates[workload.preparationDifficulty ?? '없음']);
+  }
+  const units = readQuantity(workload.prepUnits, false);
   return units === undefined ? undefined : Math.round(units * LABOR_COST_PER_UNIT);
 }
 
@@ -57,6 +61,7 @@ export function parseInstallationWorkloads(value: unknown): Record<string, Insta
       shape: Object.hasOwn(shapeFactors, row.shape) ? row.shape : undefined,
       pattern: Object.hasOwn(filmLossFactors, row.pattern) ? row.pattern : undefined,
       quantity: typeof row.quantity === 'string' ? row.quantity : undefined,
+      preparationDifficulty: Object.hasOwn(preparationRates, row.preparationDifficulty) ? row.preparationDifficulty : undefined,
       prepUnits: typeof row.prepUnits === 'string' ? row.prepUnits : undefined,
     }]];
   }));

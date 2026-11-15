@@ -33,7 +33,8 @@ export function InstallationLaborPanel({ estimate, mode, disabled, parts, worklo
       {lines.map((line) => <View key={line.id} style={styles.line}>
         <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{workloads?.[line.id]?.enabled && workloads[line.id]?.referencePart ? referenceParts[workloads[line.id]!.referencePart!] : line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
         <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(materialCosts.get(line.id) ?? 0).toLocaleString('ko-KR')}원</Text>
-        <Text style={styles.hint}>시공품수 {number(line.constructionCost / 250_000)}품</Text>
+        <Text style={styles.hint}>부착품수 {number((line.constructionCost - (line.minimumSupplement ?? 0)) / 250_000)}품
+          {(line.minimumSupplement ?? 0) > 0 ? ' · 단독시공 보정 ' + number(line.minimumSupplement! / 250_000) + '품' : ''}</Text>
         {onChangeWorkload && <InstallationWorkloadFields line={line} value={workloads?.[line.id]} onChange={(value) => onChangeWorkload(line.id, value)} />}
         {line.calculation ? <>
           {line.calculation.unavailable && <Text style={styles.warning}>표에서는 드레스룸 단독시공을 권장하지 않습니다. 다른 공정과 병행 여부를 확인해 주세요.</Text>}

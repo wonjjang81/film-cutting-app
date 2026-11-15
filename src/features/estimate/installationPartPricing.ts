@@ -15,6 +15,7 @@ export const DEFAULT_INSTALLATION_PARTS: readonly InstallationPartRate[] = [
   { name: '붙박이장', costPerM: 10_750, reference: '하 · 전체 10,000~11,500원/m · 단독 40,000원/m 이상' },
   { name: '아일랜드식탁', costPerM: 11_750, reference: '하 · 전체 11,000~12,500원/m · 단독 60,000원/m 이상' },
   { name: '아트월', costPerM: 15_000, reference: NEW_RATE_NOTE },
+  { name: '우물', costPerM: 12_200, reference: '견적 부착면적 기준 10,000원/㎡' },
   { name: '중문', costPerM: 17_000, reference: NEW_RATE_NOTE },
   { name: '몰딩', costPerM: 18_000, reference: NEW_RATE_NOTE },
   { name: '걸레받이', costPerM: 15_000, reference: NEW_RATE_NOTE },

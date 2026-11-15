@@ -8,7 +8,7 @@ export const extraKindLabel = { auxiliary: '부자재비', preparation: '기초�
 export const EXPENSE_RATES = [9, 10, 11, 12, 13, 14] as const;
 export type ExpenseRate = typeof EXPENSE_RATES[number];
 export const DEFAULT_EXPENSE_RATE: ExpenseRate = 9;
-export const extraEstimateHint = '기존 견적에 포함된 항목은 추가 청구하지 않습니다. 할인은 기존 견적에만 적용하고, 경비는 할인 반영 후 계산합니다.';
+export const extraEstimateHint = '기존 견적에 포함된 항목은 추가 청구하지 않습니다. 경비는 자재비·인건비·기타잡비를 합산한 뒤 계산합니다.';
 export const expenseLabel = '회사 마진·운송비 등';
 const number = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 export const estimateWon = (value: number) => `${number(value)}원`;
@@ -88,7 +88,8 @@ export function buildDetailedFilmEstimate(estimate: ProjectEstimate, items: read
   const referencePrep = (estimate.installationLaborLines ?? []).flatMap(line => {
     if (!line.preparationCost) return [];
     return [priceExtraEstimateItem({ id: 'reference-prep:' + line.id, kind: 'preparation', name: line.subgroupName + ' · 밑작업',
-      unit: '품', quantity: String(line.preparationCost / LABOR_COST_PER_UNIT), rate: String(LABOR_COST_PER_UNIT), included: false })];
+      unit: line.preparationRate ? '㎡' : '품', quantity: (line.preparationRate ? line.installationAreaM2 : line.preparationCost / LABOR_COST_PER_UNIT).toFixed(6),
+      rate: String(line.preparationRate || LABOR_COST_PER_UNIT), included: false })];
   });
   const extras = items.filter(row => row.kind !== 'expense').map(priceExtraEstimateItem);
   const preparationAmount = referencePrep.reduce((sum, row) => sum + row.amount, 0);

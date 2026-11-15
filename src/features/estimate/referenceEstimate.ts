@@ -1,4 +1,7 @@
 export const referenceParts = {
+  middleDoorLeaf: '중문 문',
+  middleDoorFrame: '중문 문틀',
+  middleDoor: '중문 문+문틀 세트',
   doorLeaf: '문',
   doorFrame: '문틀',
   door: '문+문틀 세트',
@@ -12,9 +15,12 @@ export const referenceParts = {
 } as const;
 
 export const shapeFactors = { '평판': 1, '알판': 1.25, '깊은 굴곡': 1.75, '루버·간살': 2.75 } as const;
+export const preparationRates = { '없음': 0, '가벼움': 3_000, '보통': 6_000, '높음': 10_000 } as const;
+export type PreparationDifficulty = keyof typeof preparationRates;
+export const recessedCeilingRatePerM2 = 10_000;
 export const filmLossFactors = { '단색': 0.1, '일반 우드': 0.15, '대형 패턴': 0.2 } as const;
 export type ReferencePart = keyof typeof referenceParts;
-export const quickReferenceParts = ['doorLeaf', 'doorFrame', 'door', 'kitchenUpper', 'kitchenLower', 'kitchen'] as const;
+export const quickReferenceParts = ['middleDoorLeaf', 'middleDoorFrame', 'middleDoor', 'doorLeaf', 'doorFrame', 'door', 'kitchenUpper', 'kitchenLower', 'kitchen'] as const;
 export function isLinearReference(part: ReferencePart) {
   return part === 'kitchen' || part === 'kitchenUpper' || part === 'kitchenLower' || part === 'trim';
 }
@@ -25,6 +31,9 @@ export type FilmPattern = keyof typeof filmLossFactors;
 /** Attachment parameters. Quantity is the subgroup total in sets, or measured metres for linear parts. */
 export function referenceWork(part: ReferencePart, quantity: number) {
   switch (part) {
+    case 'middleDoorLeaf': return { units: 0.4 * quantity };
+    case 'middleDoorFrame': return { units: 0.25 * quantity };
+    case 'middleDoor': return { units: 0.65 * quantity };
     case 'doorLeaf': return { materialM: 4 * quantity, units: 0.3 * quantity };
     case 'doorFrame': return { materialM: 3 * quantity, units: 0.2 * quantity };
     case 'door': return { materialM: 7 * quantity, units: 0.5 * quantity };
