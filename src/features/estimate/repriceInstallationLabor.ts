@@ -1,12 +1,12 @@
 import type { SavedCuttingJob } from '../library/models';
 import { netInstallationAreaM2, type Estimate } from './calculateEstimate';
-import { estimateInstallationWorkload, referencePreparationCost, type InstallationWorkload } from './installationWorkload';
+import { estimateInstallationWorkload, referencePreparationCost, WORK_MINUTES_PER_UNIT, type InstallationWorkload } from './installationWorkload';
 import type { EstimateRateSummary } from './calculateProjectEstimate';
 import { LABOR_COST_PER_UNIT, allocateLaborCost, calculateConfiguredInstallationLabor, installationSubgroupKey, resolveInstallationPart, type InstallationLaborCalculation, type InstallationMode } from './installationLabor';
 
 import type { InstallationPartRate } from './installationPartPricing';
 
-import { referenceAreaLength, referenceParts, shapeFactors } from './referenceEstimate';
+import { referenceAreaLength, referenceParts, referenceWork, recessedCeilingRatePerM2, preparationRates, shapeFactors } from './referenceEstimate';
 
 type Source = { job: SavedCuttingJob; estimate: Estimate; rates: EstimateRateSummary };
 export type InstallationLaborLine = {
@@ -18,6 +18,7 @@ export type InstallationLaborLine = {
   workloadMinutes?: number;
   referenceMaterialM?: number;
   preparationCost?: number;
+  preparationRate?: number;
 };
 
 /** Reprices newly-created estimate objects only; never alters saved jobs, placements or quantities. */
@@ -37,11 +38,19 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
     const widthMm = job.subgroupOverallDimensions?.widthMm;
     const totalSubgroupWidthM = widthMm && widthMm > 0 ? widthMm / 1000 * (job.siteCount ?? 1) : undefined;
     const input = workloads?.[id];
-    const preparationCost = input?.enabled ? referencePreparationCost(input) : undefined;
-    const work = input?.enabled && preparationCost !== undefined ? estimateInstallationWorkload(installationAreaM2, input) : undefined;
-    const effectivePart = work && input?.referencePart ? referenceParts[input.referencePart] : part;
+    const preparationCost = input ? referencePreparationCost(input, installationAreaM2) : 0;
+    const preparationRate = input?.enabled && input.prepUnits?.trim() ? undefined : preparationRates[input?.preparationDifficulty ?? '없음'];
     const factor = input?.shape ? shapeFactors[input.shape] : 1;
-    const baseCalculation = !work && part ? calculateConfiguredInstallationLabor(job, part, lengthM, mode, parts) : undefined;
+    const referenceWorkload = input?.enabled && preparationCost !== undefined ? estimateInstallationWorkload(installationAreaM2, input) : undefined;
+    const savedRate = job.installationPart?.trim() === part ? job.constructionCostPerM : undefined;
+    const standardMiddleDoor = !input?.enabled && installationLength && part === '중문' && savedRate === undefined
+      ? referenceWork('middleDoor', job.siteCount ?? 1).units * factor : undefined;
+    const work = referenceWorkload ?? (standardMiddleDoor !== undefined ? {
+      minutes: standardMiddleDoor * WORK_MINUTES_PER_UNIT, cost: Math.round(standardMiddleDoor * LABOR_COST_PER_UNIT), referenceMaterialM: undefined,
+    } : undefined);
+    const effectivePart = referenceWorkload && input?.referencePart ? referenceParts[input.referencePart] : standardMiddleDoor !== undefined ? referenceParts.middleDoor : part;
+    const recessedRate = installationLength && part === '우물' && savedRate === undefined ? recessedCeilingRatePerM2 : undefined;
+    const baseCalculation = !work && part && recessedRate === undefined ? calculateConfiguredInstallationLabor(job, part, lengthM, mode, parts) : undefined;
     const calculation = baseCalculation && factor !== 1 ? {
       ...baseCalculation, costPerM: baseCalculation.costPerM * factor, unitsPerM: baseCalculation.unitsPerM * factor,
       allocatedUnits: baseCalculation.allocatedUnits * factor, billedUnits: baseCalculation.billedUnits * factor,
@@ -60,15 +69,17 @@ export function repriceInstallationLabor(sources: Source[], mode: InstallationMo
         item.estimate.total = item.estimate.subtotal;
       });
     }
-    if (!work && !calculation && factor !== 1) {
-      items.forEach(item => {
-        item.rates = { ...item.rates, constructionCostPerM2: Math.round(item.rates.constructionCostPerM2 * factor), difficultyFactor: factor };
-        item.estimate.constructionCost = Math.round(item.estimate.constructionCost * factor);
+    if (!work && !calculation && (factor !== 1 || recessedRate !== undefined)) {
+      items.forEach((item, index) => {
+        item.rates = { ...item.rates, constructionCostPerM: undefined, constructionCostPerM2: Math.round((recessedRate ?? item.rates.constructionCostPerM2) * factor), difficultyFactor: factor, ...(recessedRate === undefined ? {} : { fixedAreaLabor: true }) };
+        item.estimate.constructionCost = recessedRate === undefined
+          ? Math.round(item.estimate.constructionCost * factor)
+          : Math.round(areas[index]! * recessedRate * factor);
         item.estimate.subtotal = item.estimate.materialCost + item.estimate.constructionCost;
         item.estimate.total = item.estimate.subtotal;
       });
     }
-    return { id, groupId: job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류', subgroupName: job.subgroupName?.trim() || '미분류', part: effectivePart, lengthM, installationAreaM2, totalSubgroupWidthM, workloadMinutes: work?.minutes, referenceMaterialM: work && 'referenceMaterialM' in work ? work.referenceMaterialM : input?.enabled && input.pattern ? referenceAreaLength(installationAreaM2, input.pattern) : undefined, preparationCost: work ? preparationCost : undefined,
+    return { id, groupId: job.groupId?.trim() || job.name.split(' · ')[0]?.trim() || '미분류', subgroupName: job.subgroupName?.trim() || '미분류', part: effectivePart, lengthM, installationAreaM2, totalSubgroupWidthM, workloadMinutes: work?.minutes, referenceMaterialM: work && 'referenceMaterialM' in work ? work.referenceMaterialM : input?.enabled && input.pattern ? referenceAreaLength(installationAreaM2, input.pattern) : undefined, preparationCost, preparationRate,
       constructionCost: items.reduce((sum, item) => sum + item.estimate.constructionCost, 0), ...(calculation ? { calculation } : {}) };
   });
   const baseTotal = sources.reduce((sum, item) => sum + item.estimate.constructionCost, 0);

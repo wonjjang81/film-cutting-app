@@ -3,7 +3,7 @@ import { StyleSheet, Switch, TouchableOpacity, Text, TextInput, View } from 'rea
 import type { InstallationLaborLine } from './repriceInstallationLabor';
 import { EMPTY_WORKLOAD, type InstallationWorkload } from './installationWorkload';
 
-import { referenceParts, shapeFactors, isLinearReference, referenceWork, quickReferenceParts, filmLossFactors, type ReferencePart, type FilmPattern } from './referenceEstimate';
+import { referenceParts, shapeFactors, isLinearReference, preparationRates, type PreparationDifficulty, referenceWork, quickReferenceParts, filmLossFactors, type ReferencePart, type FilmPattern } from './referenceEstimate';
 
 function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress(): void }) {
   return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}
@@ -40,6 +40,12 @@ export function InstallationWorkloadFields({ line, value = EMPTY_WORKLOAD, onCha
       <TextInput accessibilityLabel={line.subgroupName + ' 기준 수량'} style={styles.input} keyboardType={isLinearReference(part) ? 'decimal-pad' : 'number-pad'}
         value={value.quantity ?? ''} onChangeText={quantity => onChange({ ...value, quantity })} placeholder={isLinearReference(part) ? '전체 가로폭 (m)' : '전체 수량'} />
     </View>}
+    <Text style={styles.text}>기초작업 난이도{value.enabled && value.prepUnits?.trim() ? ' · 수동 품수 적용 중' : ''}</Text>
+    <View style={styles.choices}>{(Object.keys(preparationRates) as PreparationDifficulty[]).map(difficulty => <Choice key={difficulty}
+      label={difficulty + ' · ' + preparationRates[difficulty].toLocaleString('ko-KR') + '원/㎡'}
+      selected={(value.preparationDifficulty ?? '없음') === difficulty && !(value.enabled && value.prepUnits?.trim())}
+      onPress={() => onChange({ ...value, preparationDifficulty: difficulty, prepUnits: '' })} />)}</View>
+    {(line.preparationCost ?? 0) > 0 && <Text style={styles.text}>기초작업비 {line.preparationCost!.toLocaleString('ko-KR')}원</Text>}
     <Choice label={expanded ? '상세 설정 접기' : '상세 설정'} selected={expanded} onPress={() => setExpanded(!expanded)} />
     {expanded && <><View style={styles.row}>
       <Text style={styles.text}>작업량 기준 · 참고 견적</Text>

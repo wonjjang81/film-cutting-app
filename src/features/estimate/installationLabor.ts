@@ -30,7 +30,7 @@ export function resolveInstallationPart(job: SavedCuttingJob, overrides: Readonl
   const exactName = job.subgroupName?.trim();
   if (parts.some((part) => part.name === exactName)) return exactName;
   const name = exactName?.replace(/(?:\s*\d+|[A-Z])$/, '').trim();
-  const aliases: Record<string, string> = { 천장몰딩: '몰딩', 천정몰딩: '몰딩', 현관문: '현관문 안쪽' };
+  const aliases: Record<string, string> = { 천장몰딩: '몰딩', 천정몰딩: '몰딩', 우물천장: '우물', 천장우물: '우물', 현관문: '현관문 안쪽' };
   return parts.find((part) => part.name === name)?.name ?? parts.find((part) => part.name === aliases[name?.replace(/\s/g, '') ?? ''])?.name;
 }
 

@@ -12,7 +12,7 @@ export function installationLaborSummary(estimate: ProjectEstimate): string {
   return [
     `[부위별 품수 · ${estimate.installationMode === 'standalone' ? '단독시공' : '전체시공'}]`,
     '할당품수 = 적용 길이(m) × 평균 기준 품수 ÷ 기준 물량(m); 인건비 = 품수 × 250,000원',
-    '단독시공: 전체 합산 인건비에 최소 0.5품(125,000원)을 한 번만 적용 (할인 전)',
+    '단독시공: 전체 합산 인건비에 최소 0.5품(125,000원)을 한 번만 적용',
     `선택 부위 할당 ${fmt(allocated)}품 · ${fmt(length > 0 ? allocated / length : 0)}품/m · 전체 청구 ${fmt(estimate.constructionCost / 250000)}품`,
     ...lines.map((line) => line.workloadMinutes !== undefined
       ? `${line.subgroupName} · 작업량 기준(참고) · ${fmt(line.workloadMinutes)}인분 ÷ ${WORK_MINUTES_PER_UNIT} = ${fmt(line.workloadMinutes / WORK_MINUTES_PER_UNIT)}품 · ${fmt(line.constructionCost)}원${line.minimumSupplement ? ` (최소품수 보정 ${fmt(line.minimumSupplement)}원 포함)` : ''}`

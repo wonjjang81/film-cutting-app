@@ -7,6 +7,32 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('prices recessed ceiling by fitted area and separates preparation from shape labor', () => {
+    const base = job('ceiling', 2000);
+    const ceiling = { ...base, groupId: 'g1', subgroupName: '천장 우물', difficulty: 'high' as const,
+      input: { ...base.input, pieceWidthMm: 100, pieceLengthMm: 2000, quantity: 1 } };
+    const result = calculateProjectEstimate([ceiling], 9_000, 15_000, 0, [], {
+      netInstallationArea: true, placementAreaBilling: true, installationMode: 'whole',
+      installationWorkloads: { 'g1::천장 우물': { enabled: false, sheets: '', finishingM: '', details: '', shape: '알판', preparationDifficulty: '보통' } },
+    });
+    expect(result.constructionCost).toBe(2500);
+    expect(result.constructionCostRange).toEqual({ min: 2500, max: 2500 });
+    expect(result.discount).toBe(0);
+    expect(buildDetailedFilmEstimate(result, []).preparation).toBe(1200);
+  });
+
+  it('prices middle door automatically per site and offers independent panel and frame prices', () => {
+    const source = { ...job('door', 2000), groupId: 'g1', subgroupName: '중문', siteCount: 2 };
+    const options = { netInstallationArea: true, placementAreaBilling: true, installationMode: 'whole' as const };
+    expect(calculateProjectEstimate([source], 9_000, 15_000, 0, [], options).constructionCost).toBe(325_000);
+    const price = (referencePart: 'middleDoorLeaf' | 'middleDoorFrame') =>
+      calculateProjectEstimate([source], 9_000, 15_000, 0, [], { ...options, installationWorkloads: {
+        'g1::중문': { enabled: true, sheets: '', finishingM: '', details: '', referencePart, quantity: '1' },
+      } }).constructionCost;
+    expect(price('middleDoorLeaf')).toBe(100_000);
+    expect(price('middleDoorFrame')).toBe(62_500);
+  });
+
   it('bills a narrow placed piece by occupied film area and fitted labor area', () => {
     const base = job('strip', 2010);
     const strip = { ...base, installationPart: '몰딩', constructionCostPerM: 18_000,
