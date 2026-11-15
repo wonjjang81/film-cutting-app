@@ -1,3 +1,4 @@
+import type { ProjectCutSettings } from './projectCutSettings';
 import type { ConstructionDifficulty } from '../estimate/difficultyPricing';
 import type { SubgroupOverallDimensions } from '../estimate/subgroupRoughEstimate';
 
@@ -141,6 +142,7 @@ export type SavedMergedCuttingJob = {
 
 /** A legacy-style project header that groups the saved piece jobs into one work item. */
 export type SavedProject = {
+  cutSettings?: ProjectCutSettings;
   id: string;
   name: string;
   jobIds: string[];

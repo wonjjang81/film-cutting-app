@@ -50,6 +50,10 @@ const server = http.createServer((req,res)=>{
     const lineB=page.locator('g[aria-label^="그룹 B 끝"]');
     await lineA.waitFor();
     await lineB.waitFor();
+    await page.locator('g[aria-label$="상세 보기"]').first().click();
+    await page.getByRole('button',{name:/현재 롤에서 수동 이동/}).waitFor();
+    await page.getByRole('button',{name:/90도 수동 회전/}).waitFor();
+    await button('조각 정보 팝업 닫기').click();
     const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('film-cutting-placement-preference-v1')));
     assert.equal(saved.priority, 'subgroup');
     assert.deepEqual(saved.optimization.subgroup, {enabled:false,percent:100});

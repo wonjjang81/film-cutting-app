@@ -4,6 +4,24 @@ import { boundedNewRollLength } from './rollLengthLimit';
 
 export const hasCutGroups = (plan: MergedGroupPlan) => plan.result.placements.some(piece => piece.cutGroup !== undefined);
 
+/** Each cut group occupies a continuous band, possibly carried across rolls. */
+export function hasOrderedCutBands(rolls: readonly MergedRollResult[]): boolean {
+  let previousGroup = 0;
+  for (const roll of rolls) {
+    let previousEnd = 0;
+    let groupEnd = 0;
+    for (const piece of [...roll.placements].sort((left, right) => left.y - right.y)) {
+      const group = piece.cutGroup ?? Infinity;
+      if (group < previousGroup) return false;
+      if (group !== previousGroup) previousEnd = groupEnd;
+      if (piece.y < previousEnd) return false;
+      previousGroup = group;
+      groupEnd = Math.max(groupEnd, piece.y + piece.height);
+    }
+  }
+  return true;
+}
+
 export function cutGroupId(order: number): string {
   let label = '';
   for (let value = order; value > 0; value = Math.floor((value - 1) / 26)) {

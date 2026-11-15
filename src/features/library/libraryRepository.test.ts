@@ -295,10 +295,13 @@ describe('library repository', () => {
     const layouts = [{ planIndex: 0, geometrySignature: 'geometry-v1', rolls: [{ placements: [
       { id: 1, sourceIndex: 0, instanceIndex: 0, x: 5, y: 500, width: 200, height: 300, rotated: false },
     ] }] }];
-    await repository.saveProjectManualLayouts(project.id, layouts, '2026-09-21T00:00:00.000Z');
+    const cutSettings = { preference: { priority: 'subgroup' as const, saveMaterial: true }, orders: { '["대그룹1","하부장"]': 2 } };
+    await repository.saveProjectManualLayouts(project.id, layouts, '2026-09-21T00:00:00.000Z', cutSettings);
+    expect((await repository.load()).document.projects?.[0]?.cutSettings).toMatchObject(cutSettings);
     expect((await repository.load()).document.projects?.[0]?.manualLayouts).toEqual(layouts);
     const exported = await repository.exportProject(project.id);
     expect(JSON.parse(exported).project.manualLayouts).toEqual(layouts);
+    expect(JSON.parse(exported).project.cutSettings).toMatchObject(cutSettings);
     const importedRepository = createLibraryRepository(memoryAdapter());
     await importedRepository.importProject(exported);
     expect((await importedRepository.load()).document.projects?.[0]?.manualLayouts).toEqual(layouts);

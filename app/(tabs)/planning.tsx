@@ -1,3 +1,4 @@
+import { projectCutSettings } from '../../src/features/library/projectCutSettings';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Print from 'expo-print';
@@ -13,7 +14,7 @@ import { reoptimizeManualMergedLayout } from '../../src/features/cutting/reoptim
 import { applyPlacementIdRecords, captureManualMergedLayout, CURRENT_MANUAL_LAYOUT_STORAGE_KEY, manualLayoutScope, parseCurrentManualLayouts, placementIdRecordsFromManualLayout, placementIdRecordsFromMergedJob, placementIdRecordsFromPlan, restorePreferredManualLayout, serializeCurrentManualLayouts } from '../../src/features/cutting/savedManualMergedLayout';
 import { selectBestLearnedManualLayout } from '../../src/features/cutting/learnedManualLayout';
 import { FilmLayoutPreview } from '../../src/features/cutting/FilmLayoutPreview';
-import { cutGroupEndLines, hasCutGroups } from '../../src/features/cutting/cutGroupLayout';
+import { cutGroupEndLines, hasCutGroups, hasOrderedCutBands } from '../../src/features/cutting/cutGroupLayout';
 import { MergedRollPlacementList, MergedRollPreview } from '../../src/features/cutting/MergedRollPreview';
 import { groupPlacementsBySubgroup, areAllPlacementListsCollapsed, findLatestMergedJob, findLatestPieceJob, findPlacementById, majorGroupTabLabel, nextPlacementCompletion, resolveActiveMergedPlanKey, resolvePlacementCompletionIds, toggleAllPlacementLists } from '../../src/features/cutting/planningPlacementModel';
 import { parsePlanningCompletionState, PLANNING_COMPLETION_STORAGE_KEY, serializePlanningCompletionState } from '../../src/features/cutting/planningCompletionStorage';
@@ -306,7 +307,7 @@ export default function PlanningScreen() {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
     if (!plan) return null;
     const moved = movePlacementToBestOtherRoll(plan, placementId, currentPlan.groupedPlans, targetRollIndex);
-    if (!moved) {
+    if (!moved || !hasOrderedCutBands(moved.plan.rollResults ?? [moved.plan.result])) {
       setNotice(`선택한 조각이 ${targetRollIndex + 1}롤의 빈 공간 또는 남은 길이에 들어가지 않습니다.`);
       return null;
     }
@@ -324,7 +325,7 @@ export default function PlanningScreen() {
     const plan = currentPlan.mergedPlans.find((item) => mergedPlanKey(item.mergeGroupId, item.sourceIds) === planKey);
     if (!plan) return null;
     const moved = movePlacementToNewRoll(plan, placementId, currentPlan.groupedPlans);
-    if (!moved) {
+    if (!moved || !hasOrderedCutBands(moved.plan.rollResults ?? [moved.plan.result])) {
       setNotice('선택한 조각을 새 롤로 이동할 수 없습니다.');
       return null;
     }
@@ -339,6 +340,7 @@ export default function PlanningScreen() {
     if (!plan) return '배치 계획을 찾지 못했습니다.';
     const moved = movePlacementWithinRoll(plan, placementId, xMm, yMm, currentPlan.groupedPlans);
     if (!moved.plan) return moved.error ?? '이 위치로 조각을 옮길 수 없습니다.';
+    if (!hasOrderedCutBands(moved.plan.rollResults ?? [moved.plan.result])) return '재단 그룹 순서를 유지할 수 있는 위치를 선택해 주세요.';
     installManualPlan(planKey, plan, moved.plan);
     setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), ...(moved.movedPlacementIds ?? [placementId])])] }));
     setNotice(`조각 #${placementId}을 현재 롤의 빈 공간으로 이동했습니다.`);
@@ -350,6 +352,7 @@ export default function PlanningScreen() {
     if (!plan) return '배치 계획을 찾지 못했습니다.';
     const rotated = rotatePlacementWithinRoll(plan, placementId, currentPlan.groupedPlans);
     if (!rotated.plan) return rotated.error ?? '이 조각을 회전할 수 없습니다.';
+    if (!hasOrderedCutBands(rotated.plan.rollResults ?? [rotated.plan.result])) return '재단 그룹 순서를 유지할 수 있는 위치를 선택해 주세요.';
     installManualPlan(planKey, plan, rotated.plan);
     setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] }));
     setNotice(`조각 #${placementId}을 90도 회전했습니다.`);
@@ -361,6 +364,7 @@ export default function PlanningScreen() {
     if (!plan) return '배치 계획을 찾지 못했습니다.';
     const shifted = shiftPlacementToEdge(plan, placementId, direction, currentPlan.groupedPlans);
     if (!shifted.plan) return shifted.error ?? '해당 방향으로 조각을 밀 수 없습니다.';
+    if (!hasOrderedCutBands(shifted.plan.rollResults ?? [shifted.plan.result])) return '재단 그룹 순서를 유지할 수 있는 위치를 선택해 주세요.';
     installManualPlan(planKey, plan, shifted.plan);
     setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), ...(shifted.movedPlacementIds ?? [placementId])])] }));
     const directionLabel = direction === 'left' ? '왼쪽' : direction === 'right' ? '오른쪽' : direction === 'top' ? '위쪽' : '아래쪽';
@@ -440,7 +444,8 @@ export default function PlanningScreen() {
         || (!snapshot.projectId && snapshot.pieces.every((group) => group.id.startsWith(`${context.id}-group-`)))));
       const project = context && belongsToProject
         ? (await repository.load()).document.projects?.find((item) => item.id === context.id) : undefined;
-      if (project && layouts.length) await repository.saveProjectManualLayouts(project.id, layouts, new Date().toISOString());
+      if (project) await repository.saveProjectManualLayouts(project.id, layouts, new Date().toISOString(),
+        snapshot.placementPreference ? projectCutSettings(snapshot.pieces, snapshot.placementPreference) : undefined);
       const completionSaved = await flushCompletionToServer(true);
       setManualLayoutHistories(Object.fromEntries(currentPlan.mergedPlans.map((plan) => [
         mergedPlanKey(plan.mergeGroupId, plan.sourceIds), rebaseManualLayoutHistory(plan),
@@ -615,7 +620,7 @@ export default function PlanningScreen() {
           return planningView === 'drawing'
             ? <>
               {hasCutGroups(plan) && <TouchableOpacity accessibilityRole="button" onPress={() => router.push('/input')} style={styles.headerControlButton}><Text style={styles.headerControlText}>재단계산에서 그룹화 변경</Text></TouchableOpacity>}
-              <View onLayout={(event) => { drawingContentY.current = event.nativeEvent.layout.y; }}><MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} automaticUtilizationPercent={automaticUtilizationPercent} learnedLayoutApplied={learnedMergedPlanKeys.includes(planKey)} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} focusedPlacementId={focusedPlacement?.planKey === planKey ? focusedPlacement.placementId : null} focusRequestKey={focusedPlacement?.planKey === planKey ? focusedPlacement.requestKey : 0} onFocusedPlacementY={scrollToFocusedPlacement} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={hasCutGroups(plan) ? undefined : (placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementToNewRoll={hasCutGroups(plan) ? undefined : (placementId) => { const movedTo = moveMergedPlacementToNewRoll(planKey, placementId); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={hasCutGroups(plan) ? undefined : (placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onRotatePlacement={hasCutGroups(plan) ? undefined : (placementId) => rotateMergedPlacement(planKey, placementId)} onShiftPlacementToEdge={hasCutGroups(plan) ? undefined : (placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} onDragGestureChange={setDragGestureActive} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView /></View></>
+              <View onLayout={(event) => { drawingContentY.current = event.nativeEvent.layout.y; }}><MergedRollPreview key={`merged-${planKey}`} plan={plan} job={job} busy={loading} selectedRollIndex={selectedRollByPlan[planKey] ?? 0} onSelectRoll={(rollIndex) => setSelectedRollByPlan((current) => ({ ...current, [planKey]: rollIndex }))} automaticUtilizationPercent={automaticUtilizationPercent} learnedLayoutApplied={learnedMergedPlanKeys.includes(planKey)} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} focusedPlacementId={focusedPlacement?.planKey === planKey ? focusedPlacement.placementId : null} focusRequestKey={focusedPlacement?.planKey === planKey ? focusedPlacement.requestKey : 0} onFocusedPlacementY={scrollToFocusedPlacement} onTogglePlacementComplete={togglePlacement} onMovePlacementToAnotherRoll={(placementId, targetRollIndex) => { const movedTo = moveMergedPlacement(planKey, placementId, targetRollIndex); if (movedTo !== null) { setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); setLockedPlacementIdsByPlan((current) => ({ ...current, [planKey]: [...new Set([...(current[planKey] ?? []), placementId])] })); } return movedTo; }} onMovePlacementToNewRoll={(placementId) => { const movedTo = moveMergedPlacementToNewRoll(planKey, placementId); if (movedTo !== null) setLastMovedRollByPlan((current) => ({ ...current, [planKey]: movedTo })); return movedTo; }} onMovePlacementWithinRoll={(placementId, xMm, yMm) => moveMergedPlacementManually(planKey, placementId, xMm, yMm)} onRotatePlacement={(placementId) => rotateMergedPlacement(planKey, placementId)} onShiftPlacementToEdge={(placementId, direction) => shiftMergedPlacement(planKey, placementId, direction)} onDragAutoScroll={scrollPreviewDuringDrag} onDragGestureChange={setDragGestureActive} hideHeading hideRollTabs hideControls hidePlacementList hideLegend continuousPageView /></View></>
             : <MergedRollPlacementList key={`merged-list-${planKey}`} plan={plan} job={job} busy={loading} completedPlacementIds={completedPlacementIds} sourceLabels={currentPlan.pieceNamesBySourceId} sourceSubgroups={currentPlan.subgroupNamesBySourceId} sourceMajorGroups={majorGroupNamesBySourceId} onTogglePlacementComplete={togglePlacement} collapsedSubgroups={listState} onChangeCollapsedSubgroups={changeListState} onSelectPlacement={(placementId) => navigateToPlacement(placementId, planKey)} />;
         })()}
         {independentPlans.map((entry) => {
