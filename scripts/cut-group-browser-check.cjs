@@ -31,6 +31,7 @@ const server = http.createServer((req,res)=>{
       const owner=location.search.includes('authenticated')?'cut-group-test':'local';
       const key='film-cutting-input-draft-v1:'+owner;
       if(!localStorage.getItem(key+':unsaved')){
+        localStorage.setItem('film-cutting-placement-preference-v1',JSON.stringify({priority:'basic',saveMaterial:true,optimization:{subgroup:{enabled:true,percent:100}}}));
         localStorage.setItem(key+':active',JSON.stringify({projectId:null}));
         localStorage.setItem(key+':unsaved',JSON.stringify({version:1,ownerId:owner,updatedAt:new Date().toISOString(),projectId:null,projectName:'테스트',groups:[group],activeGroupId:'g1',activePieceId:'p1',useRemnants:false,diagramPart:'상부장',diagramTargets:{}}));
       }
@@ -49,6 +50,9 @@ const server = http.createServer((req,res)=>{
     const lineB=page.locator('g[aria-label^="그룹 B 끝"]');
     await lineA.waitFor();
     await lineB.waitFor();
+    const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('film-cutting-placement-preference-v1')));
+    assert.equal(saved.priority, 'subgroup');
+    assert.deepEqual(saved.optimization.subgroup, {enabled:false,percent:100});
     await button('재단계산에서 그룹화 변경').click();
     await button('하부장 그룹화 ID A').click();
     await page.waitForFunction(()=>JSON.parse(localStorage.getItem('film-cutting-current-group-estimate')).pieces[0].subgroups[1].cutGroupOrder===1);

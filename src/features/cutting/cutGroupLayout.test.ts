@@ -9,6 +9,17 @@ const request = (pieceId: string, width: number, length: number, quantity = 1): 
   request: { brand: '영림', productNumber: 'P1', rollWidthMm: 1220, pieceWidthMm: width, pieceLengthMm: length, quantity, gapMm: 3, sideMarginMm: 7, startEndMarginMm: 5, allowRotation: false, remnants: [] },
 });
 describe('cut group layout', () => {
+  it('keeps an old non-grouped manual layout from replacing an explicitly grouped plan', () => {
+    const requests = [
+      { ...request('a', 300, 400), cutGroupOrder: 1 },
+      { ...request('b', 300, 600), cutGroupOrder: 2 },
+    ];
+    const [basic] = planMergedGroups(requests, 1220, [], false, { priority: 'basic', saveMaterial: true });
+    const [grouped] = planMergedGroups(requests, 1220, [], false, { priority: 'subgroup', saveMaterial: true });
+    const saved = captureManualMergedLayout(basic!, 0, requests);
+    expect(restoreManualMergedLayout(grouped!, 0, requests, saved)).toBeNull();
+  });
+
   it('keeps strict priority when savings is off or at zero and uses shorter layouts at 100%', () => {
     const entries = [
       { ...request('a', 300, 250), cutGroupOrder: 1 },

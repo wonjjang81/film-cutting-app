@@ -131,6 +131,7 @@ export function restoreManualMergedLayout(
   const identity = (sourceIndex: number, instanceIndex: number) => `${sourceIndex}:${instanceIndex}`;
   const basePlacements = new Map(plan.result.placements.map((placement) => [identity(plan.sourceIds.indexOf(placement.sourceId), placement.instanceIndex), placement]));
   const requestBySource = new Map(requests.map((request) => [sourceId(request), request.request]));
+  const explicitCutGroups = requests.some(request => request.cutGroupOrder !== undefined);
   const seen = new Set<string>();
   const seenIds = new Set<number>();
   const rollResults: MergedRollResult[] = [];
@@ -143,7 +144,7 @@ export function restoreManualMergedLayout(
       const placementIdentity = identity(position.sourceIndex, position.instanceIndex);
       const base = basePlacements.get(placementIdentity);
       const request = base && requestBySource.get(base.sourceId);
-      if (!base || !request || seen.has(placementIdentity) || seenIds.has(position.id) || position.id <= 0) return null;
+      if (!base || !request || (explicitCutGroups && position.cutGroup !== base.cutGroup) || seen.has(placementIdentity) || seenIds.has(position.id) || position.id <= 0) return null;
       seen.add(placementIdentity);
       seenIds.add(position.id);
       const width = position.rotated ? request.pieceLengthMm : request.pieceWidthMm;
