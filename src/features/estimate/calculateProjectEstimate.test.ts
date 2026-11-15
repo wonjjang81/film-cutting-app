@@ -7,6 +7,21 @@ import type { SavedCuttingJob } from '../library/models';
 const job = (id: string, length: number): SavedCuttingJob => ({ id, name: id, brand: '영림', productNumber: '', createdAt: '2026-08-22T00:00:00.000Z', updatedAt: '2026-08-22T00:00:00.000Z', input: { rollWidthMm: 1220, pieceWidthMm: 500, pieceLengthMm: 500, quantity: 20, gapMm: 0, sideMarginMm: 5, startEndMarginMm: 5, allowRotation: true }, remnantIds: [], remnantSummary: [], result: { newRollLengthMm: length, producedQuantity: 20, overproduction: 0, utilizationPercent: 80, wastePercent: 20, optimizationStatus: 'exact' } });
 
 describe('calculateProjectEstimate', () => {
+  it('prices individual door and kitchen units, sets and difficulty without changing film cost', () => {
+    const source = { ...job('part', 7_000), groupId: 'g1', subgroupName: '대상' };
+    const price = (referencePart: 'doorLeaf' | 'doorFrame' | 'door' | 'kitchenUpper' | 'kitchenLower' | 'kitchen', quantity: string) =>
+      calculateProjectEstimate([source], 9_000, 15_000, 0, [], { installationMode: 'whole',
+        installationWorkloads: { 'g1::대상': { enabled: true, referencePart, quantity, shape: '알판', sheets: '', finishingM: '', details: '' } },
+      });
+    expect(price('doorLeaf', '1').constructionCost).toBe(93_750);
+    expect(price('doorFrame', '1').constructionCost).toBe(62_500);
+    expect(price('door', '1').constructionCost).toBe(156_250);
+    expect(price('kitchenUpper', '2.5').constructionCost).toBe(46_875);
+    expect(price('kitchenLower', '2.5').constructionCost).toBe(70_313);
+    expect(price('kitchen', '2.5').constructionCost).toBe(117_188);
+    expect(price('kitchen', '2.5').materialCost).toBe(63_000);
+  });
+
   it('applies reference units and shape once while charging actual roll and separate preparation', () => {
     const source = { ...job('door', 6_000), groupId: 'g1', subgroupName: '방문' };
     const result = calculateProjectEstimate([source], 9_000, 15_000, 0, [], {

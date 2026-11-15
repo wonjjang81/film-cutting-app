@@ -1,13 +1,16 @@
+import { useState } from 'react';
 import { StyleSheet, Switch, TouchableOpacity, Text, TextInput, View } from 'react-native';
 import type { InstallationLaborLine } from './repriceInstallationLabor';
 import { EMPTY_WORKLOAD, type InstallationWorkload } from './installationWorkload';
 
-import { referenceParts, shapeFactors, filmLossFactors, type ReferencePart, type ReferenceShape, type FilmPattern } from './referenceEstimate';
+import { referenceParts, shapeFactors, isLinearReference, referenceWork, quickReferenceParts, filmLossFactors, type ReferencePart, type FilmPattern } from './referenceEstimate';
 
 function Choice({ label, selected, onPress }: { label: string; selected: boolean; onPress(): void }) {
   return <TouchableOpacity accessibilityRole="button" accessibilityState={{ selected }} onPress={onPress}
     style={[styles.input, selected && styles.selected]}><Text style={styles.text}>{label}</Text></TouchableOpacity>;
 }
+
+import { LABOR_COST_PER_UNIT } from './installationLabor';
 
 const fields = [
   { key: 'sheets', label: '부착 시트 (장)' },
@@ -20,9 +23,25 @@ export function InstallationWorkloadFields({ line, value = EMPTY_WORKLOAD, onCha
   value?: InstallationWorkload;
   onChange(value: InstallationWorkload): void;
 }) {
+  const [expanded, setExpanded] = useState(false);
   if (line.installationAreaM2 <= 0) return null;
+  const part = value.enabled ? value.referencePart : undefined;
+  const quick = quickReferenceParts.some(option => option === part);
+  const factor = shapeFactors[value.shape ?? '평판'];
+  const base = part && quick ? referenceWork(part, 1).units * LABOR_COST_PER_UNIT : 0;
   return <View style={styles.section}>
-    <View style={styles.row}>
+    <Text style={styles.text}>형태 난이도</Text>
+    <View style={styles.choices}>
+      {(['평판', '알판', '깊은 굴곡', '루버·간살'] as const).map(shape => <Choice key={shape}
+        label={shape + ' ×' + shapeFactors[shape]} selected={(value.shape ?? '평판') === shape} onPress={() => onChange({ ...value, shape })} />)}
+    </View>
+    {quick && part && <View style={styles.row}>
+      <Text style={styles.text}>{Math.round(base * factor).toLocaleString('ko-KR')}원/{isLinearReference(part) ? '가로폭 m' : '개·세트'}</Text>
+      <TextInput accessibilityLabel={line.subgroupName + ' 기준 수량'} style={styles.input} keyboardType={isLinearReference(part) ? 'decimal-pad' : 'number-pad'}
+        value={value.quantity ?? ''} onChangeText={quantity => onChange({ ...value, quantity })} placeholder={isLinearReference(part) ? '전체 가로폭 (m)' : '전체 수량'} />
+    </View>}
+    <Choice label={expanded ? '상세 설정 접기' : '상세 설정'} selected={expanded} onPress={() => setExpanded(!expanded)} />
+    {expanded && <><View style={styles.row}>
       <Text style={styles.text}>작업량 기준 · 참고 견적</Text>
       <Switch accessibilityLabel={line.subgroupName + ' 작업량 기준'} value={value.enabled} onValueChange={(enabled) => onChange({ ...value, enabled })} />
     </View>
@@ -30,20 +49,17 @@ export function InstallationWorkloadFields({ line, value = EMPTY_WORKLOAD, onCha
       <Text style={styles.text}>부착 면적 {line.installationAreaM2.toLocaleString('ko-KR', { maximumFractionDigits: 3 })}㎡ · 소그룹 전체 수량 기준</Text>
       <View style={styles.choices}>
         <Choice label="직접 작업량" selected={!value.referencePart} onPress={() => onChange({ ...value, referencePart: undefined })} />
-        {(Object.keys(referenceParts) as ReferencePart[]).map(part => <Choice key={part} label={referenceParts[part]}
+        {(Object.keys(referenceParts) as ReferencePart[]).filter(part => !quickReferenceParts.some(option => option === part)).map(part => <Choice key={part} label={referenceParts[part]}
           selected={value.referencePart === part} onPress={() => onChange({ ...value, referencePart: part, quantity: value.referencePart === part ? value.quantity : '' })} />)}
       </View>
-      {value.referencePart ? <TextInput accessibilityLabel={line.subgroupName + ' 기준 수량'} style={styles.input}
+      {value.referencePart ? !quick && <TextInput accessibilityLabel={line.subgroupName + ' 기준 수량'} style={styles.input}
         keyboardType="decimal-pad" value={value.quantity ?? ''} onChangeText={quantity => onChange({ ...value, quantity })}
-        placeholder={value.referencePart === 'kitchen' || value.referencePart === 'trim' ? '전체 가로폭 또는 시공 길이 (m)' : '시공 수량 (세트·개소)'} />
+        placeholder={isLinearReference(value.referencePart) ? '전체 가로폭 또는 시공 길이 (m)' : '시공 수량 (세트·개소)'} />
         : <View style={styles.row}>{fields.map(({ key, label }) => <View key={key} style={styles.field}>
         <Text style={styles.text}>{label}</Text>
         <TextInput accessibilityLabel={line.subgroupName + ' ' + label} style={styles.input} keyboardType={key === 'finishingM' ? 'decimal-pad' : 'number-pad'} value={value[key]}
           onChangeText={(raw) => onChange({ ...value, [key]: raw.replace(key === 'finishingM' ? /[^0-9.]/g : /[^0-9]/g, '') })} placeholder={key === 'sheets' ? '1 이상' : '없으면 0'} />
       </View>)}</View>}
-      <Text style={styles.text}>형태 난이도</Text>
-      <View style={styles.choices}>{(Object.keys(shapeFactors) as ReferenceShape[]).map(shape => <Choice key={shape}
-        label={shape + ' ×' + shapeFactors[shape]} selected={(value.shape ?? '평판') === shape} onPress={() => onChange({ ...value, shape })} />)}</View>
       {!value.referencePart && <View style={styles.choices}>{(Object.keys(filmLossFactors) as FilmPattern[]).map(pattern => <Choice key={pattern}
         label={pattern + ' ' + Math.round(filmLossFactors[pattern] * 100) + '%'} selected={value.pattern === pattern}
         onPress={() => onChange({ ...value, pattern: value.pattern === pattern ? undefined : pattern })} />)}</View>}
@@ -55,7 +71,8 @@ export function InstallationWorkloadFields({ line, value = EMPTY_WORKLOAD, onCha
       <Text style={styles.text}>{line.workloadMinutes === undefined
         ? '수량과 밑작업 입력값을 확인해 주세요. 입력 중에는 기존 단가로 표시합니다.'
         : line.workloadMinutes.toLocaleString('ko-KR', { maximumFractionDigits: 1 }) + '인분 · 현장 실측 전 참고값'}</Text>
-    </>}
+    </>}</>}
+    {quick && line.workloadMinutes === undefined && !expanded && <Text style={styles.text}>기준 수량과 상세 설정값을 확인해 주세요.</Text>}
   </View>;
 }
 

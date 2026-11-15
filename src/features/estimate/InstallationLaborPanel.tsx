@@ -6,7 +6,9 @@ import { type InstallationMode } from './installationLabor';
 import { buildEstimateGroupBreakdown } from './estimateBreakdownModel';
 
 import { InstallationWorkloadFields } from './InstallationWorkloadFields';
-import type { InstallationWorkload } from './installationWorkload';
+import { quickReferenceParts, referenceParts, isLinearReference, referenceWork } from './referenceEstimate';
+import { LABOR_COST_PER_UNIT } from './installationLabor';
+import { EMPTY_WORKLOAD, type InstallationWorkload } from './installationWorkload';
 
 const number = (value: number) => value.toLocaleString('ko-KR', { maximumFractionDigits: 4 });
 
@@ -29,7 +31,7 @@ export function InstallationLaborPanel({ estimate, mode, disabled, parts, worklo
       <Text style={styles.hint}>시공품수 {number(billed)}품</Text>
       {lines.some((line) => (line.minimumSupplement ?? 0) > 0) && <Text style={styles.warning}>전체 합산 인건비가 0.5품 미만이므로 총 125,000원으로 보정했습니다.</Text>}
       {lines.map((line) => <View key={line.id} style={styles.line}>
-        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
+        <View style={styles.row}><View style={styles.copy}><Text style={styles.name}>{line.subgroupName} · {siteCounts.get(line.id) ?? 1}개소</Text></View><TouchableOpacity accessibilityRole="button" accessibilityLabel={`${line.subgroupName} 시공 부위 선택`} onPress={() => setSelectingId(line.id)} style={styles.select}><Text style={styles.buttonText}>{workloads?.[line.id]?.enabled && workloads[line.id]?.referencePart ? referenceParts[workloads[line.id]!.referencePart!] : line.part ?? '부위 선택'} ⌄</Text></TouchableOpacity></View>
         <Text style={styles.hint}>시공비 {line.constructionCost.toLocaleString('ko-KR')}원 · 자재비 {(materialCosts.get(line.id) ?? 0).toLocaleString('ko-KR')}원</Text>
         <Text style={styles.hint}>시공품수 {number(line.constructionCost / 250_000)}품</Text>
         {onChangeWorkload && <InstallationWorkloadFields line={line} value={workloads?.[line.id]} onChange={(value) => onChangeWorkload(line.id, value)} />}
@@ -42,7 +44,24 @@ export function InstallationLaborPanel({ estimate, mode, disabled, parts, worklo
     </>}
     <Modal visible={selectingId !== null} transparent animationType="fade" onRequestClose={() => setSelectingId(null)}><View style={styles.backdrop}><View style={styles.dialog}>
       <View style={styles.row}><Text style={styles.title}>시공 부위 선택</Text><TouchableOpacity accessibilityRole="button" onPress={() => setSelectingId(null)}><Text>닫기</Text></TouchableOpacity></View>
-      <ScrollView style={styles.options}>{[{ name: '', label: '미선택 · 기존 단가 적용' }, ...parts.map((part) => ({ name: part.name, label: `${part.name} · ${part.costPerM.toLocaleString('ko-KR')}원/m` }))].map((part) => <TouchableOpacity key={part.name} accessibilityRole="button" onPress={() => { if (selectingId) onChangePart(selectingId, part.name); setSelectingId(null); }} style={styles.option}><Text>{part.label}</Text></TouchableOpacity>)}</ScrollView>
+      <ScrollView style={styles.options}>
+      {onChangeWorkload && <Text style={styles.hint}>개별·세트 기준 단가</Text>}
+      {onChangeWorkload && quickReferenceParts.map(part => <TouchableOpacity key={part} accessibilityRole="button" style={styles.option} onPress={() => {
+        if (!selectingId) return;
+        const previous = workloads?.[selectingId] ?? EMPTY_WORKLOAD;
+        const width = lines.find(line => line.id === selectingId)?.totalSubgroupWidthM;
+        const quantity = previous.referencePart === part ? previous.quantity : isLinearReference(part)
+          ? width ? String(Number(width.toFixed(3))) : ''
+          : String(siteCounts.get(selectingId) ?? 1);
+        onChangeWorkload(selectingId, { ...previous, enabled: true, referencePart: part, quantity });
+        setSelectingId(null);
+      }}><Text>{referenceParts[part]} · {Math.round(referenceWork(part, 1).units * LABOR_COST_PER_UNIT).toLocaleString('ko-KR')}원/{isLinearReference(part) ? '가로폭 m' : '개·세트'}</Text></TouchableOpacity>)}
+      <Text style={styles.hint}>원단 길이 기준 단가</Text>
+      {[{ name: '', label: '미선택 · 기존 단가 적용' }, ...parts.map((part) => ({ name: part.name, label: `${part.name} · ${part.costPerM.toLocaleString('ko-KR')}원/m` }))].map((part) => <TouchableOpacity key={part.name} accessibilityRole="button" onPress={() => { if (selectingId) {
+        const previous = workloads?.[selectingId];
+        if (previous?.enabled) onChangeWorkload?.(selectingId, { ...previous, enabled: false });
+        onChangePart(selectingId, part.name);
+      } setSelectingId(null); }} style={styles.option}><Text>{part.label}</Text></TouchableOpacity>)}</ScrollView>
     </View></View></Modal>
   </View>;
 }
